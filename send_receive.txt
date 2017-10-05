@@ -1,0 +1,8 @@
+let z = true in 
+	let x = port in
+		thread {send x z} end ;
+		let y = {receive x} in 
+			skip
+		end	
+	end
+end

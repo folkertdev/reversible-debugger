@@ -1,0 +1,7 @@
+let x = port in
+	let z = true in
+		let y = proc {a b} {send a b}; {y a b} end in
+			{y x z}
+		end
+	end
+end	
