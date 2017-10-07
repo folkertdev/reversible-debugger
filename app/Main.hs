@@ -19,6 +19,7 @@ main = do
     code <- readFile filename 
 
     let Right program = Parser.program code
+    print program
     print "done parsing"
 
 
@@ -38,6 +39,10 @@ main = do
 
                 [ "f" ] -> 
                     interactive =<< forward identifierRef bindings threadNames currentTask
+
+                [ "fthread", var ] -> 
+                    interactive =<< forward identifierRef bindings threadNames currentTask
+
 
                 [ "b" ] -> 
                     interactive =<< backward bindings threadNames currentTask

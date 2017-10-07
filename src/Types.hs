@@ -19,6 +19,7 @@ type IOThrowsError a = ExceptT Error IO a
 
 data Error
     = UndefinedVariable Identifier
+    | UndefinedThread ThreadName
     | UninitializedChannel Identifier
     | TypeError Identifier String Value
     | AssertionError BoolExp

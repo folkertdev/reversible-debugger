@@ -15,14 +15,17 @@ import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
 import Control.Monad.Trans (liftIO)
 import Control.Applicative (Applicative, liftA2, pure, (<*))
 import Control.Monad
-import Control.Monad.Free
-import Control.Comonad.Cofree
 import qualified Control.Exception as Exception (catch, BlockedIndefinitelyOnMVar)
 import qualified System.Timeout
 import Text.ParserCombinators.Parsec as Parsec
-import Data.Foldable (Foldable)
+import Data.Foldable (Foldable, foldrM)
+import Control.Concurrent.Async as Async
+import Data.Maybe (fromMaybe)
 
 
+withDefault :: a -> Maybe a -> a
+withDefault = 
+    fromMaybe 
 
 init :: Program -> IO (MVar Int, MVar (Map.Map Identifier Value), MVar (Map ThreadName Int),  Task Program)
 init program = do
@@ -39,7 +42,7 @@ init program = do
 
 data Task a 
     = Singleton (Thread a)
-    | Parallel (Task a) (Task a)
+    | Parallel (Thread a) (Map ThreadName (Task a))
     deriving (Show)
 
 
@@ -49,7 +52,7 @@ listThreads :: Task a -> List (Thread a)
 listThreads task = 
     case task of
         Parallel a b -> 
-            listThreads a ++ listThreads b
+            a : concatMap listThreads b
 
 
         Singleton thread ->
@@ -95,15 +98,13 @@ freshThreadName usedThreadNamesRef parentName@(ThreadName parent) = do
             
 
 insertVariable :: Identifier -> Value -> MVar (Map.Map Identifier Value) -> IOThrowsError ()
-insertVariable identifier value ref = liftIO $ do
-    map <- takeMVar ref
-    putMVar ref (Map.insert identifier value map)
+insertVariable identifier value ref = 
+    liftIO $ modifyMVar_ ref (return . Map.insert identifier value)
 
 
 removeVariable :: Identifier -> MVar (Map.Map Identifier Value) -> IOThrowsError ()
-removeVariable identifier ref = liftIO $ do
-    map <- takeMVar ref
-    putMVar ref (Map.delete identifier map)
+removeVariable identifier ref = 
+    liftIO $ modifyMVar_ ref (return . Map.delete identifier)
 
 
 {-| Get the value for an identifier from the global scope
@@ -146,23 +147,12 @@ lookupProcedure identifier ref = do
             throwE $ TypeError identifier "I expected a Procedure but instead got" value
 
 
+{-| Puts an either into an ExceptT context: Left throws an error, Right
+continues the program
+-} 
 embedEither :: Monad m => Either e a  -> ExceptT e m a
 embedEither v = ExceptT (return v)
 
-
-{-| Run two tasks in parallel -} 
-parallel :: (Task a -> IOThrowsError (Task a)) -> Task a -> Task a -> IOThrowsError (Task a)
-parallel tagger left right = do
-    leftContainer <- liftIO newEmptyMVar 
-
-    liftIO $ forkIO $ do
-        result <- runExceptT $ tagger left
-        putMVar leftContainer result
-
-    result2 <- liftIO $ runExceptT $ tagger right
-    result1 <- liftIO $ readMVar leftContainer
-
-    embedEither $ liftA2 Parallel result1 result2
 
 readChannelWithTimeout :: ThreadName ->  Chan a -> Int -> IOThrowsError a
 readChannelWithTimeout thread channel duration = 
@@ -182,31 +172,83 @@ readChannelWithTimeout thread channel duration =
         result <- liftIO $ Exception.catch withTimeout body 
         embedEither result
 
+
+insertChildTask :: Task a -> Map ThreadName (Task a) -> Map ThreadName (Task a)
+insertChildTask task = 
+    case task of
+        Singleton (Thread name _ _) ->
+            Map.insert name task 
+
+        Parallel (Thread name _ _) _ -> 
+            Map.insert name task
+
 {-| Evaluate a program one step forward -} 
 forward :: MVar Int -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Task Program -> IOThrowsError (Task Program)
 forward identifierRef bindings threadNames task = 
+    let fthread = forwardThread identifierRef bindings threadNames in
     case task of 
-        Parallel task1 task2 -> 
-            case (task1, task2) of 
-                (Singleton (Thread _ _ []), _) ->
-                    return task2 
-
-                (_, Singleton (Thread _ [] _)) ->
-                    return task1
-
-                _ -> 
-                    parallel (forward identifierRef bindings threadNames) task1 task2 
             
+        Parallel parent children -> 
+            if Map.null children then do
+                result <- fthread parent
+                case result of 
+                    Left updated ->
+                        return $ Parallel updated Map.empty
+                    Right (newParent, newChild@(Thread childName _ _)) ->
+                        return $ Parallel newParent (Map.singleton childName $ Singleton newChild)
+            else
+                let 
+                    -- folder :: (Bool, List (Task Program)) -> Task Program -> IOThrowsError (Bool, List (Task Program))
+                    folder ( hasSucceeded, accum) current =
+                        if hasSucceeded then 
+                            return ( True, insertChildTask current accum) 
+                        else do
+                            result <- liftIO $ runExceptT $ forward identifierRef bindings threadNames current
+                            case result of
+                                Left e -> 
+                                    return (False, insertChildTask current accum)
 
+                                Right updated -> 
+                                    return (True, insertChildTask updated accum)
+
+                    onBlockedOnReceive e =
+                        case e of
+                            BlockedOnReceive _ -> do
+                                (progress, newChildren) <- foldrM (flip folder) (False, Map.empty) (Map.elems children)
+                                if not progress then
+                                    throwE e 
+                                else
+                                    return $ Parallel parent newChildren
+                            _ -> 
+                                throwE e
+
+                    helper :: Either (Thread Program) (Thread Program, Thread Program) -> Task Program
+                    helper result = 
+                        case result of
+                            Left v -> Parallel v children
+                            Right (a,b) -> Parallel a (insertChildTask (Singleton b) Map.empty)
+                                
+                in
+                    fmap helper (fthread parent) `catchE` onBlockedOnReceive 
 
         Singleton (Thread name history []) -> 
             return task 
 
-        Singleton (Thread name history (program:rest)) ->
+        Singleton thread@(Thread name history (program:rest)) -> do
+            result <- fthread thread
+            case result of 
+                Left updated ->
+                    return $ Singleton updated
+                Right (newParent, newChild) ->
+                    return $ Parallel newParent $ insertChildTask (Singleton newChild ) Map.empty
+
+forwardThread :: MVar Int -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Thread Program -> IOThrowsError (Either (Thread Program) (Thread Program, Thread Program)) 
+forwardThread identifierRef bindings threadNames thread@(Thread name history []) = return (Left thread) 
+forwardThread identifierRef bindings threadNames (Thread name history (program : rest)) = 
             let 
-                continue :: History -> List Program -> IOThrowsError (Task Program)
+                continue :: History -> List Program -> IOThrowsError (Either (Thread Program) (Thread Program, Thread Program))  
                 continue historyInstruction instructions = 
-                    return $ Singleton (Thread name (historyInstruction : history) instructions)
+                    return $ Left (Thread name (historyInstruction : history) instructions)
             in
             case program of
                 Skip ->
@@ -228,6 +270,19 @@ forward identifierRef bindings threadNames task =
                                 channel <- liftIO newChan
                                 insertVariable freshName (Port (Just channel)) bindings
                                 return (CreatedVariable freshName, freshName)
+
+                            Procedure arguments body -> do
+                                -- rename the function name itself in the
+                                -- body, for recursive functions
+                                let renamedBody = 
+                                        if identifier `notElem` arguments then
+                                            renameVariable identifier freshName body
+                                        else
+                                            body
+
+                                insertVariable freshName (Procedure arguments renamedBody) bindings
+                                return (CreatedVariable freshName, freshName)
+                                
 
                             _ -> do
                                 insertVariable freshName value bindings
@@ -253,9 +308,10 @@ forward identifierRef bindings threadNames task =
 
                 SpawnThread work -> do
                     threadName <- liftIO $ freshThreadName threadNames name
-                    return $ Parallel
-                        (Singleton $ Thread name (SpawnedThread threadName : history) rest)
-                        (Singleton $ Thread threadName [] [ work ])
+                    return $ Right 
+                        ( Thread name (SpawnedThread threadName : history) rest
+                        , Thread threadName [] [ work ]
+                        )
 
                 Apply functionName arguments -> do
                     ( parameters, body ) <- lookupProcedure functionName bindings
@@ -279,6 +335,7 @@ forward identifierRef bindings threadNames task =
                     continue HistoryEsc rest
 
 
+{-| Revert the program state before the creation of the given variable -}
 rollVariable :: Identifier -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Task Program -> IOThrowsError (Task Program)
 rollVariable name bindings threadNames task = do 
     lookupVariable name bindings -- will throw if the name does not exist
@@ -300,52 +357,89 @@ rollThread threadName bindings threadNames task =
     let 
         recurse task = 
             rollThread threadName bindings threadNames =<< backward bindings threadNames task
-    in
-    case task of
-        Parallel parent child -> do
-            -- roll the child first
-            newChild <- recurse child
-            newParent <- recurse parent
 
-            return $ Parallel newParent newChild 
 
-        Singleton (Thread _ [] _) ->
-            return task
+    in do
 
-        Singleton (Thread parentName (SpawnedThread spawnedName : restOfHistory) parentProgram) -> 
-            if spawnedName == threadName then
-                -- undo the spawning, the rest is undone
-                backward bindings threadNames task
+    exists <- Map.member threadName <$> liftIO (readMVar threadNames)
+    if not exists then
+        throwE $ UndefinedThread threadName
+    else
+        case task of
+            Parallel parent child ->
+                recurse task 
 
-            else
-                recurse task
-
-        Singleton (Thread name history program) ->
-            if name == threadName then
-                -- this is the thread we want to unroll
-                recurse task
-            else
+            Singleton (Thread _ [] _) ->
                 return task
+
+            Singleton (Thread parentName (SpawnedThread spawnedName : restOfHistory) parentProgram) -> 
+                if spawnedName == threadName then
+                    -- undo the spawning, the rest is undone
+                    backward bindings threadNames task
+
+                else
+                    recurse task
+
+            Singleton (Thread name history program) ->
+                if name == threadName then
+                    -- this is the thread we want to unroll
+                    recurse task
+                else
+                    return task
         
                
 backward :: MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Task Program -> IOThrowsError (Task Program)
 backward bindings threadNames task = 
     case task of
-        Parallel task1 task2 ->
-            case (task1, task2) of
-                ( Singleton (Thread name ( SpawnedThread threadName : restOfHistory) restOfProgram), Singleton (Thread spawnedName [] [ spawnedProgram ])) ->
-                    return $ Singleton $ Thread name restOfHistory $ SpawnThread spawnedProgram : restOfProgram
+        Singleton thread ->
+            Singleton <$> backwardThread bindings threadNames thread            
 
-                _ ->
-                    parallel (backward bindings threadNames) task1 task2 
+        Parallel parent children ->
+            case parent of
+                Thread parentName (SpawnedThread spawnedName : restOfHistory) program -> 
+                    -- first empty the history of the child before reverting the parent further
+                    case Map.lookup spawnedName children of
+                        Nothing -> 
+                            error "non-existent child spawned"
 
-        Singleton (Thread name [] program) ->
-            return task
+                        Just (Singleton (Thread childName [] threadBody)) -> do
+                            -- child is already completely rolled 
+                            let 
+                                updater = 
+                                    Map.adjust (\v -> v - 1 :: Int) parentName . Map.delete childName
 
-        Singleton (Thread name (mostRecent:restOfHistory) program) ->
+                            liftIO $ modifyMVar_ threadNames (return . updater)  
+                            case threadBody of
+                                [x] -> 
+                                    return $ Singleton $ Thread parentName restOfHistory $ SpawnThread x : program 
+
+                                _ ->
+                                    error "invalid initial thread state" 
+
+                            
+
+                        Just task -> do
+                            updatedChild <- backward bindings threadNames task
+                            return $ Parallel parent (Map.adjust (\_ -> updatedChild) spawnedName children)
+
+                _ -> do
+                    -- reverse the parent thread, keeping the children constant
+                    liftIO $ print "parallel is not a spawn, so rolling parent"
+                    liftIO $ print task
+                    Parallel <$> backwardThread bindings threadNames parent <*> pure children
+
+
+backwardThread :: MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Thread Program -> IOThrowsError (Thread Program)
+backwardThread bindings threadNames thread@(Thread name history program) =
+    case history of
+        [] -> 
+            -- do nothing
+            return thread
+        
+        ( mostRecent : restOfHistory ) ->
             let 
-                continue :: List Program -> IOThrowsError (Task Program)
-                continue = return . Singleton . Thread name restOfHistory
+                continue :: List Program -> IOThrowsError (Thread Program)
+                continue = return . Thread name restOfHistory 
             in
             case (mostRecent, program) of
                 ( Skipped, restOfProgram ) ->

@@ -25,6 +25,8 @@ library
                      , parsec
                      , free
                      , text
+                     , async
+
 
   default-language:    Haskell2010
 
@@ -33,10 +35,11 @@ executable reversible-debugger
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
-                     , haskell-port
+                     , reversible-debugger 
                      , containers
                      , transformers
                      , mtl
+
   default-language:    Haskell2010
 
 

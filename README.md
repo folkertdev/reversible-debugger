@@ -4,7 +4,7 @@ A haskell implementation of the µOz abstract machine and the CaReDeb causal-con
 
 # Inspiration
 
-* [The CaReDeb debugger](http://www.cs.unibo.it/caredeb/index.html) by Giachino (developer), Ivan Lanese (developer) and Claudio A. Mezzina (main developer).
+* [The CaReDeb debugger](http://www.cs.unibo.it/caredeb/index.html) by Elena Giachino (developer), Ivan Lanese (developer) and Claudio A. Mezzina (main developer).
 * [pi-calculus](https://github.com/renzyq19/pi-calculus) by Will de Renzy-Martin.
 
 The semantics of the µOz abstract machine implemented here are detailed in this paper: 
@@ -18,12 +18,13 @@ Haskell only has lightweight threads, wheras the original CaReDeb debugger uses 
 It turns out that this isn't really a problem and might actually be better: 
 Rather than actually making threads, we can keep the programs branching/spawning structure in a tree-like type. 
 
+```haskell
+data Task a 
+    = Singleton (Thread a)
+    | Parallel (Task a) (Task a)
 
-    data Task a 
-        = Singleton (Thread a)
-        | Parallel (Task a) (Task a)
-
-    data Thread a = Thread ThreadName (List History) (List a) 
+data Thread a = Thread ThreadName (List History) (List a) 
+```
 
 
 The Thread datatype stores the information of an individual thread: its name, history steps (to go back in time) and remaining program steps. 
