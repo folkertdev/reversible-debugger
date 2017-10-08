@@ -95,6 +95,14 @@ data BoolExp
     = AtomBool BoolValue
     | Operator BooleanOperator IntValue IntValue
     deriving (Show, Eq)
+
+
+renameVariableInBoolExp old new exp = 
+    case exp of 
+        AtomBool v@(BoolValue _) -> AtomBool v
+        AtomBool (BoolIdentifier ident) -> AtomBool $ BoolIdentifier $ if ident == old then new else ident
+        Operator op left right ->
+            Operator op (renameIntValue old new left) (renameIntValue old new right)
     
 
 
@@ -106,10 +114,7 @@ data IntExp
     | Multiply IntValue IntExp
     deriving (Show, Eq)
 
-
-renameVariableInIntExp old new intExp = 
-    let 
-        renameIntValue value =
+renameIntValue old new value =
             case value of
                 IntValue v -> 
                     IntValue v
@@ -119,13 +124,17 @@ renameVariableInIntExp old new intExp =
                         IntIdentifier new
                     else
                         value
-    in
+
+renameVariableInIntExp old new intExp = 
         case intExp of
-            AtomInt value -> AtomInt (renameIntValue value)
-            Add value expr -> Add (renameIntValue value) (renameVariableInIntExp old new expr)
-            Subtract value expr -> Subtract (renameIntValue value) (renameVariableInIntExp old new expr)
-            Divide value expr -> Divide (renameIntValue value) (renameVariableInIntExp old new expr)
-            Multiply value expr -> Multiply (renameIntValue value) (renameVariableInIntExp old new expr)
+            AtomInt value -> AtomInt (renameIntValue old new value)
+            Add value expr -> Add (renameIntValue old new value) (renameVariableInIntExp old new expr)
+            Subtract value expr -> Subtract (renameIntValue old new value) (renameVariableInIntExp old new expr)
+            Divide value expr -> Divide (renameIntValue old new value) (renameVariableInIntExp old new expr)
+            Multiply value expr -> Multiply (renameIntValue old new value) (renameVariableInIntExp old new expr)
+
+
+
 
 
 data IntValue 
@@ -155,15 +164,14 @@ renameVariable old new program =
                 Let name (renameVariableInValue old new value) (renameVariable old new continuation)
 
         If condition trueBody falseBody -> 
-            If condition (renameVariable old new trueBody) (renameVariable old new falseBody)
+            If (renameVariableInBoolExp old new condition) (renameVariable old new trueBody) (renameVariable old new falseBody)
 
         SpawnThread work ->
             SpawnThread (renameVariable old new work)
 
         Skip -> Skip
 
-
-        Assert condition -> Assert condition
+        Assert condition -> Assert (renameVariableInBoolExp old new condition)
 
         Apply f args -> 
             Apply (tagger f) (map tagger args)

@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Interpreter (forward, backward, rollVariable, rollThread, Interpreter.init, activeInactiveThreads, Task) where
+module Interpreter (Thread(..), Task(..),forward, backward, rollVariable, rollThread, Interpreter.init, activeInactiveThreads) where
 
 import Types
 import Parser
@@ -43,10 +43,10 @@ init program = do
 data Task a 
     = Singleton (Thread a)
     | Parallel (Thread a) (Map ThreadName (Task a))
-    deriving (Show)
+    deriving (Eq, Show)
 
 
-data Thread a = Thread ThreadName (List History) (List a) deriving (Show)
+data Thread a = Thread ThreadName (List History) (List a) deriving (Eq, Show)
 
 listThreads :: Task a -> List (Thread a)
 listThreads task = 
@@ -192,9 +192,13 @@ forward identifierRef bindings threadNames task =
             if Map.null children then do
                 result <- fthread parent
                 case result of 
-                    Left updated ->
+                    Step updated ->
                         return $ Parallel updated Map.empty
-                    Right (newParent, newChild@(Thread childName _ _)) ->
+
+                    Done updated ->
+                        return $ Parallel updated Map.empty
+
+                    Branched newParent (newChild@(Thread childName _ _)) ->
                         return $ Parallel newParent (Map.singleton childName $ Singleton newChild)
             else
                 let 
@@ -205,11 +209,15 @@ forward identifierRef bindings threadNames task =
                         else do
                             result <- liftIO $ runExceptT $ forward identifierRef bindings threadNames current
                             case result of
-                                Left e -> 
+                                Left e ->
                                     return (False, insertChildTask current accum)
 
                                 Right updated -> 
-                                    return (True, insertChildTask updated accum)
+                                    if updated /= current then 
+                                        return (True, insertChildTask updated accum)
+
+                                    else
+                                        return (False, insertChildTask current accum)
 
                     onBlockedOnReceive e =
                         case e of
@@ -222,14 +230,29 @@ forward identifierRef bindings threadNames task =
                             _ -> 
                                 throwE e
 
-                    helper :: Either (Thread Program) (Thread Program, Thread Program) -> Task Program
+                    helper :: Forward -> IOThrowsError (Task Program)
                     helper result = 
                         case result of
-                            Left v -> Parallel v children
-                            Right (a,b) -> Parallel a (insertChildTask (Singleton b) Map.empty)
+                            Done newParent -> do 
+                                -- if the parent is done, try to make
+                                -- progress in the children
+                                liftIO $ print "the parent is done"
+                                (progress, newChildren) <- foldrM (flip folder) (False, Map.empty) (Map.elems children)
+                                return $ Parallel newParent newChildren
+
+                            Step newParent -> 
+                                if newParent == parent then do
+                                    liftIO $ print "forward did nothing"
+                                    return $ Parallel newParent children
+                                else
+                                    return $ Parallel newParent children
+
+                            Branched a b -> 
+                                return $ Parallel a (insertChildTask (Singleton b) children) 
                                 
-                in
-                    fmap helper (fthread parent) `catchE` onBlockedOnReceive 
+                in do
+                    liftIO $ print "there are children"
+                    (helper =<< fthread parent) `catchE` onBlockedOnReceive 
 
         Singleton (Thread name history []) -> 
             return task 
@@ -237,18 +260,24 @@ forward identifierRef bindings threadNames task =
         Singleton thread@(Thread name history (program:rest)) -> do
             result <- fthread thread
             case result of 
-                Left updated ->
+                Step updated ->
                     return $ Singleton updated
-                Right (newParent, newChild) ->
+
+                Done  updated ->
+                    return $ Singleton updated
+
+                Branched newParent newChild ->
                     return $ Parallel newParent $ insertChildTask (Singleton newChild ) Map.empty
 
-forwardThread :: MVar Int -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Thread Program -> IOThrowsError (Either (Thread Program) (Thread Program, Thread Program)) 
-forwardThread identifierRef bindings threadNames thread@(Thread name history []) = return (Left thread) 
+data Forward = Step (Thread Program) | Branched (Thread Program) (Thread Program) | Done (Thread Program) deriving (Show)
+
+forwardThread :: MVar Int -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Thread Program -> IOThrowsError Forward 
+forwardThread identifierRef bindings threadNames thread@(Thread name history []) = return (Done thread) 
 forwardThread identifierRef bindings threadNames (Thread name history (program : rest)) = 
             let 
-                continue :: History -> List Program -> IOThrowsError (Either (Thread Program) (Thread Program, Thread Program))  
+                continue :: History -> List Program -> IOThrowsError Forward 
                 continue historyInstruction instructions = 
-                    return $ Left (Thread name (historyInstruction : history) instructions)
+                    return $ Step (Thread name (historyInstruction : history) instructions)
             in
             case program of
                 Skip ->
@@ -308,10 +337,9 @@ forwardThread identifierRef bindings threadNames (Thread name history (program :
 
                 SpawnThread work -> do
                     threadName <- liftIO $ freshThreadName threadNames name
-                    return $ Right 
-                        ( Thread name (SpawnedThread threadName : history) rest
-                        , Thread threadName [] [ work ]
-                        )
+                    return $ Branched 
+                        ( Thread name (SpawnedThread threadName : history) rest)
+                        ( Thread threadName [] [ work ])
 
                 Apply functionName arguments -> do
                     ( parameters, body ) <- lookupProcedure functionName bindings

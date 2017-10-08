@@ -2,24 +2,36 @@ module Parser (program) where
 
 import Types
 import Control.Applicative ((<*), liftA2, pure)
+import Data.List (intercalate)
 
 import Text.ParserCombinators.Parsec as Parsec
 
 program :: String -> Either ParseError Program
-program = Parsec.parse programParser ""
+program rawString = do 
+    withoutWhitespace <- Parsec.parse eatComments "" rawString
+    Parsec.parse programParser "" withoutWhitespace
+
+
 
 --- Parser
 --
-whitespaceOrComment = do
-    Parsec.spaces
-    (lineComment <|> pure ())
+whitespaceOrComment = 
     Parsec.spaces
 
-lineComment :: Parser ()
-lineComment = do
-    string "//"
-    manyTill anyChar (try (char '\n'))
-    return ()
+comment :: GenParser Char st ()
+comment =
+    (string "//" >> manyTill anyChar newline >> spaces >> return ()) <|>
+    (string "/*" >> manyTill anyChar (string "*/") >>  spaces >> return ())
+
+notComment = manyTill anyChar (lookAhead (comment <|> eof))
+
+eatComments :: GenParser Char st String
+eatComments = do
+  optional comment
+  xs <- sepBy notComment comment
+  optional comment
+  return $ intercalate "" xs
+
 
 eol :: GenParser Char st Char
 eol = char '\n'
@@ -113,23 +125,19 @@ functionApplicationParser = do
     return $ Apply functionName arguments
     
 
-programParser = 
-    let
-        
+programParser = do
+    whitespaceOrComment
+    choice 
+        [ try sequenceParser
+        , skipParser
+        , try letBinding
+        , try threadParser
+        , try sendParser
+        , try functionApplicationParser
+        , try ifThenElse
+        ]
+ 
 
-            
-    in
-        choice 
-            [ try sequenceParser
-            , skipParser
-            , try letBinding
-            , try threadParser
-            , try sendParser
-            , try functionApplicationParser
-            , try ifThenElse
-            ]
-     
-    
 identifierParser = do
     result <- fmap Identifier $ liftA2 (:) letter (many (letter <|> char '_'))
     whitespaceOrComment 
