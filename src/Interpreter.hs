@@ -2,6 +2,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Interpreter (Thread(..), Task(..),forward, backward, rollVariable, rollThread, Interpreter.init, activeInactiveThreads) where
 
+{-| The main body of code
+
+The interesting stuff happens in the backward and forward functions.
+
+-}
+
 import Types
 import Parser
 
@@ -23,6 +29,15 @@ import Control.Concurrent.Async as Async
 import Data.Maybe (fromMaybe)
 
 
+data Task a 
+    = Singleton (Thread a)
+    | Parallel (Thread a) (Map ThreadName (Task a))
+    deriving (Eq, Show)
+
+
+data Thread a = Thread ThreadName (List History) (List a) deriving (Eq, Show)
+
+
 withDefault :: a -> Maybe a -> a
 withDefault = 
     fromMaybe 
@@ -40,13 +55,6 @@ init program = do
         , Singleton $ Thread (ThreadName "t_0") [] [ program ]
         )
 
-data Task a 
-    = Singleton (Thread a)
-    | Parallel (Thread a) (Map ThreadName (Task a))
-    deriving (Eq, Show)
-
-
-data Thread a = Thread ThreadName (List History) (List a) deriving (Eq, Show)
 
 listThreads :: Task a -> List (Thread a)
 listThreads task = 
@@ -182,95 +190,109 @@ insertChildTask task =
         Parallel (Thread name _ _) _ -> 
             Map.insert name task
 
+
+folder :: (Task Program -> IOThrowsError (Task Program)) -> (Bool, Map ThreadName (Task Program)) -> Task Program -> IOThrowsError (Bool, Map ThreadName (Task Program))
+folder run ( hasSucceeded, accum) current =
+    if hasSucceeded then 
+        return ( True, insertChildTask current accum) 
+    else do
+        result <- liftIO $ runExceptT $ run current
+        case result of
+            Left e ->
+                -- evaluating the child throws an error, try with another child
+                return (False, insertChildTask current accum)
+
+            Right updated -> 
+                if updated /= current then 
+                    -- we've made one step of progres, that's enough
+                    return (True, insertChildTask updated accum)
+
+                else
+                    return (False, insertChildTask current accum)
+
+
+{-| Tries to forward a child. When one child has made progress, the rest is not evaluated further
+-}
+tryForwardChildren :: (Task Program -> IOThrowsError (Task Program)) -> Map ThreadName (Task Program) -> IOThrowsError ( Bool, Map ThreadName (Task Program)) 
+tryForwardChildren run children = 
+    foldrM (flip $ folder run) (False, Map.empty) (Map.elems children)
+
+
+handleBlockedOnReceive :: (Task Program -> IOThrowsError (Task Program)) -> Thread Program -> Map ThreadName (Task Program) -> Error -> IOThrowsError (Task Program)
+handleBlockedOnReceive run parent children e =
+    case e of
+        BlockedOnReceive _ -> do
+            (progress, newChildren) <- tryForwardChildren run children
+            if not progress then
+                -- none of the children can make progress so throw the original error
+                throwE e 
+
+            else
+                return $ Parallel parent newChildren
+
+        _ -> 
+            throwE e
+
+
+depthFirstEvaluate :: (Task Program -> IOThrowsError (Task Program)) -> Map ThreadName (Task Program) -> Forward -> IOThrowsError (Task Program)
+depthFirstEvaluate run children result = 
+    case result of
+        Done newParent -> do 
+            -- if the parent is done, try to make
+            -- progress in the children
+            (progress, newChildren) <- tryForwardChildren run children
+            return $ Parallel newParent newChildren
+
+        Step newParent -> 
+            return $ Parallel newParent children
+
+        Branched a b -> 
+            return $ Parallel a (insertChildTask (Singleton b) children) 
+
+
 {-| Evaluate a program one step forward -} 
 forward :: MVar Int -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Task Program -> IOThrowsError (Task Program)
 forward identifierRef bindings threadNames task = 
-    let fthread = forwardThread identifierRef bindings threadNames in
+    let 
+        fthread = forwardThread identifierRef bindings threadNames 
+    in
     case task of 
-            
         Parallel parent children -> 
-            if Map.null children then do
-                result <- fthread parent
-                case result of 
-                    Step updated ->
-                        return $ Parallel updated Map.empty
+            if Map.null children then
+                fmap forwardToTask (fthread parent)
 
-                    Done updated ->
-                        return $ Parallel updated Map.empty
-
-                    Branched newParent (newChild@(Thread childName _ _)) ->
-                        return $ Parallel newParent (Map.singleton childName $ Singleton newChild)
             else
                 let 
-                    -- folder :: (Bool, List (Task Program)) -> Task Program -> IOThrowsError (Bool, List (Task Program))
-                    folder ( hasSucceeded, accum) current =
-                        if hasSucceeded then 
-                            return ( True, insertChildTask current accum) 
-                        else do
-                            result <- liftIO $ runExceptT $ forward identifierRef bindings threadNames current
-                            case result of
-                                Left e ->
-                                    return (False, insertChildTask current accum)
-
-                                Right updated -> 
-                                    if updated /= current then 
-                                        return (True, insertChildTask updated accum)
-
-                                    else
-                                        return (False, insertChildTask current accum)
-
-                    onBlockedOnReceive e =
-                        case e of
-                            BlockedOnReceive _ -> do
-                                (progress, newChildren) <- foldrM (flip folder) (False, Map.empty) (Map.elems children)
-                                if not progress then
-                                    throwE e 
-                                else
-                                    return $ Parallel parent newChildren
-                            _ -> 
-                                throwE e
-
-                    helper :: Forward -> IOThrowsError (Task Program)
-                    helper result = 
-                        case result of
-                            Done newParent -> do 
-                                -- if the parent is done, try to make
-                                -- progress in the children
-                                liftIO $ print "the parent is done"
-                                (progress, newChildren) <- foldrM (flip folder) (False, Map.empty) (Map.elems children)
-                                return $ Parallel newParent newChildren
-
-                            Step newParent -> 
-                                if newParent == parent then do
-                                    liftIO $ print "forward did nothing"
-                                    return $ Parallel newParent children
-                                else
-                                    return $ Parallel newParent children
-
-                            Branched a b -> 
-                                return $ Parallel a (insertChildTask (Singleton b) children) 
-                                
-                in do
-                    liftIO $ print "there are children"
-                    (helper =<< fthread parent) `catchE` onBlockedOnReceive 
+                    run = forward identifierRef bindings threadNames
+                in 
+                    (depthFirstEvaluate run children =<< fthread parent) `catchE` handleBlockedOnReceive run parent children
 
         Singleton (Thread name history []) -> 
             return task 
 
-        Singleton thread@(Thread name history (program:rest)) -> do
-            result <- fthread thread
-            case result of 
-                Step updated ->
-                    return $ Singleton updated
+        Singleton thread@(Thread _ _ (_:_)) -> 
+            fmap forwardToTask (fthread thread)
 
-                Done  updated ->
-                    return $ Singleton updated
 
-                Branched newParent newChild ->
-                    return $ Parallel newParent $ insertChildTask (Singleton newChild ) Map.empty
+forwardToTask :: Forward -> Task Program
+forwardToTask result = 
+    case result of 
+        Step updated ->
+            Singleton updated
 
-data Forward = Step (Thread Program) | Branched (Thread Program) (Thread Program) | Done (Thread Program) deriving (Show)
+        Done  updated ->
+            Singleton updated
 
+        Branched newParent newChild ->
+            Parallel newParent $ insertChildTask (Singleton newChild ) Map.empty
+
+data Forward 
+    = Step (Thread Program) 
+    | Branched (Thread Program) (Thread Program) 
+    | Done (Thread Program) 
+    deriving (Show)
+
+{-| Move a thread one step forward -} 
 forwardThread :: MVar Int -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Thread Program -> IOThrowsError Forward 
 forwardThread identifierRef bindings threadNames thread@(Thread name history []) = return (Done thread) 
 forwardThread identifierRef bindings threadNames (Thread name history (program : rest)) = 
@@ -379,7 +401,7 @@ rollVariable name bindings threadNames task = do
             rollVariable name bindings threadNames =<< backward bindings threadNames task
 
 
- 
+{-| Revert a whole thread -} 
 rollThread :: ThreadName -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Task Program -> IOThrowsError (Task Program)
 rollThread threadName bindings threadNames task = 
     let 
@@ -415,7 +437,7 @@ rollThread threadName bindings threadNames task =
                 else
                     return task
         
-               
+
 backward :: MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Task Program -> IOThrowsError (Task Program)
 backward bindings threadNames task = 
     case task of
@@ -457,6 +479,7 @@ backward bindings threadNames task =
                     Parallel <$> backwardThread bindings threadNames parent <*> pure children
 
 
+{-| Move a thread one step backward -} 
 backwardThread :: MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Thread Program -> IOThrowsError (Thread Program)
 backwardThread bindings threadNames thread@(Thread name history program) =
     case history of
@@ -493,12 +516,10 @@ backwardThread bindings threadNames thread@(Thread name history program) =
                 ( CalledProcedure functionName arguments, body : Esc : restOfProgram ) ->
                     continue (Apply functionName arguments : restOfProgram)
 
-                -- undoing the send of a value requires to undo the receive of the same value, if performed and not yet undone
                 ( Sent channelName, restOfProgram ) -> do
                     -- reverse of send is receive
                     channel <- lookupChannel channelName bindings
-                    -- message <- liftIO $ readChan channel 
-                    message <- readChannelWithTimeout name channel 200 -- liftIO $ readChan channel
+                    message <- readChannelWithTimeout name channel 200 
 
                     continue $ Send channelName message : restOfProgram
 
@@ -518,6 +539,9 @@ backwardThread bindings threadNames thread@(Thread name history program) =
                 ( _, restOfProgram) ->
                     -- the program has a pattern incompatible with the history instruction we're currently matching
                     error $ show mostRecent ++ " encountered a pattern it cannot match: " ++ show restOfProgram 
+
+
+-- Helpers 
                         
 
 evalBoolExp :: MVar (Map.Map Identifier Value) -> BoolExp -> IOThrowsError Bool

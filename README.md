@@ -11,7 +11,9 @@ The semantics of the µOz abstract machine implemented here are detailed in this
 
 [A Reversible Abstract Machine and Its Space Overhead](http://www.cs.unibo.it/caredeb/vm-oz.pdf)
 
-# Parallel evaluation 
+## Implementation details 
+
+### Parallel evaluation 
 
 Haskell only has lightweight threads, wheras the original CaReDeb debugger uses java's "heavy" threads to perform computation in parallel. 
 
@@ -21,28 +23,28 @@ Rather than actually making threads, we can keep the programs branching/spawning
 ```haskell
 data Task a 
     = Singleton (Thread a)
-    | Parallel (Task a) (Task a)
+    | Parallel (Thread a) (Map ThreadName (Task a))
+
 
 data Thread a = Thread ThreadName (List History) (List a) 
 ```
 
+During debugging, we don't actually want concurrent/parallel execution. Rather, when we try to advance a thread that is waiting to receive something, we want a nice message. 
+Therefore it is probably possible to write a completely pure, deterministic interpreter. 
 
-The Thread datatype stores the information of an individual thread: its name, history steps (to go back in time) and remaining program steps. 
-The Task datatype encodes the branching structure of the program. The java implementation needs to keep separate accounts of the parent-child thread structure: this indirection can cause subtle bugs.
+The current implementation still relies on actual IO channels to setup communication between "threads".
 
-When a parallel Task needs to be evaluated, the two branches are each advanced in their own lightweight thread, then the result is merged back into the Task data structure living in the main thread.
-
-# Variable Scoping 
+### Variable Scoping 
 
 In the reference implementation, variables are stored globally and are thus available to all threads. I've kept that implementation for now, thereby going against Haskell principles. 
 To make the state global, the variable bindings are stored in an MVar, a reference to a mutable piece of state that is passed into each thread to do its computation with. 
 
-The MVar type has built-in locking, preventing concurrent updates (which could cause race conditions). 
-
 A better solution would be to give each thread its own set of variable bindings. 
 
-# Caching of previous states 
+## Installing and running 
 
-My current implementation builds strictly on the reverse semantics. The reference implementation uses some caching to quickly get back to earlier program states, but I think 
-this is a premature optimization: the language is pretty simple, and even reversing many steps should take very little time. 
+This project uses [stack](https://docs.haskellstack.org/en/stable/README/) as the build tool and for dependency management. Once installed, the program can be run with
 
+```sh
+stack build && stack exec reversible-debugger -- send_receive.txt
+```
