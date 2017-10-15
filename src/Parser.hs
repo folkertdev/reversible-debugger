@@ -6,6 +6,8 @@ import Data.List (intercalate)
 
 import Text.ParserCombinators.Parsec as Parsec
 
+import Queue
+
 program :: String -> Either ParseError Program
 program rawString = do 
     withoutWhitespace <- Parsec.parse eatComments "" rawString
@@ -38,8 +40,9 @@ eol = char '\n'
 
 letBinding :: Parser Program
 letBinding = do
-    string "let"
-    whitespaceOrComment 
+    try $ do 
+        string "let"
+        whitespaceOrComment 
     name <- identifierParser
     whitespaceOrComment 
     char '='
@@ -49,14 +52,13 @@ letBinding = do
     string "in"
     whitespaceOrComment 
     continuation <- programParser
-    whitespaceOrComment 
-    string "end"
-    whitespaceOrComment 
+    end
     return $ Let name value continuation
 
 ifThenElse = do
-    string "if"
-    whitespaceOrComment
+    try $ do
+        string "if"
+        whitespaceOrComment
     condition <- boolExpParser
     whitespaceOrComment
     string "then"
@@ -66,27 +68,54 @@ ifThenElse = do
     string "else"
     whitespaceOrComment
     falseBody <- programParser
-    whitespaceOrComment
-    string "end"
-    whitespaceOrComment
+    end
     return $ If condition trueBody falseBody
 
-sequenceParser :: Parser Program
-sequenceParser = do
-            a <- choice 
-                [ skipParser  
-                , try letBinding
-                , try threadParser
-                , try sendParser
-                , try functionApplicationParser
-                , try ifThenElse
-                ] 
-            whitespaceOrComment 
+assertParser = do
+    try $ string "assert"
+    whitespaceOrComment
+    condition <- boolExpParser
+    whitespaceOrComment
+    return $ Assert condition
+
+
+programParser = do
+    whitespaceOrComment
+    statements <- parseStatements
+    case statements of 
+        [] -> error "no statements parsed, but the parser succeeded?" 
+        (x:xs) -> return $ foldl Sequence x xs
+
+
+
+
+parseStatements = do
+    leftArgument <- choice 
+        [ skipParser  
+        , letBinding
+        , threadParser
+        , sendParser
+        , functionApplicationParser
+        , ifThenElse
+        , assertParser
+        ] 
+    whitespaceOrComment 
+
+    let recursive = do
+            whitespaceOrComment
             char ';'
-            whitespaceOrComment 
-            b <- programParser
-            whitespaceOrComment 
-            return $ Sequence a b
+            whitespaceOrComment
+            rest <- parseStatements
+            return $ leftArgument : rest
+
+
+    try recursive <|> return [ leftArgument ] 
+
+end :: Parser ()
+end = do
+    whitespaceOrComment  
+    string "end"
+    whitespaceOrComment 
 
 skipParser :: Parser Program
 skipParser = do
@@ -96,7 +125,7 @@ skipParser = do
 
 sendParser :: Parser Program
 sendParser = do
-            string "{send "
+            try $ string "{send "
             id1 <- identifierParser
             whitespaceOrComment 
             value <- identifierParser 
@@ -106,12 +135,10 @@ sendParser = do
 
 threadParser :: Parser Program
 threadParser = do
-            string "thread"
+            try $ string "thread"
             whitespaceOrComment  
             work <- programParser
-            whitespaceOrComment  
-            string "end"
-            whitespaceOrComment 
+            end
             return $ SpawnThread work
 
 functionApplicationParser = do
@@ -125,21 +152,10 @@ functionApplicationParser = do
     return $ Apply functionName arguments
     
 
-programParser = do
-    whitespaceOrComment
-    choice 
-        [ try sequenceParser
-        , skipParser
-        , try letBinding
-        , try threadParser
-        , try sendParser
-        , try functionApplicationParser
-        , try ifThenElse
-        ]
  
 
 identifierParser = do
-    result <- fmap Identifier $ liftA2 (:) letter (many (letter <|> char '_'))
+    result <- Identifier <$> liftA2 (:) letter (many (letter <|> char '_'))
     whitespaceOrComment 
     return result
 
@@ -157,7 +173,7 @@ valueParser =
             return VFalse
 
         receiveParser = do
-            string "{receive"
+            try $ string "{receive"
             whitespaceOrComment 
             name <- identifierParser
             char '}'
@@ -166,46 +182,43 @@ valueParser =
 
         portParser = do
             string "port"
-            return $ Port Nothing
-        intExpValue = do
+            return Port 
+
+        intExpValue = 
             fmap VInt intExpParser
 
         
 
     in
-        -- trueParser <|> falseParser <|> receiveParser <|> procedureParser <|> portParser <|> intExpValue
         choice 
             [ trueParser
             , falseParser
-            , try $ receiveParser
-            , try $ procedureParser
-            , try $ portParser
-            , try $ intExpValue
+            , receiveParser
+            , procedureParser
+            , portParser
+            , intExpValue
             ] 
 
 procedureParser :: Parser Value            
 procedureParser = do
-            string "proc"
+            try $ string "proc"
             whitespaceOrComment 
             char '{'
             whitespaceOrComment 
-            arguments <- var_list
+            arguments <- varList
             whitespaceOrComment 
             char '}'
             whitespaceOrComment 
             body <- programParser
-            whitespaceOrComment 
-            string "end"
-            whitespaceOrComment 
+            end
             return $ Procedure arguments body
 
 
 
-var_list = 
+varList = 
     let go = do
             spaces 
-            result <- identifierParser
-            return result
+            identifierParser
 
     in
         liftA2 (:) identifierParser (many go)
@@ -253,7 +266,6 @@ intExpParser =
 
 operator :: (IntValue -> IntExp -> IntExp) -> Char -> Parser IntExp
 operator f opChar = do
-    spaces
     a <- intValueParser
     spaces
     char opChar
@@ -265,7 +277,7 @@ operator f opChar = do
 
 intValueParser :: Parser IntValue
 intValueParser = do
-    result <- fmap IntIdentifier identifierParser <|> (fmap (IntValue . read) $ many1 digit)
+    result <- fmap IntIdentifier identifierParser <|> fmap (IntValue . read) (many1 digit)
     spaces
     return result
 

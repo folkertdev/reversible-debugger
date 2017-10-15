@@ -8,6 +8,7 @@ import Types
 
 import Control.Monad
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
+import Control.Monad.Trans.State.Lazy as State 
 import Control.Monad.Trans (liftIO)
 import Control.Concurrent.MVar 
 import qualified Data.Map as Map
@@ -32,14 +33,15 @@ main = runInterpreter
 
 repeatedApplication n x = foldl (>=>) return $ replicate n x
 
-test = do
+run :: Context -> MonadInterpreter a -> IO (Context, a)
+run context computation = 
+    case runStateT computation context of
+        Left e -> do
+            print $ show context 
+            error (show e)
 
-    print x
-    ( identifierRef, bindings, threadNames, task) <- Interpreter.init Skip
-
-    stepped <- runExceptT $ repeatedApplication 30 (forward identifierRef bindings threadNames) x
-
-    print stepped
+        Right (a, s) -> 
+            return (s, a)
 
 runInterpreter :: IO () 
 runInterpreter = do
@@ -51,45 +53,44 @@ runInterpreter = do
         Left error ->
             print error
         Right program -> do
-            ( identifierRef, bindings, threadNames, task) <- Interpreter.init program 
+            let ( context, task) = Interpreter.init program 
 
 
             let 
-                interactive :: Task Program -> IOThrowsError ()
-                interactive currentTask = do
-                    liftIO $ print $ activeInactiveThreads currentTask
-                    liftIO $ print currentTask
-                    command <- liftIO getLine
+                interactive :: Context -> Task Program -> IO Context
+                interactive context currentTask = do
+                    print $ activeInactiveThreads currentTask
+                    print currentTask
+                    command <- getLine
                     case words command of 
                         [ "x" ] ->
                             -- exit
-                            return ()
+                            return context
 
                         [ "f" ] -> 
-                            interactive =<< forward identifierRef bindings threadNames currentTask
+                            uncurry interactive =<< run context (forward currentTask)
 
                         [ "ff" ] -> 
-                            interactive =<< repeatedApplication 10 (forward identifierRef bindings threadNames) currentTask
+                            uncurry interactive =<< run context (repeatedApplication 10 forward currentTask)
 
                         [ "fthread", var ] -> 
-                            interactive =<< forward identifierRef bindings threadNames currentTask
-
+                            uncurry interactive =<< run context (forward currentTask)
 
                         [ "b" ] -> 
-                            interactive =<< backward bindings threadNames currentTask
+                            uncurry interactive =<< run context (backward currentTask)
 
                         [ "rollvariable", var ] ->
-                            interactive =<< rollVariable (Identifier var) bindings threadNames currentTask
+                            uncurry interactive =<< run context (rollVariable (Identifier var) currentTask)
 
                         [ "rollthread", var ] ->
-                            interactive =<< rollThread (ThreadName var) bindings threadNames currentTask
+                            uncurry interactive =<< run context (rollThread (ThreadName var) currentTask)
 
                         other -> do
                             liftIO $ print $ "unknown command: " ++ show other
-                            interactive currentTask
+                            interactive context currentTask
                             
 
-            result <- runExceptT $ interactive task
+            result <- interactive context task
             print result
 
 

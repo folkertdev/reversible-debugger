@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Interpreter (Thread(..), Task(..),forward, backward, rollVariable, rollThread, Interpreter.init, activeInactiveThreads) where
+module Interpreter (Thread(..), Task(..), Context, MonadInterpreter, forward, backward, rollVariable, rollThread, Interpreter.init, activeInactiveThreads) where
 
 {-| The main body of code
 
@@ -10,23 +10,39 @@ The interesting stuff happens in the backward and forward functions.
 
 import Types
 import Parser
+import qualified Queue
 
 import qualified Data.Map as Map 
 import Data.Map (Map)
-import Control.Concurrent.Chan
-import Control.Concurrent (forkIO, myThreadId, ThreadId, killThread)
-import Data.IORef
-import Control.Concurrent.MVar 
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
+import Control.Monad.Trans.State as State 
 import Control.Monad.Trans (liftIO)
 import Control.Applicative (Applicative, liftA2, pure, (<*))
 import Control.Monad
 import qualified Control.Exception as Exception (catch, BlockedIndefinitelyOnMVar)
 import qualified System.Timeout
-import Text.ParserCombinators.Parsec as Parsec
+import qualified Text.ParserCombinators.Parsec as Parsec
 import Data.Foldable (Foldable, foldrM)
 import Control.Concurrent.Async as Async
 import Data.Maybe (fromMaybe)
+import Queue
+import Data.Semigroup
+
+
+data Context = 
+    Context 
+        { _threads :: Map ThreadName Int
+        , variableCount :: Int
+        , _bindings :: Map Identifier Value
+        , _channels :: Map Identifier (Queue Identifier)
+        }
+        deriving (Show, Eq)
+
+
+type MonadInterpreter a = State.StateT Context (Either Error) a
+
+throw :: Error -> StateT s (Either Error) a
+throw error = State.StateT (\s -> Left error)
 
 
 data Task a 
@@ -42,18 +58,11 @@ withDefault :: a -> Maybe a -> a
 withDefault = 
     fromMaybe 
 
-init :: Program -> IO (MVar Int, MVar (Map.Map Identifier Value), MVar (Map ThreadName Int),  Task Program)
-init program = do
-    bindings <- newMVar Map.empty
-    identifierRef <- newMVar 0
-    threadNameRef <- newMVar $ Map.singleton (ThreadName "t_0") 0
-
-    return  
-        ( identifierRef
-        , bindings
-        , threadNameRef
-        , Singleton $ Thread (ThreadName "t_0") [] [ program ]
-        )
+init :: Program -> (Context,  Task Program)
+init program = 
+    ( Context (Map.singleton (ThreadName "t_0") 0) 0 Map.empty Map.empty
+    , Singleton $ Thread (ThreadName "t_0") [] [ program ]
+    )
 
 
 listThreads :: Task a -> List (Thread a)
@@ -81,17 +90,21 @@ activeInactiveThreads =
 
 
 {-| Generate a guaranteed unused (fresh) new identifier -}
-freshIdentifier :: MVar Int -> IO Identifier  
-freshIdentifier ref = do
-    new <- modifyMVar ref (\v -> return (v + 1, v + 1))
+freshIdentifier :: MonadInterpreter Identifier
+freshIdentifier = do
+    context <- State.get
+    let new = 1 + variableCount context
+    put (context { variableCount = new } )
     return $ Identifier $ "var" ++ show new
 
-freshThreadName :: MVar (Map.Map ThreadName Int) -> ThreadName -> IO ThreadName
-freshThreadName usedThreadNamesRef parentName@(ThreadName parent) = do
-    usedThreadNames <- readMVar usedThreadNamesRef
+
+freshThreadName :: ThreadName -> MonadInterpreter ThreadName
+freshThreadName parentName@(ThreadName parent) = do
+    context <- State.get
+    let usedThreadNames = _threads context  
     case Map.lookup parentName usedThreadNames of
         Nothing -> 
-            error "thread name without parent"
+            throw $ RuntimeException "thread name without parent"
 
         Just childCount -> do
             let 
@@ -101,58 +114,86 @@ freshThreadName usedThreadNamesRef parentName@(ThreadName parent) = do
                 updater = 
                     Map.adjust (+ 1) parentName . Map.insert childName 0 
 
-            modifyMVar_ usedThreadNamesRef (return . updater) 
+            State.put (context { _threads =  updater usedThreadNames }) 
             return childName
-            
-
-insertVariable :: Identifier -> Value -> MVar (Map.Map Identifier Value) -> IOThrowsError ()
-insertVariable identifier value ref = 
-    liftIO $ modifyMVar_ ref (return . Map.insert identifier value)
 
 
-removeVariable :: Identifier -> MVar (Map.Map Identifier Value) -> IOThrowsError ()
-removeVariable identifier ref = 
-    liftIO $ modifyMVar_ ref (return . Map.delete identifier)
+insertVariable :: Identifier -> Value -> MonadInterpreter () 
+insertVariable identifier value = 
+    State.modify $ \context -> 
+        let 
+            newBindings = Map.insert identifier value (_bindings context)
+        in
+            context { _bindings = newBindings } 
+
+
+removeVariable :: Identifier -> MonadInterpreter ()  
+removeVariable identifier = 
+    State.modify $ \context -> 
+        let 
+            newBindings = Map.delete identifier (_bindings context)
+        in
+            context { _bindings = newBindings } 
 
 
 {-| Get the value for an identifier from the global scope
 
 throws an Error when the identifier is not defined
 -} 
-lookupVariable :: Identifier -> MVar (Map.Map Identifier Value) -> IOThrowsError Value
-lookupVariable identifier ref = do
-    map <- liftIO $ readMVar ref
+lookupVariable :: Identifier -> MonadInterpreter Value
+lookupVariable identifier = do
+    map <- _bindings <$> State.get
     case Map.lookup identifier map of
         Nothing ->
-            throwE (UndefinedVariable identifier)
+            throw (UndefinedVariable identifier)
 
         Just v ->
             return v
 
+withChannel :: Identifier -> (Queue.Queue Identifier -> MonadInterpreter a) -> MonadInterpreter a
+withChannel identifier tagger = do
+    channel <- Map.lookup identifier . _channels <$> State.get 
+    case channel of 
+        Just queue -> 
+            tagger queue
 
-lookupChannel  :: Identifier -> MVar (Map.Map Identifier Value) -> IOThrowsError (Chan Identifier)
-lookupChannel identifier ref = do
-    value <- lookupVariable identifier ref
-    case value of
-        Port (Just channel) ->
-            return channel
+        Nothing ->
+            throw $ UndefinedChannel identifier
 
-        Port Nothing ->
-            throwE $ UninitializedChannel identifier
-
-        _ ->
-            throwE $ TypeError identifier "I expected a Port but instead got" value
+mapChannel :: Identifier -> (Queue.Queue Identifier -> Queue.Queue Identifier) -> MonadInterpreter ()
+mapChannel identifier tagger = 
+    State.modify $ \context ->
+        context { _channels = Map.adjust tagger identifier (_channels context) } 
 
 
-lookupProcedure  :: Identifier -> MVar (Map.Map Identifier Value) -> IOThrowsError (List Identifier, Program) 
-lookupProcedure identifier ref = do
-    value <- lookupVariable identifier ref
+
+readChannel :: ThreadName -> Identifier -> MonadInterpreter Identifier
+readChannel threadName identifier = 
+    withChannel identifier $ \queue ->
+        case Queue.pop queue of
+            Just ( first, rest ) -> do 
+                -- put the rest of the queue back into the context
+                mapChannel identifier (\_ -> rest)
+                return first
+
+            Nothing ->
+                throw $ BlockedOnReceive threadName  
+
+
+writeChannel :: ThreadName -> Identifier -> Identifier -> MonadInterpreter ()  
+writeChannel threadName identifier payload = 
+    mapChannel identifier (Queue.push payload)
+
+
+lookupProcedure  :: Identifier -> MonadInterpreter (List Identifier, Program) 
+lookupProcedure identifier = do
+    value <- lookupVariable identifier
     case value of
         Procedure arguments body -> 
             return (arguments, body)
 
         _ ->
-            throwE $ TypeError identifier "I expected a Procedure but instead got" value
+            throw $ TypeError identifier "I expected a Procedure but instead got" value
 
 
 {-| Puts an either into an ExceptT context: Left throws an error, Right
@@ -160,25 +201,6 @@ continues the program
 -} 
 embedEither :: Monad m => Either e a  -> ExceptT e m a
 embedEither v = ExceptT (return v)
-
-
-readChannelWithTimeout :: ThreadName ->  Chan a -> Int -> IOThrowsError a
-readChannelWithTimeout thread channel duration = 
-    let 
-        body :: Exception.BlockedIndefinitelyOnMVar -> IO (Either Error a)
-        body _ = return $ Left $ BlockedOnReceive thread 
-
-        withTimeout = do
-            result <- System.Timeout.timeout duration (readChan channel)
-            case result of
-                Just r ->
-                    return $ Right r
-
-                Nothing ->
-                    return $ Left $ BlockedOnReceive thread 
-    in do
-        result <- liftIO $ Exception.catch withTimeout body 
-        embedEither result
 
 
 insertChildTask :: Task a -> Map ThreadName (Task a) -> Map ThreadName (Task a)
@@ -191,18 +213,22 @@ insertChildTask task =
             Map.insert name task
 
 
-folder :: (Task Program -> IOThrowsError (Task Program)) -> (Bool, Map ThreadName (Task Program)) -> Task Program -> IOThrowsError (Bool, Map ThreadName (Task Program))
-folder run ( hasSucceeded, accum) current =
+-- Move (Forward (Thread Program)) 
+
+folder :: Task Program -> (Bool, Map ThreadName (Task Program)) -> MonadInterpreter (Bool, Map ThreadName (Task Program))
+folder current ( hasSucceeded, accum) =
     if hasSucceeded then 
         return ( True, insertChildTask current accum) 
     else do
-        result <- liftIO $ runExceptT $ run current
+        context <- State.get
+        let result = runStateT (forward current) context
         case result of
             Left e ->
                 -- evaluating the child throws an error, try with another child
                 return (False, insertChildTask current accum)
 
-            Right updated -> 
+            Right (updated, newContext) -> do
+                put newContext
                 if updated /= current then 
                     -- we've made one step of progres, that's enough
                     return (True, insertChildTask updated accum)
@@ -213,68 +239,80 @@ folder run ( hasSucceeded, accum) current =
 
 {-| Tries to forward a child. When one child has made progress, the rest is not evaluated further
 -}
-tryForwardChildren :: (Task Program -> IOThrowsError (Task Program)) -> Map ThreadName (Task Program) -> IOThrowsError ( Bool, Map ThreadName (Task Program)) 
-tryForwardChildren run children = 
-    foldrM (flip $ folder run) (False, Map.empty) (Map.elems children)
+tryForwardChildren :: Map ThreadName (Task Program) -> MonadInterpreter ( Bool, Map ThreadName (Task Program)) 
+tryForwardChildren children = 
+    foldrM folder (False, Map.empty) (Map.elems children)
 
 
-handleBlockedOnReceive :: (Task Program -> IOThrowsError (Task Program)) -> Thread Program -> Map ThreadName (Task Program) -> Error -> IOThrowsError (Task Program)
-handleBlockedOnReceive run parent children e =
+handleBlockedOnReceive ::  Thread Program -> Map ThreadName (Task Program) -> Error -> MonadInterpreter (Task Program)
+handleBlockedOnReceive parent children e =
+    -- the parent is blocked on a receive. Let's try whether its children can make progress
+    -- thereby hopefully fixing the blocking
     case e of
         BlockedOnReceive _ -> do
-            (progress, newChildren) <- tryForwardChildren run children
+            (progress, newChildren) <- tryForwardChildren children
             if not progress then
                 -- none of the children can make progress so throw the original error
-                throwE e 
+                throw e 
 
             else
                 return $ Parallel parent newChildren
 
         _ -> 
-            throwE e
+            throw e
 
 
-depthFirstEvaluate :: (Task Program -> IOThrowsError (Task Program)) -> Map ThreadName (Task Program) -> Forward -> IOThrowsError (Task Program)
-depthFirstEvaluate run children result = 
+depthFirstEvaluate :: Map ThreadName (Task Program) -> Forward (Thread Program) -> MonadInterpreter (Task Program)
+depthFirstEvaluate children result = 
     case result of
         Done newParent -> do 
             -- if the parent is done, try to make
             -- progress in the children
-            (progress, newChildren) <- tryForwardChildren run children
+            (progress, newChildren) <- tryForwardChildren children
             return $ Parallel newParent newChildren
 
         Step newParent -> 
+            -- the parent made progress, don't look at the children
             return $ Parallel newParent children
 
         Branched a b -> 
+            -- the parent made progress, don't look at the children
             return $ Parallel a (insertChildTask (Singleton b) children) 
 
 
 {-| Evaluate a program one step forward -} 
-forward :: MVar Int -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Task Program -> IOThrowsError (Task Program)
-forward identifierRef bindings threadNames task = 
-    let 
-        fthread = forwardThread identifierRef bindings threadNames 
-    in
+forward :: Task Program -> MonadInterpreter (Task Program)
+forward task = 
     case task of 
         Parallel parent children -> 
             if Map.null children then
-                fmap forwardToTask (fthread parent)
+                fmap forwardToTask (forwardThread parent)
 
             else
-                let 
-                    run = forward identifierRef bindings threadNames
-                in 
-                    (depthFirstEvaluate run children =<< fthread parent) `catchE` handleBlockedOnReceive run parent children
+                (depthFirstEvaluate children =<< forwardThread parent) `catch` handleBlockedOnReceive parent children
 
         Singleton (Thread name history []) -> 
             return task 
 
         Singleton thread@(Thread _ _ (_:_)) -> 
-            fmap forwardToTask (fthread thread)
+            fmap forwardToTask (forwardThread thread)
 
 
-forwardToTask :: Forward -> Task Program
+catch :: MonadInterpreter a -> (Error -> MonadInterpreter a) -> MonadInterpreter a
+catch tryBlock handler = do
+    context <- State.get
+    case runStateT tryBlock context of
+        Right ( value, newContext ) -> do
+            put newContext
+            return value
+
+        Left error -> 
+            handler error
+
+
+
+
+forwardToTask :: Forward (Thread Program) -> Task Program
 forwardToTask result = 
     case result of 
         Step updated ->
@@ -286,18 +324,24 @@ forwardToTask result =
         Branched newParent newChild ->
             Parallel newParent $ insertChildTask (Singleton newChild ) Map.empty
 
-data Forward 
-    = Step (Thread Program) 
-    | Branched (Thread Program) (Thread Program) 
-    | Done (Thread Program) 
+data Forward a  
+    = Step a 
+    | Branched a a
+    | Done a 
     deriving (Show)
 
+
 {-| Move a thread one step forward -} 
-forwardThread :: MVar Int -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Thread Program -> IOThrowsError Forward 
-forwardThread identifierRef bindings threadNames thread@(Thread name history []) = return (Done thread) 
-forwardThread identifierRef bindings threadNames (Thread name history (program : rest)) = 
+forwardThread :: Thread Program -> MonadInterpreter (Forward (Thread Program)) 
+forwardThread thread = 
+    case thread of 
+        Thread _ _ [] -> 
+            -- the thread contains no further instructions
+            return $ Done thread
+
+        Thread name history (program : rest) -> 
             let 
-                continue :: History -> List Program -> IOThrowsError Forward 
+                continue :: History -> List Program -> MonadInterpreter (Forward (Thread Program)) 
                 continue historyInstruction instructions = 
                     return $ Step (Thread name (historyInstruction : history) instructions)
             in
@@ -306,143 +350,92 @@ forwardThread identifierRef bindings threadNames (Thread name history (program :
                     continue Skipped rest 
 
                 Sequence a b ->
+                    -- add Esc markers to retrieve the branches when reversing
                     continue Composed (a:Esc:b:Esc:rest)
 
                 Let identifier value continuation -> do
-                    freshName <- liftIO $ freshIdentifier identifierRef
+                    freshName <- freshIdentifier 
                     (historyInstruction, newName) <- 
                         case value of
                             Receive channelName -> do 
-                                channel <- lookupChannel channelName bindings
-                                message <- readChannelWithTimeout name channel 200 -- liftIO $ readChan channel
+                                message <- readChannel name channelName 
                                 return (Received channelName freshName, message)
 
-                            Port Nothing -> do 
-                                channel <- liftIO newChan
-                                insertVariable freshName (Port (Just channel)) bindings
-                                return (CreatedVariable freshName, freshName)
+                            Port -> do
+                                State.modify $ \context -> 
+                                    let 
+                                        newChannels = Map.insert freshName Queue.empty (_channels context)
+                                    in
+                                        context { _channels = newChannels } 
+
+                                return (CreatedChannel freshName, freshName)
 
                             Procedure arguments body -> do
-                                -- rename the function name itself in the
-                                -- body, for recursive functions
+                                -- rename the function name itself in the body, for recursive functions
                                 let renamedBody = 
                                         if identifier `notElem` arguments then
                                             renameVariable identifier freshName body
                                         else
                                             body
 
-                                insertVariable freshName (Procedure arguments renamedBody) bindings
+                                insertVariable freshName (Procedure arguments renamedBody) 
                                 return (CreatedVariable freshName, freshName)
                                 
 
                             _ -> do
-                                insertVariable freshName value bindings
+                                insertVariable freshName value 
                                 return (CreatedVariable freshName, freshName)
 
                     continue historyInstruction $
                         renameVariable identifier newName continuation : Esc : rest
 
                 If condition trueBody falseBody -> do
-                    verdict <- evalBoolExp bindings condition 
+                    verdict <- evalBoolExp condition 
                     if verdict then
                         continue (BranchedOn condition True falseBody) (trueBody : Esc : rest)
                     else
                         continue (BranchedOn condition False trueBody) (falseBody : Esc : rest)
 
                 Assert condition -> do
-                    verdict <- evalBoolExp bindings condition 
+                    verdict <- evalBoolExp condition 
                     if not verdict then
-                        throwE $ AssertionError condition
+                        throw $ AssertionError condition
                     else
                         continue (AssertedOn condition) rest
 
 
                 SpawnThread work -> do
-                    threadName <- liftIO $ freshThreadName threadNames name
+                    threadName <- freshThreadName name
                     return $ Branched 
                         ( Thread name (SpawnedThread threadName : history) rest)
                         ( Thread threadName [] [ work ])
 
                 Apply functionName arguments -> do
-                    ( parameters, body ) <- lookupProcedure functionName bindings
-
-                    let folder (from, to) = 
-                            renameVariable from to 
-
-                        withRenamedVariables = 
-                            foldr folder body (zip parameters arguments)
-
-                    continue (CalledProcedure functionName arguments) (withRenamedVariables : Esc : rest)
+                    ( parameters, body ) <- lookupProcedure functionName 
+                    if length arguments /= length parameters then
+                        throw $ ArgumentMismatch functionName (length parameters) (length arguments) 
+                    else 
+                        let
+                            withRenamedVariables = 
+                                    foldr (uncurry renameVariable) body (zip parameters arguments)
+                        in
+                            continue (CalledProcedure functionName arguments) (withRenamedVariables : Esc : rest)
                                 
                 Send channelName variable -> do
-                    channel <- lookupChannel channelName bindings
-
-                    liftIO $ writeChan channel variable
-
+                    writeChannel name channelName variable 
                     continue (Sent channelName) rest
 
                 Esc ->
                     continue HistoryEsc rest
 
 
-{-| Revert the program state before the creation of the given variable -}
-rollVariable :: Identifier -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Task Program -> IOThrowsError (Task Program)
-rollVariable name bindings threadNames task = do 
-    lookupVariable name bindings -- will throw if the name does not exist
-    case task of
-        Singleton (Thread _ (CreatedVariable identifier : restOfHistory) program) ->
-            if name == identifier then  
-                backward bindings threadNames task
+-- Move Backward
 
-            else
-                rollVariable name bindings threadNames =<< backward bindings threadNames task
-
-        _ ->
-            rollVariable name bindings threadNames =<< backward bindings threadNames task
-
-
-{-| Revert a whole thread -} 
-rollThread :: ThreadName -> MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Task Program -> IOThrowsError (Task Program)
-rollThread threadName bindings threadNames task = 
-    let 
-        recurse task = 
-            rollThread threadName bindings threadNames =<< backward bindings threadNames task
-
-
-    in do
-
-    exists <- Map.member threadName <$> liftIO (readMVar threadNames)
-    if not exists then
-        throwE $ UndefinedThread threadName
-    else
-        case task of
-            Parallel parent child ->
-                recurse task 
-
-            Singleton (Thread _ [] _) ->
-                return task
-
-            Singleton (Thread parentName (SpawnedThread spawnedName : restOfHistory) parentProgram) -> 
-                if spawnedName == threadName then
-                    -- undo the spawning, the rest is undone
-                    backward bindings threadNames task
-
-                else
-                    recurse task
-
-            Singleton (Thread name history program) ->
-                if name == threadName then
-                    -- this is the thread we want to unroll
-                    recurse task
-                else
-                    return task
-        
-
-backward :: MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Task Program -> IOThrowsError (Task Program)
-backward bindings threadNames task = 
+backward :: Task Program -> MonadInterpreter (Task Program)
+backward task = 
     case task of
         Singleton thread ->
-            Singleton <$> backwardThread bindings threadNames thread            
+            Singleton <$> backwardThread thread            
 
         Parallel parent children ->
             case parent of
@@ -454,11 +447,12 @@ backward bindings threadNames task =
 
                         Just (Singleton (Thread childName [] threadBody)) -> do
                             -- child is already completely rolled 
-                            let 
-                                updater = 
-                                    Map.adjust (\v -> v - 1 :: Int) parentName . Map.delete childName
+                            State.modify $ \context -> 
+                                let 
+                                    newThreads = Map.adjust (\v -> v - 1 :: Int) parentName $ Map.delete childName (_threads context)
+                                in
+                                    context { _threads = newThreads } 
 
-                            liftIO $ modifyMVar_ threadNames (return . updater)  
                             case threadBody of
                                 [x] -> 
                                     return $ Singleton $ Thread parentName restOfHistory $ SpawnThread x : program 
@@ -469,19 +463,19 @@ backward bindings threadNames task =
                             
 
                         Just task -> do
-                            updatedChild <- backward bindings threadNames task
+                            updatedChild <- backward task
                             return $ Parallel parent (Map.adjust (\_ -> updatedChild) spawnedName children)
 
-                _ -> do
+                _ -> 
                     -- reverse the parent thread, keeping the children constant
-                    liftIO $ print "parallel is not a spawn, so rolling parent"
-                    liftIO $ print task
-                    Parallel <$> backwardThread bindings threadNames parent <*> pure children
+                    -- liftIO $ print "parallel is not a spawn, so rolling parent"
+                    -- liftIO $ print task
+                    Parallel <$> backwardThread parent <*> pure children
 
 
 {-| Move a thread one step backward -} 
-backwardThread :: MVar (Map Identifier Value) -> MVar (Map ThreadName Int) -> Thread Program -> IOThrowsError (Thread Program)
-backwardThread bindings threadNames thread@(Thread name history program) =
+backwardThread :: Thread Program -> MonadInterpreter (Thread Program)
+backwardThread thread@(Thread name history program) =
     case history of
         [] -> 
             -- do nothing
@@ -489,7 +483,7 @@ backwardThread bindings threadNames thread@(Thread name history program) =
         
         ( mostRecent : restOfHistory ) ->
             let 
-                continue :: List Program -> IOThrowsError (Thread Program)
+                continue :: List Program -> MonadInterpreter (Thread Program)
                 continue = return . Thread name restOfHistory 
             in
             case (mostRecent, program) of
@@ -500,9 +494,15 @@ backwardThread bindings threadNames thread@(Thread name history program) =
                     continue (Sequence first second : restOfProgram)
 
                 ( CreatedVariable identifier, continuation : Esc : restOfProgram ) -> do
-                    value <- lookupVariable identifier bindings
-                    removeVariable identifier bindings
+                    value <- lookupVariable identifier 
+                    removeVariable identifier 
                     continue (Let identifier value continuation : restOfProgram )
+
+                ( CreatedChannel identifier, continuation : Esc : restOfProgram ) -> do
+                    State.modify $ \context -> 
+                        context { _channels = Map.delete identifier (_channels context) } 
+
+                    continue (Let identifier Port continuation : restOfProgram )
 
                 ( BranchedOn condition True falseBody, trueBody : Esc : restOfProgram ) ->
                     continue (If condition trueBody falseBody : restOfProgram)
@@ -518,18 +518,16 @@ backwardThread bindings threadNames thread@(Thread name history program) =
 
                 ( Sent channelName, restOfProgram ) -> do
                     -- reverse of send is receive
-                    channel <- lookupChannel channelName bindings
-                    message <- readChannelWithTimeout name channel 200 
+                    message <- readChannel name channelName 
 
                     continue $ Send channelName message : restOfProgram
 
                 ( Received channelName valueName, continuation : Esc : restOfProgram ) -> do
                     -- reverse of receive is send
-                    channel <- lookupChannel channelName bindings
-                    liftIO $ writeChan channel valueName
+                    writeChannel name channelName valueName 
 
                     -- unbind the variable
-                    removeVariable valueName bindings
+                    removeVariable valueName 
 
                     continue $ Let valueName (Receive channelName) continuation : restOfProgram 
 
@@ -541,11 +539,61 @@ backwardThread bindings threadNames thread@(Thread name history program) =
                     error $ show mostRecent ++ " encountered a pattern it cannot match: " ++ show restOfProgram 
 
 
+-- Rolls 
+
+{-| Revert the program state before the creation of the given variable -}
+rollVariable :: Identifier -> Task Program -> MonadInterpreter (Task Program)
+rollVariable name task = do 
+    lookupVariable name -- will throw if the name does not exist
+    case task of
+        Singleton (Thread _ (CreatedVariable identifier : restOfHistory) program) ->
+            if name == identifier then  
+                backward task
+
+            else
+                rollVariable name =<< backward task
+
+        _ ->
+            rollVariable name =<< backward task
+
+
+{-| Revert a whole thread -} 
+rollThread :: ThreadName -> Task Program -> MonadInterpreter (Task Program)
+rollThread threadName task = do
+    let recurse task = rollThread threadName =<< backward task 
+
+    exists <- Map.member threadName . _threads <$> State.get
+    if not exists then
+        throw $ UndefinedThread threadName
+    else
+        case task of
+            Parallel parent child ->
+                recurse task 
+
+            Singleton (Thread _ [] _) ->
+                return task
+
+            Singleton (Thread parentName (SpawnedThread spawnedName : restOfHistory) parentProgram) -> 
+                if spawnedName == threadName then
+                    -- undo the spawning, the rest is undone
+                    backward task
+
+                else
+                    recurse task
+
+            Singleton (Thread name history program) ->
+                if name == threadName then
+                    -- this is the thread we want to unroll
+                    recurse task
+                else
+                    return task
+
+
 -- Helpers 
                         
 
-evalBoolExp :: MVar (Map.Map Identifier Value) -> BoolExp -> IOThrowsError Bool
-evalBoolExp environment expression = 
+evalBoolExp :: BoolExp -> MonadInterpreter Bool 
+evalBoolExp expression = 
     let
         toFunction operator =
             case operator of
@@ -566,22 +614,22 @@ evalBoolExp environment expression =
     in
         case expression of 
             AtomBool bool -> 
-                evalBoolValue environment bool
+                evalBoolValue bool
 
             Operator op a b -> 
-                liftA2 (toFunction op) (evalIntValue environment a) (evalIntValue environment b)
+                liftA2 (toFunction op) (evalIntValue a) (evalIntValue b)
 
 
-evalIntExp :: MVar (Map.Map Identifier Value) -> IntExp -> IOThrowsError Int
-evalIntExp environment expression = 
+evalIntExp :: IntExp -> MonadInterpreter Int 
+evalIntExp expression = 
     let evalOperator f a b = do
-            x <- evalIntValue environment a
-            y <- evalIntExp environment b
+            x <- evalIntValue  a
+            y <- evalIntExp  b
             return $ f x y
     in
         case expression of 
             AtomInt int -> 
-                evalIntValue environment int 
+                evalIntValue int 
 
             Add a b ->
                 evalOperator (+) a b
@@ -596,30 +644,30 @@ evalIntExp environment expression =
                 evalOperator div a b
 
 
-evalIntValue :: MVar (Map.Map Identifier Value) -> IntValue -> IOThrowsError Int
-evalIntValue bindings value =
+evalIntValue :: IntValue -> MonadInterpreter Int
+evalIntValue value =
     case value of
         IntValue int -> 
             return int
 
         IntIdentifier reference -> do
-            dereferenced <- lookupVariable reference bindings 
+            dereferenced <- lookupVariable reference 
             case dereferenced of
                 VInt intExpr ->
-                    evalIntExp bindings intExpr
+                    evalIntExp intExpr
 
                 _ ->
-                    throwE $ TypeError reference "I expected an IntExpr but got" dereferenced
+                    throw $ TypeError reference "I expected an IntExpr but got" dereferenced
 
              
-evalBoolValue :: MVar (Map.Map Identifier Value) -> BoolValue -> IOThrowsError Bool
-evalBoolValue bindings value = 
+evalBoolValue :: BoolValue -> MonadInterpreter Bool
+evalBoolValue value = 
     case value of
         BoolValue bool -> 
             return bool
 
         BoolIdentifier identifier -> do
-            value <- lookupVariable identifier bindings
+            value <- lookupVariable identifier 
             case value of 
                 VTrue -> 
                     return True
@@ -628,4 +676,4 @@ evalBoolValue bindings value =
                     return False
 
                 other -> 
-                    throwE $ TypeError identifier "I expected a boolean value but got" other
+                    throw $ TypeError identifier "I expected a boolean value but got" other

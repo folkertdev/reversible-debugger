@@ -15,16 +15,47 @@ import Control.Concurrent (forkIO, ThreadId)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, takeMVar, tryPutMVar)
 import Data.IORef
 
+import Queue
+
 type IOThrowsError a = ExceptT Error IO a
 
 data Error
     = UndefinedVariable Identifier
     | UndefinedThread ThreadName
-    | UninitializedChannel Identifier
+    | UndefinedChannel Identifier
     | TypeError Identifier String Value
     | AssertionError BoolExp
     | BlockedOnReceive ThreadName 
-    deriving (Show)
+    | RuntimeException String
+    | ArgumentMismatch Identifier Int Int
+    deriving (Eq)
+
+instance Show Error where
+    show e = 
+        case e of
+            UndefinedVariable (Identifier name) -> 
+                "Variable `" ++ name ++ "` is undefined"
+
+            UndefinedThread (ThreadName name) ->
+                "Thread `" ++ name ++ "` is undefined"
+
+            UndefinedChannel (Identifier name) ->
+                "Channel `" ++ name ++ "` is undefined"
+
+            TypeError (Identifier name) expected actual -> 
+                "Type mismatch: I expect value `" ++ name ++ "` to be of type " ++ expected ++ ", but it is " ++ show actual 
+
+            AssertionError expression -> 
+                "The assertion `" ++ show expression ++ "` evaluated to False"
+
+            BlockedOnReceive (ThreadName name) -> 
+                "Thread `" ++ name ++ "` is blocked on a receive"
+
+            RuntimeException message -> 
+                "Something went wrong: " ++ message
+
+            ArgumentMismatch (Identifier name) expected actual -> 
+                "Function `" ++ name ++ "` expects " ++ show expected ++ " arguments, but got " ++ show actual
 
 type List = []
 
@@ -58,6 +89,7 @@ data History
     | Sent Identifier
     | Received Identifier Identifier
     | CreatedVariable Identifier
+    | CreatedChannel Identifier
     | CalledProcedure Identifier (List Identifier)
     | SpawnedThread ThreadName
     | BranchedOn BoolExp Bool Program 
@@ -72,13 +104,9 @@ data Value
     | VFalse
     | Receive Identifier
     | Procedure (List Identifier) Program 
-    | Port (Maybe (Chan Identifier))
+    | Port 
     | VInt IntExp
     deriving (Show, Eq)
-
-instance Show (Chan a) where show _ = "Channel"
-
-
 
 data BoolValue = BoolValue Bool | BoolIdentifier Identifier deriving (Show, Eq) 
 
@@ -197,7 +225,7 @@ renameVariableInValue old new value =
             else
                 Procedure arguments $ renameVariable old new body
 
-        Port v -> Port v
+        Port -> Port
 
         VInt ie -> 
             VInt $ renameVariableInIntExp old new ie 
