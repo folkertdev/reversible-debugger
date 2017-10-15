@@ -16,6 +16,7 @@ cabal-version:       >=1.10
 library 
   hs-source-dirs:      src
   exposed-modules:     Types, Parser, Interpreter
+  other-modules:       Queue 
   build-depends:       base >= 4.7 && < 5
                      , transformers
                      , mtl
@@ -42,6 +43,15 @@ executable reversible-debugger
 
   default-language:    Haskell2010
 
+test-suite reversible-debugger-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , reversible-debugger
+                     , hspec 
+                     , QuickCheck
+                     , transformers
 
 
 source-repository head
