@@ -1,0 +1,5 @@
+let z = true in
+
+thread skip; skip; skip end;
+skip
+end
