@@ -86,7 +86,7 @@ data Program
 data History 
     = Skipped
     | Composed 
-    | Sent Identifier
+    | Sent Identifier Identifier
     | Received Identifier Identifier
     | CreatedVariable Identifier
     | CreatedChannel Identifier

@@ -132,8 +132,9 @@ removeVariable identifier =
     State.modify $ \context -> 
         let 
             newBindings = Map.delete identifier (_bindings context)
+            
         in
-            context { _bindings = newBindings } 
+            context { _bindings = newBindings, variableCount = (variableCount context) - 1 } 
 
 
 {-| Get the value for an identifier from the global scope
@@ -350,8 +351,7 @@ forwardThread thread =
                     continue Skipped rest 
 
                 Sequence a b ->
-                    -- add Esc markers to retrieve the branches when reversing
-                    continue Composed (a:Esc:b:Esc:rest)
+                    continue Composed (a:b:rest)
 
                 Let identifier value continuation -> do
                     freshName <- freshIdentifier 
@@ -387,14 +387,14 @@ forwardThread thread =
                                 return (CreatedVariable freshName, freshName)
 
                     continue historyInstruction $
-                        renameVariable identifier newName continuation : Esc : rest
+                        renameVariable identifier newName continuation : rest
 
                 If condition trueBody falseBody -> do
                     verdict <- evalBoolExp condition 
                     if verdict then
-                        continue (BranchedOn condition True falseBody) (trueBody : Esc : rest)
+                        continue (BranchedOn condition True falseBody) (trueBody : rest)
                     else
-                        continue (BranchedOn condition False trueBody) (falseBody : Esc : rest)
+                        continue (BranchedOn condition False trueBody) (falseBody : rest)
 
                 Assert condition -> do
                     verdict <- evalBoolExp condition 
@@ -419,14 +419,12 @@ forwardThread thread =
                             withRenamedVariables = 
                                     foldr (uncurry renameVariable) body (zip parameters arguments)
                         in
-                            continue (CalledProcedure functionName arguments) (withRenamedVariables : Esc : rest)
+                            continue (CalledProcedure functionName arguments) (withRenamedVariables : rest)
                                 
                 Send channelName variable -> do
                     writeChannel name channelName variable 
-                    continue (Sent channelName) rest
+                    continue (Sent channelName variable) rest
 
-                Esc ->
-                    continue HistoryEsc rest
 
 
 -- Move Backward
@@ -490,39 +488,41 @@ backwardThread thread@(Thread name history program) =
                 ( Skipped, restOfProgram ) ->
                     continue (Skip : program)
 
-                ( Composed, first : Esc : second : Esc : restOfProgram ) ->
+                ( Composed, first:second:restOfProgram ) ->
                     continue (Sequence first second : restOfProgram)
 
-                ( CreatedVariable identifier, continuation : Esc : restOfProgram ) -> do
+                ( CreatedVariable identifier, continuation : restOfProgram ) -> do
                     value <- lookupVariable identifier 
                     removeVariable identifier 
                     continue (Let identifier value continuation : restOfProgram )
 
-                ( CreatedChannel identifier, continuation : Esc : restOfProgram ) -> do
+                ( CreatedChannel identifier, continuation : restOfProgram ) -> do
                     State.modify $ \context -> 
-                        context { _channels = Map.delete identifier (_channels context) } 
+                        context { _channels = Map.delete identifier (_channels context) 
+                                , variableCount = (variableCount context) - 1
+                                } 
 
                     continue (Let identifier Port continuation : restOfProgram )
 
-                ( BranchedOn condition True falseBody, trueBody : Esc : restOfProgram ) ->
+                ( BranchedOn condition True falseBody, trueBody : restOfProgram ) ->
                     continue (If condition trueBody falseBody : restOfProgram)
                     
-                ( BranchedOn condition False trueBody, falseBody : Esc : restOfProgram ) ->
+                ( BranchedOn condition False trueBody, falseBody : restOfProgram ) ->
                     continue (If condition trueBody falseBody : restOfProgram)
 
                 ( AssertedOn condition, restOfProgram ) ->
                     continue (Assert condition : restOfProgram)
 
-                ( CalledProcedure functionName arguments, body : Esc : restOfProgram ) ->
+                ( CalledProcedure functionName arguments, body : restOfProgram ) ->
                     continue (Apply functionName arguments : restOfProgram)
 
-                ( Sent channelName, restOfProgram ) -> do
+                ( Sent channelName valueName, restOfProgram ) -> do
                     -- reverse of send is receive
                     message <- readChannel name channelName 
 
-                    continue $ Send channelName message : restOfProgram
+                    continue $ Send channelName valueName : restOfProgram
 
-                ( Received channelName valueName, continuation : Esc : restOfProgram ) -> do
+                ( Received channelName valueName, continuation : restOfProgram ) -> do
                     -- reverse of receive is send
                     writeChannel name channelName valueName 
 
@@ -531,9 +531,6 @@ backwardThread thread@(Thread name history program) =
 
                     continue $ Let valueName (Receive channelName) continuation : restOfProgram 
 
-                ( HistoryEsc, restOfProgram ) ->
-                    continue $ Esc : restOfProgram
-                    
                 ( _, restOfProgram) ->
                     -- the program has a pattern incompatible with the history instruction we're currently matching
                     error $ show mostRecent ++ " encountered a pattern it cannot match: " ++ show restOfProgram 
