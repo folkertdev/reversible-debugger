@@ -255,29 +255,25 @@ Additionally, haskell's purity guides good design.
 
 On an abstract level, the implemenations don't differ that much 
 
-pros
+The main benefit of this implementation is that **everything is data**. 
 
-* everything is data  
-    No threads are spawned, no real channels used: everything is data
+* we don't have to spawn threads, nor continually check that the current thread has enough memory available
+* the complete state of the debugger can be dumped at any time
+* the debugger state can be reliable serialized
+* we can easily analize the debugger state
 
+Additionally, haskell has union types (also called sum types or tagged unions).  
+In this case, union types allow us to express the µOz AST structure in 10 lines instead of 10 files. 
+When we do a pattern match on our program, the compiler will check that our patterns are exhaustive.
 
-* union types 
-    Makes is so that the µOz AST structure can be 10 lines instead of 10 files. The compiler will also check that all cases have been handled.
+The use of a union type mitigates the need for dynamic casting, which the java version has to do a lot.
 
-* pure
-    An added benefit is that the interpreter can't mutate the outside world by accident. 
+Finally, union types can be used to guarantee that failure cases are handled. Lookup in a key-value map can fail, 
+and instead of throwing an exception, haskell gives back a `Maybe a`. To access the `a`, the failure case (the key is missing) must be handled.
 
-* guaranteed error handling
-    For instance in 
+### Cons
 
-* abstracting away control flow 
+* I had to write my own parser
 
-    The java code has to check very often whether the current thread is out of memory, has to do dynamic casts, and repeatedly checks that values are valid. 
-    The Haskell code doesn't have to deal with 1, uses union types to make 2 safe, and also uses types to ensure values are always valid and failures are always handled.
-cons
-
-
-* Parser
-    The Java implementation uses a parser generator, I had to write one on my own 
 
 
