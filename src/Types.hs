@@ -78,7 +78,6 @@ data Program
     | Apply Identifier (List Identifier)
     | Send Identifier Identifier
     | Assert BoolExp
-    | Esc
     deriving (Show, Eq)
 
          
@@ -94,7 +93,6 @@ data History
     | SpawnedThread ThreadName
     | BranchedOn BoolExp Bool Program 
     | AssertedOn BoolExp
-    | HistoryEsc
     deriving (Show, Eq)
 
 
