@@ -109,11 +109,12 @@ To move our program forward, we can go through the tree, and find the first thre
 * its list of instructions is not empty and 
 * it is not blocked on a receive.
 
-This logic is implemented in [`forward`][] and its helpers
-
 ## Moving Backwards
 
-Because we know exactly 
+We introduce a type that keeps track of which instruction is evaluated and with what elements.
+Because we know exactly what instructions produce each history instruction, we can reverse the execution
+
+> Caveat: In actual systems it might not be possible to construct the exact reverse of an action.
 
 The history type is defined as: 
 
@@ -149,6 +150,7 @@ First of all on a per-thread level:
 
 We have to pattern match both on the history instruction, and the remainder of the program. 
 
+There is some extra logic that will first roll back a child thread before its spawning instruction is rolled back. 
 
 ## State Management
 
@@ -221,7 +223,7 @@ Sending and receiving is essentially pushing and popping off a queue. A bit of e
 The undefined channel error (produced in `withChannel`) will bubble up, `BlockedOnReceive` might get caught higher up and trigger evaluation of other threads. 
 
 ```haskell
-readChannel :: ThreadName -> Identifier -> MonadInterpreter Identifier
+readChannel :: ThreadName -> Identifier -> Interpreter Identifier
 readChannel threadName identifier = 
     withChannel identifier $ \queue ->
         case Queue.pop queue of
@@ -234,7 +236,7 @@ readChannel threadName identifier =
                 throw $ BlockedOnReceive threadName  
 
 
-writeChannel :: ThreadName -> Identifier -> Identifier -> MonadInterpreter ()  
+writeChannel :: ThreadName -> Identifier -> Identifier -> Interpreter ()  
 writeChannel threadName identifier payload = 
     mapChannel identifier (Queue.push payload)
 ```
@@ -242,6 +244,7 @@ writeChannel threadName identifier payload =
 
 ## Tradeoffs 
 
+### Pros
 
 On an abstract level, the implemenations don't differ that much.
 The main benefit of this implementation is that **everything is data**. 
@@ -255,7 +258,8 @@ Additionally, haskell has union types (also called sum types or tagged unions).
 In this case, union types allow us to express the µOz AST structure in 10 lines instead of 10 files. 
 When we do a pattern match on our program, the compiler will check that our patterns are exhaustive.
 
-The use of a union type mitigates the need for dynamic casting, which the java version has to do a lot.
+The use of a union type mitigates the need for dynamic casting. The java version uses an enum to store the exact type of an instruction, 
+The instruction then has to be dynamically cast to the type that the enum value says it should have. This is inherently unsafe and annoying.
 
 Finally, union types can be used to guarantee that failure cases are handled. Lookup in a key-value map can fail, 
 and instead of throwing an exception, haskell gives back a `Maybe a`. To access the `a`, the failure case (the key is missing) must be handled.
