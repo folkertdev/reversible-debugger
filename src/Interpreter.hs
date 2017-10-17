@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Interpreter (Thread(..), Task(..), Context, MonadInterpreter, forward, backward, rollVariable, rollThread, Interpreter.init, activeInactiveThreads) where
+module Interpreter (Thread(..), Task(..), Context, Interpreter, forward, backward, rollVariable, rollThread, Interpreter.init, activeInactiveThreads) where
 
 {-| The main body of code
 
@@ -16,17 +16,10 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
 import Control.Monad.Trans.State as State 
-import Control.Monad.Trans (liftIO)
 import Control.Applicative (Applicative, liftA2, pure, (<*))
 import Control.Monad
-import qualified Control.Exception as Exception (catch, BlockedIndefinitelyOnMVar)
-import qualified System.Timeout
-import qualified Text.ParserCombinators.Parsec as Parsec
 import Data.Foldable (Foldable, foldrM)
-import Control.Concurrent.Async as Async
 import Data.Maybe (fromMaybe)
-import Queue
-import Data.Semigroup
 
 
 data Context = 
@@ -34,12 +27,12 @@ data Context =
         { _threads :: Map ThreadName Int
         , variableCount :: Int
         , _bindings :: Map Identifier Value
-        , _channels :: Map Identifier (Queue Identifier)
+        , _channels :: Map Identifier (Queue.Queue Identifier)
         }
         deriving (Show, Eq)
 
 
-type MonadInterpreter a = State.StateT Context (Either Error) a
+type Interpreter a = State.StateT Context (Either Error) a
 
 throw :: Error -> StateT s (Either Error) a
 throw error = State.StateT (\s -> Left error)
@@ -90,7 +83,7 @@ activeInactiveThreads =
 
 
 {-| Generate a guaranteed unused (fresh) new identifier -}
-freshIdentifier :: MonadInterpreter Identifier
+freshIdentifier :: Interpreter Identifier
 freshIdentifier = do
     context <- State.get
     let new = 1 + variableCount context
@@ -98,7 +91,7 @@ freshIdentifier = do
     return $ Identifier $ "var" ++ show new
 
 
-freshThreadName :: ThreadName -> MonadInterpreter ThreadName
+freshThreadName :: ThreadName -> Interpreter ThreadName
 freshThreadName parentName@(ThreadName parent) = do
     context <- State.get
     let usedThreadNames = _threads context  
@@ -118,7 +111,7 @@ freshThreadName parentName@(ThreadName parent) = do
             return childName
 
 
-insertVariable :: Identifier -> Value -> MonadInterpreter () 
+insertVariable :: Identifier -> Value -> Interpreter () 
 insertVariable identifier value = 
     State.modify $ \context -> 
         let 
@@ -127,7 +120,7 @@ insertVariable identifier value =
             context { _bindings = newBindings } 
 
 
-removeVariable :: Identifier -> MonadInterpreter ()  
+removeVariable :: Identifier -> Interpreter ()  
 removeVariable identifier = 
     State.modify $ \context -> 
         let 
@@ -141,7 +134,7 @@ removeVariable identifier =
 
 throws an Error when the identifier is not defined
 -} 
-lookupVariable :: Identifier -> MonadInterpreter Value
+lookupVariable :: Identifier -> Interpreter Value
 lookupVariable identifier = do
     map <- _bindings <$> State.get
     case Map.lookup identifier map of
@@ -151,7 +144,7 @@ lookupVariable identifier = do
         Just v ->
             return v
 
-withChannel :: Identifier -> (Queue.Queue Identifier -> MonadInterpreter a) -> MonadInterpreter a
+withChannel :: Identifier -> (Queue.Queue Identifier -> Interpreter a) -> Interpreter a
 withChannel identifier tagger = do
     channel <- Map.lookup identifier . _channels <$> State.get 
     case channel of 
@@ -161,14 +154,14 @@ withChannel identifier tagger = do
         Nothing ->
             throw $ UndefinedChannel identifier
 
-mapChannel :: Identifier -> (Queue.Queue Identifier -> Queue.Queue Identifier) -> MonadInterpreter ()
+mapChannel :: Identifier -> (Queue.Queue Identifier -> Queue.Queue Identifier) -> Interpreter ()
 mapChannel identifier tagger = 
     State.modify $ \context ->
         context { _channels = Map.adjust tagger identifier (_channels context) } 
 
 
 
-readChannel :: ThreadName -> Identifier -> MonadInterpreter Identifier
+readChannel :: ThreadName -> Identifier -> Interpreter Identifier
 readChannel threadName identifier = 
     withChannel identifier $ \queue ->
         case Queue.pop queue of
@@ -181,12 +174,12 @@ readChannel threadName identifier =
                 throw $ BlockedOnReceive threadName  
 
 
-writeChannel :: ThreadName -> Identifier -> Identifier -> MonadInterpreter ()  
+writeChannel :: ThreadName -> Identifier -> Identifier -> Interpreter ()  
 writeChannel threadName identifier payload = 
     mapChannel identifier (Queue.push payload)
 
 
-lookupProcedure  :: Identifier -> MonadInterpreter (List Identifier, Program) 
+lookupProcedure  :: Identifier -> Interpreter (List Identifier, Program) 
 lookupProcedure identifier = do
     value <- lookupVariable identifier
     case value of
@@ -216,7 +209,7 @@ insertChildTask task =
 
 -- Move (Forward (Thread Program)) 
 
-folder :: Task Program -> (Bool, Map ThreadName (Task Program)) -> MonadInterpreter (Bool, Map ThreadName (Task Program))
+folder :: Task Program -> (Bool, Map ThreadName (Task Program)) -> Interpreter (Bool, Map ThreadName (Task Program))
 folder current ( hasSucceeded, accum) =
     if hasSucceeded then 
         return ( True, insertChildTask current accum) 
@@ -240,12 +233,12 @@ folder current ( hasSucceeded, accum) =
 
 {-| Tries to forward a child. When one child has made progress, the rest is not evaluated further
 -}
-tryForwardChildren :: Map ThreadName (Task Program) -> MonadInterpreter ( Bool, Map ThreadName (Task Program)) 
+tryForwardChildren :: Map ThreadName (Task Program) -> Interpreter ( Bool, Map ThreadName (Task Program)) 
 tryForwardChildren children = 
     foldrM folder (False, Map.empty) (Map.elems children)
 
 
-handleBlockedOnReceive ::  Thread Program -> Map ThreadName (Task Program) -> Error -> MonadInterpreter (Task Program)
+handleBlockedOnReceive ::  Thread Program -> Map ThreadName (Task Program) -> Error -> Interpreter (Task Program)
 handleBlockedOnReceive parent children e =
     -- the parent is blocked on a receive. Let's try whether its children can make progress
     -- thereby hopefully fixing the blocking
@@ -263,7 +256,7 @@ handleBlockedOnReceive parent children e =
             throw e
 
 
-depthFirstEvaluate :: Map ThreadName (Task Program) -> Forward (Thread Program) -> MonadInterpreter (Task Program)
+depthFirstEvaluate :: Map ThreadName (Task Program) -> Forward (Thread Program) -> Interpreter (Task Program)
 depthFirstEvaluate children result = 
     case result of
         Done newParent -> do 
@@ -282,7 +275,7 @@ depthFirstEvaluate children result =
 
 
 {-| Evaluate a program one step forward -} 
-forward :: Task Program -> MonadInterpreter (Task Program)
+forward :: Task Program -> Interpreter (Task Program)
 forward task = 
     case task of 
         Parallel parent children -> 
@@ -299,7 +292,7 @@ forward task =
             fmap forwardToTask (forwardThread thread)
 
 
-catch :: MonadInterpreter a -> (Error -> MonadInterpreter a) -> MonadInterpreter a
+catch :: Interpreter a -> (Error -> Interpreter a) -> Interpreter a
 catch tryBlock handler = do
     context <- State.get
     case runStateT tryBlock context of
@@ -333,7 +326,7 @@ data Forward a
 
 
 {-| Move a thread one step forward -} 
-forwardThread :: Thread Program -> MonadInterpreter (Forward (Thread Program)) 
+forwardThread :: Thread Program -> Interpreter (Forward (Thread Program)) 
 forwardThread thread = 
     case thread of 
         Thread _ _ [] -> 
@@ -342,7 +335,7 @@ forwardThread thread =
 
         Thread name history (program : rest) -> 
             let 
-                continue :: History -> List Program -> MonadInterpreter (Forward (Thread Program)) 
+                continue :: History -> List Program -> Interpreter (Forward (Thread Program)) 
                 continue historyInstruction instructions = 
                     return $ Step (Thread name (historyInstruction : history) instructions)
             in
@@ -429,7 +422,7 @@ forwardThread thread =
 
 -- Move Backward
 
-backward :: Task Program -> MonadInterpreter (Task Program)
+backward :: Task Program -> Interpreter (Task Program)
 backward task = 
     case task of
         Singleton thread ->
@@ -472,7 +465,7 @@ backward task =
 
 
 {-| Move a thread one step backward -} 
-backwardThread :: Thread Program -> MonadInterpreter (Thread Program)
+backwardThread :: Thread Program -> Interpreter (Thread Program)
 backwardThread thread@(Thread name history program) =
     case history of
         [] -> 
@@ -481,7 +474,7 @@ backwardThread thread@(Thread name history program) =
         
         ( mostRecent : restOfHistory ) ->
             let 
-                continue :: List Program -> MonadInterpreter (Thread Program)
+                continue :: List Program -> Interpreter (Thread Program)
                 continue = return . Thread name restOfHistory 
             in
             case (mostRecent, program) of
@@ -539,7 +532,7 @@ backwardThread thread@(Thread name history program) =
 -- Rolls 
 
 {-| Revert the program state before the creation of the given variable -}
-rollVariable :: Identifier -> Task Program -> MonadInterpreter (Task Program)
+rollVariable :: Identifier -> Task Program -> Interpreter (Task Program)
 rollVariable name task = do 
     lookupVariable name -- will throw if the name does not exist
     case task of
@@ -555,7 +548,7 @@ rollVariable name task = do
 
 
 {-| Revert a whole thread -} 
-rollThread :: ThreadName -> Task Program -> MonadInterpreter (Task Program)
+rollThread :: ThreadName -> Task Program -> Interpreter (Task Program)
 rollThread threadName task = do
     let recurse task = rollThread threadName =<< backward task 
 
@@ -589,7 +582,7 @@ rollThread threadName task = do
 -- Helpers 
                         
 
-evalBoolExp :: BoolExp -> MonadInterpreter Bool 
+evalBoolExp :: BoolExp -> Interpreter Bool 
 evalBoolExp expression = 
     let
         toFunction operator =
@@ -617,7 +610,7 @@ evalBoolExp expression =
                 liftA2 (toFunction op) (evalIntValue a) (evalIntValue b)
 
 
-evalIntExp :: IntExp -> MonadInterpreter Int 
+evalIntExp :: IntExp -> Interpreter Int 
 evalIntExp expression = 
     let evalOperator f a b = do
             x <- evalIntValue  a
@@ -641,7 +634,7 @@ evalIntExp expression =
                 evalOperator div a b
 
 
-evalIntValue :: IntValue -> MonadInterpreter Int
+evalIntValue :: IntValue -> Interpreter Int
 evalIntValue value =
     case value of
         IntValue int -> 
@@ -657,7 +650,7 @@ evalIntValue value =
                     throw $ TypeError reference "I expected an IntExpr but got" dereferenced
 
              
-evalBoolValue :: BoolValue -> MonadInterpreter Bool
+evalBoolValue :: BoolValue -> Interpreter Bool
 evalBoolValue value = 
     case value of
         BoolValue bool -> 

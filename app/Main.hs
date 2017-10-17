@@ -20,7 +20,7 @@ main = runInterpreter
 
 repeatedApplication n x = foldl (>=>) return $ replicate n x
 
-run :: Context -> MonadInterpreter a -> IO (Context, a)
+run :: Context -> Interpreter a -> IO (Context, a)
 run context computation = 
     case runStateT computation context of
         Left e -> do
