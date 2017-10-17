@@ -38,7 +38,6 @@ data Program
     | Apply Identifier (List Identifier)
     | Send Identifier Identifier
     | Assert BoolExp
-    | Esc
 ```
 
 Where `Identifier` is a wrapper around string, and `Value` is defined by 
@@ -74,14 +73,11 @@ This function is called `forwardThread`. Here is a short snippet:
         let withRenamedVariables = 
                 foldr (uncurry renameVariable) body (zip parameters arguments)
 
-        continue (CalledProcedure functionName arguments) (withRenamedVariables : Esc : rest)
+        continue (CalledProcedure functionName arguments) (withRenamedVariables : rest)
                     
     Send channelName variable -> do
         writeChannel name channelName variable 
-        continue (Sent channelName) rest
-
-    Esc ->
-        continue HistoryEsc rest
+        continue (Sent channelName variable) rest
 ```
 
 The function pattern matches on the next instruction, and for each instruction defines some modification to 
@@ -125,7 +121,7 @@ The history type is defined as:
 data History 
     = Skipped
     | Composed 
-    | Sent Identifier
+    | Sent Identifier Identifier
     | Received Identifier Identifier
     | CreatedVariable Identifier
     | CreatedChannel Identifier
@@ -133,7 +129,6 @@ data History
     | SpawnedThread ThreadName
     | BranchedOn BoolExp Bool Program 
     | AssertedOn BoolExp
-    | HistoryEsc
 ```
 
 With the stack of history instructions that forward evaluation produces, we can undo every instruction in the instruction set.
@@ -143,10 +138,10 @@ First of all on a per-thread level:
     ( Skipped, restOfProgram ) ->
         continue (Skip : program)
 
-    ( Composed, first : Esc : second : Esc : restOfProgram ) ->
+    ( Composed, first : second : restOfProgram ) ->
         continue (Sequence first second : restOfProgram)
 
-    ( CreatedVariable identifier, continuation : Esc : restOfProgram ) -> do
+    ( CreatedVariable identifier, continuation : restOfProgram ) -> do
         value <- lookupVariable identifier 
         removeVariable identifier 
         continue (Let identifier value continuation : restOfProgram )
@@ -247,20 +242,14 @@ writeChannel threadName identifier payload =
 
 ## Tradeoffs 
 
-I personally feel that Haskell as a language is much better suited for writing this kind of tools than the mainstream imperative languages. 
-Features like union types and pattern matching make implementing compilers and interpreters so much easier. 
 
-Additionally, haskell's purity guides good design. 
-
-
-On an abstract level, the implemenations don't differ that much 
-
+On an abstract level, the implemenations don't differ that much.
 The main benefit of this implementation is that **everything is data**. 
 
 * we don't have to spawn threads, nor continually check that the current thread has enough memory available
 * the complete state of the debugger can be dumped at any time
-* the debugger state can be reliable serialized
-* we can easily analize the debugger state
+* the debugger state can be reliably serialized
+* we can easily analyze the debugger state
 
 Additionally, haskell has union types (also called sum types or tagged unions).  
 In this case, union types allow us to express the µOz AST structure in 10 lines instead of 10 files. 
