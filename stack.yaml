@@ -42,4 +42,4 @@ extra-deps:
 - transformers-compat-0.5.1.4
 - unordered-containers-0.2.8.0
 - void-0.7.2
-resolver: ghc-8.0.1
+resolver: lts-9.9
