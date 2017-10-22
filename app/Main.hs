@@ -14,6 +14,7 @@ import Control.Monad.Trans (liftIO)
 import Control.Concurrent.MVar 
 import qualified Data.Map as Map
 
+import qualified Text.Show.Pretty as Pretty
 
 main :: IO ()
 main = runInterpreter 
@@ -30,6 +31,11 @@ run context computation =
 
         Right (a, s) -> 
             return (s, a)
+
+skipLets :: Task Program -> Interpreter (Value Program) (Task Program)
+skipLets task = 
+    -- find next instruction, but don't execute it
+    undefined
 
 runInterpreter :: IO () 
 runInterpreter = do
@@ -48,7 +54,7 @@ runInterpreter = do
                 interactive :: Context (Value Program) -> Task Program -> IO (Context (Value Program))
                 interactive context currentTask = do
                     print $ activeInactiveThreads currentTask
-                    print currentTask
+                    Pretty.pPrint currentTask
                     command <- getLine
                     case words command of 
                         [ "x" ] ->
@@ -57,6 +63,10 @@ runInterpreter = do
 
                         [ "f" ] -> 
                             uncurry interactive =<< run context (forward currentTask)
+
+                        [ "skiplets" ] -> 
+                            -- advances the program until the next statement that is not a Let
+                            uncurry interactive =<< run context (skipLets currentTask)
 
                         [ "ff" ] -> 
                             uncurry interactive =<< run context (repeatedApplication 10 forward currentTask)

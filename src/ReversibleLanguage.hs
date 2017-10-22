@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, TypeFamilies, AllowAmbiguousTypes, Rank2Types, FlexibleContexts, StandaloneDeriving, UndecidableInstances  #-}
+{-# LANGUAGE ScopedTypeVariables, TypeFamilies, FlexibleContexts, StandaloneDeriving, UndecidableInstances  #-}
 module ReversibleLanguage (Context(..), Interpreter, Progress(..), Task(..), Thread(..), ReversibleLanguage(..), forward, backward, throw) where
 
 import Types
@@ -9,7 +9,7 @@ import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
 import Control.Monad.Trans.State as State 
 import Control.Applicative (Applicative, liftA2, pure, (<*))
 import Control.Monad
-import Data.Foldable (Foldable, foldrM)
+import Data.Foldable (Foldable, foldrM, asum)
 import Data.Maybe (fromMaybe)
 
 infixl 0 |>
@@ -66,6 +66,7 @@ deriving instance Eq (Thread a) => Eq (Task a)
 
 throw :: Error -> StateT s (Either Error) a
 throw error = State.StateT (\s -> Left error)
+
 
 -- Move (Forward (Thread Program)) 
 insertChildTask :: Task a -> Map ThreadName (Task a) -> Map ThreadName (Task a)
@@ -141,6 +142,37 @@ depthFirstEvaluate children result =
         Branched a b -> 
             -- the parent made progress, don't look at the children
             return $ Parallel a (insertChildTask (Singleton b) children) 
+
+nextInstruction :: ReversibleLanguage program => Task program -> Interpreter (Value program) (Maybe program)
+nextInstruction task = 
+    case task of
+        Singleton (Thread name history []) -> 
+            return Nothing 
+
+        Singleton thread@(Thread _ _ (next:_)) -> 
+            -- if the thread can move forward (does not throw)
+            -- then return this threads action, else nothing
+            (forwardThread thread >> return (Just next)) `catch` (\e -> 
+                case e of
+                    BlockedOnReceive _ -> 
+                        return Nothing
+
+                    _ -> 
+                        throw e
+                                                                 )
+                                                                 
+
+        Parallel parent children -> 
+            if Map.null children then
+                nextInstruction (Singleton parent)
+            else do
+                nextParent <- nextInstruction (Singleton parent)
+                case nextParent of
+                    Nothing -> 
+                        -- find the first child that is not Nothing
+                        asum <$> mapM nextInstruction children
+
+                    Just v -> return $ Just v
 
 
 {-| Evaluate a program one step forward -} 

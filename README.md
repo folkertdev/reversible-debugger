@@ -269,11 +269,72 @@ and instead of throwing an exception, haskell gives back a `Maybe a`. To access 
 This debugger works on any language that implements the `ReversibleLanguage` type class:
 
 ```haskell
-class Eq a => ReversibleLanguage a where 
-    forwardThread :: Thread a -> Interpreter (Progress (Thread a))
-    backwardThread :: Thread a -> Interpreter (Progress (Thread a))
+class (Eq a, Show a, Show (Value a), Show (History a), Eq (Value a), Eq (History a)) => ReversibleLanguage a where 
+    data Value a :: * 
+    data History a :: * 
+    forwardThread  :: Thread a -> Interpreter (Value a) (Progress (Thread a))
+    backwardThread :: Thread a -> Interpreter (Value a) (Progress (Thread a))
+
     spawn :: a -> a
+
+    spawned :: History a -> Maybe ThreadName
+    createdVariable :: History a -> Maybe Identifier
+
 ```
+
+Achieving generality in a type-safe way requires the usage of some of haskell's more advanced features. 
+Here we define a class with two associated data types: `Value` and `History`. These types need to 
+implement the `Show` and `Eq` type classes. 
+
+Furthermore an instance needs to give two functions to move a thread forward and backward, 
+a function to spawn a value, and two unpacking functions. 
+
+The instance of the MicroOz language looks like
+
+```
+instance ReversibleLanguage.ReversibleLanguage Program where 
+    {-| Values in the language. These may appear on the right-hand side of a variable declaration -} 
+    data Value Program 
+        = VTrue
+        | VFalse
+        | Receive Identifier
+        | Procedure (List Identifier) Program
+        | Port 
+        | VInt IntExp
+        deriving (Show, Eq)
+
+
+         
+    {-| Data type representing actions that have lead to the current program state -} 
+    data History Program
+        = Skipped
+        | Composed 
+        | Sent Identifier Identifier
+        | Received Identifier Identifier
+        | CreatedVariable Identifier
+        | CreatedChannel Identifier
+        | CalledProcedure Identifier (List Identifier)
+        | SpawnedThread ThreadName
+        | BranchedOn BoolExp Bool Program 
+        | AssertedOn BoolExp
+        deriving (Eq, Show)
+
+    forwardThread = advance
+    backwardThread = rollback
+
+    spawn = SpawnThread
+
+    createdVariable history =
+        case history of
+            CreatedVariable name -> Just name
+            _ -> Nothing  
+
+    spawned history = 
+        case history of
+            SpawnedThread name -> Just name
+            _ -> Nothing
+```
+
 
 ### Cons
 

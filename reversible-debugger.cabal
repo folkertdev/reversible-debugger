@@ -29,6 +29,7 @@ library
                      , async
 
 
+
   default-language:    Haskell2010
 
 executable reversible-debugger 
@@ -40,6 +41,7 @@ executable reversible-debugger
                      , containers
                      , transformers
                      , mtl
+                     , pretty-show
 
   default-language:    Haskell2010
 
