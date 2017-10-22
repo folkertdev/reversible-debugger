@@ -1,11 +1,12 @@
-module Parser (program) where
+module MicroOz.Parser (program) where
 
-import Types
 import Control.Applicative ((<*), liftA2, pure)
 import Data.List (intercalate)
 
 import Text.ParserCombinators.Parsec as Parsec
 
+import Types (Identifier(..))
+import MicroOz
 import Queue
 
 program :: String -> Either ParseError Program
@@ -199,7 +200,7 @@ valueParser =
             , intExpValue
             ] 
 
-procedureParser :: Parser Value            
+procedureParser :: Parser (Value Program)
 procedureParser = do
             try $ string "proc"
             whitespaceOrComment 

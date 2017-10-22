@@ -264,9 +264,36 @@ The instruction then has to be dynamically cast to the type that the enum value 
 Finally, union types can be used to guarantee that failure cases are handled. Lookup in a key-value map can fail, 
 and instead of throwing an exception, haskell gives back a `Maybe a`. To access the `a`, the failure case (the key is missing) must be handled.
 
+*Generality* 
+
+This debugger works on any language that implements the `ReversibleLanguage` type class:
+
+```haskell
+class Eq a => ReversibleLanguage a where 
+    forwardThread :: Thread a -> Interpreter (Progress (Thread a))
+    backwardThread :: Thread a -> Interpreter (Progress (Thread a))
+    spawn :: a -> a
+```
+
 ### Cons
 
 * I had to write my own parser
 
+
+
+You may considering questions such as the following:
+- do both implementations accept and allow to debug the same input
+programs? (I would expect so, but you can exploit this to indicate
+interesting extensions for your debugger)
+- how would users interact with the debugger in each case?
+(interfaces, outputs from the tool, etc)
+- are there things easier to do in one tool than in the other? (here
+again you can use this to highlight the advantages of your approach)
+
+In other words, your comments on 'differences' should reveal that
+- you understand well CaReDeb
+- you have a good motivation in following a different approach
+- you obtained a new solution that is at least as good than CaReDeb
+(and that has potential for extensions not present in CaReDeb)
 
 

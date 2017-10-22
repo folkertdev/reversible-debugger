@@ -3,7 +3,8 @@ module Main where
 import System.Environment
 
 import Interpreter
-import Parser
+import MicroOz
+import MicroOz.Parser as Parser
 import Types
 
 import Control.Monad
@@ -20,7 +21,7 @@ main = runInterpreter
 
 repeatedApplication n x = foldl (>=>) return $ replicate n x
 
-run :: Context -> Interpreter a -> IO (Context, a)
+run :: Show v => Context v -> Interpreter v a -> IO (Context v, a)
 run context computation = 
     case runStateT computation context of
         Left e -> do
@@ -40,11 +41,11 @@ runInterpreter = do
         Left error ->
             print error
         Right program -> do
-            let ( context, task) = Interpreter.init program 
+            let ( context, task) = MicroOz.init program 
 
 
             let 
-                interactive :: Context -> Task Program -> IO Context
+                interactive :: Context (Value Program) -> Task Program -> IO (Context (Value Program))
                 interactive context currentTask = do
                     print $ activeInactiveThreads currentTask
                     print currentTask
