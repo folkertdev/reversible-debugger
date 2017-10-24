@@ -27,6 +27,7 @@ library
                      , free
                      , text
                      , async
+                     , deepseq
 
 
 

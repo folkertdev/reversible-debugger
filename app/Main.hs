@@ -6,6 +6,7 @@ import Interpreter
 import MicroOz
 import MicroOz.Parser as Parser
 import Types
+import ReversibleLanguage (executeWhile)
 
 import Control.Monad
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
@@ -32,10 +33,15 @@ run context computation =
         Right (a, s) -> 
             return (s, a)
 
-skipLets :: Task Program -> Interpreter (Value Program) (Task Program)
+skipLets :: Task (Thread Program) -> Interpreter (Value Program) (Task (Thread Program))
 skipLets task = 
+    let predicate (Thread _ _ instructions) = 
+            case instructions of 
+                (Let _ _ _ : _) -> True
+                _ -> False
+    in
     -- find next instruction, but don't execute it
-    undefined
+    executeWhile predicate task
 
 runInterpreter :: IO () 
 runInterpreter = do
@@ -51,7 +57,7 @@ runInterpreter = do
 
 
             let 
-                interactive :: Context (Value Program) -> Task Program -> IO (Context (Value Program))
+                interactive :: Context (Value Program) -> Task (Thread Program) -> IO (Context (Value Program))
                 interactive context currentTask = do
                     print $ activeInactiveThreads currentTask
                     Pretty.pPrint currentTask

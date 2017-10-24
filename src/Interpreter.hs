@@ -27,17 +27,14 @@ withDefault =
 
 
 
-listThreads :: Task a -> List (Thread a)
+listThreads :: Task (Thread a) -> List (Thread a)
 listThreads task = 
     case task of
         Parallel a b -> 
             a : concatMap listThreads b
 
 
-        Singleton thread ->
-            [ thread ] 
-
-activeInactiveThreads :: Task a -> ( List ThreadName, List ThreadName ) 
+activeInactiveThreads :: Task (Thread a) -> ( List ThreadName, List ThreadName ) 
 activeInactiveThreads = 
     let 
         folder (Thread name _ program) ( active, inactive ) =
@@ -55,8 +52,8 @@ activeInactiveThreads =
 freshIdentifier :: Interpreter value Identifier
 freshIdentifier = do
     context <- State.get
-    let new = 1 + variableCount context
-    put (context { variableCount = new } )
+    let new = 1 + _variableCount context
+    put (context { _variableCount = new } )
     return $ Identifier $ "var" ++ show new
 
 
@@ -96,7 +93,7 @@ removeVariable identifier =
             newBindings = Map.delete identifier (_bindings context)
             
         in
-            context { _bindings = newBindings, variableCount = variableCount context - 1 } 
+            context { _bindings = newBindings, _variableCount = _variableCount context - 1 } 
 
 
 {-| Get the value for an identifier from the global scope
@@ -129,18 +126,24 @@ mapChannel identifier tagger =
         context { _channels = Map.adjust tagger identifier (_channels context) } 
 
 
-
-readChannel :: ThreadName -> Identifier -> Interpreter value Identifier
+readChannel :: ThreadName -> Identifier -> Interpreter value (Maybe Identifier)
 readChannel threadName identifier = 
-    withChannel identifier $ \queue ->
-        case Queue.pop queue of
-            Just ( first, rest ) -> do 
-                -- put the rest of the queue back into the context
-                mapChannel identifier (\_ -> rest)
-                return first
+    let fetch = 
+            withChannel identifier $ \queue ->
+                case Queue.pop queue of
+                    Just ( first, rest ) -> do 
+                        -- put the rest of the queue back into the context
+                        mapChannel identifier (const rest)
+                        return first
 
-            Nothing ->
-                throw $ BlockedOnReceive threadName  
+                    Nothing ->
+                        throw $ BlockedOnReceive threadName  
+        handler error = 
+            case error of
+                BlockedOnReceive _ -> return Nothing
+                _ -> throw error
+    in
+        fmap Just fetch `catch` handler 
 
 
 writeChannel :: ThreadName -> Identifier -> Identifier -> Interpreter value ()  
@@ -156,11 +159,11 @@ embedEither :: Monad m => Either e a  -> ExceptT e m a
 embedEither v = ExceptT (return v)
 
 {-| Revert the program state before the creation of the given variable -}
-rollVariable :: ReversibleLanguage program => Identifier -> Task program -> Interpreter (Value program) (Task program)
+rollVariable :: ReversibleLanguage program => Identifier -> Task (Thread program) -> Interpreter (Value program) (Task (Thread program))
 rollVariable name task = do 
     lookupVariable name -- will throw if the name does not exist
     case task of
-        Singleton (Thread _ (mostRecent : restOfHistory) program) ->
+        Parallel (Thread _ (mostRecent : restOfHistory) program) [] -> 
             case createdVariable mostRecent of
                 Nothing ->
                     rollVariable name =<< backward task
@@ -177,7 +180,7 @@ rollVariable name task = do
 
 
 {-| Revert a whole thread -} 
-rollThread :: ReversibleLanguage program => ThreadName -> Task program -> Interpreter (Value program) (Task program)
+rollThread :: ReversibleLanguage program => ThreadName -> Task (Thread program) -> Interpreter (Value program) (Task (Thread program))
 rollThread threadName task = do
     let recurse task = rollThread threadName =<< backward task 
 
@@ -186,13 +189,11 @@ rollThread threadName task = do
         throw $ UndefinedThread threadName
     else
         case task of
-            Parallel parent child ->
-                recurse task 
 
-            Singleton (Thread _ [] _) ->
+            Parallel (Thread _ [] _) [] ->
                 return task
 
-            Singleton (Thread parentName (mostRecent : restOfHistory) parentProgram) -> 
+            Parallel (Thread parentName (mostRecent : restOfHistory) parentProgram) [] -> 
                 case spawned mostRecent of
                     Nothing -> 
                         if parentName == threadName then
@@ -209,4 +210,6 @@ rollThread threadName task = do
                         else
                             recurse task
 
+            Parallel parent child ->
+                recurse task 
 

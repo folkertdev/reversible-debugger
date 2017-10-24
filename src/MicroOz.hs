@@ -11,6 +11,7 @@ import Types
 import Queue
 import qualified Data.Map as Map
 
+
 instance ReversibleLanguage.ReversibleLanguage Program where 
     {-| Values in the language. These may appear on the right-hand side of a variable declaration -} 
     data Value Program 
@@ -69,6 +70,19 @@ data Program
     | Assert BoolExp
     deriving (Show, Eq)
 
+    
+data WithContinuations 
+    = Clet Identifier (ReversibleLanguage.Value Program) WithContinuations
+    | CIf BoolExp WithContinuations WithContinuations
+    | CSpawnThread WithContinuations
+    | CDone
+    | CApply Identifier (List Identifier) WithContinuations
+    | CSend Identifier Identifier WithContinuations
+    | CAssert BoolExp WithContinuations
+
+
+
+
 
 
 
@@ -102,10 +116,10 @@ data IntValue
     | IntIdentifier Identifier
     deriving (Show, Eq)
 
-init :: Program -> (Context (Value Program),  Task Program)
+init :: Program -> (Context (Value Program),  Task (Thread Program))
 init program = 
     ( Context (Map.singleton (ThreadName "t_0") 0) 0 Map.empty Map.empty
-    , Singleton $ Thread (ThreadName "t_0") [] [ program ]
+    , Parallel (Thread (ThreadName "t_0") [] [ program ]) []
     )
 
 
@@ -215,7 +229,7 @@ lookupProcedure identifier = do
         _ ->
             throw $ TypeError identifier "I expected a Procedure but instead got" (show value)
 
-{-| Move a thread one step forward -} 
+
 advance :: Thread Program -> Interpreter (Value Program) (Progress (Thread Program)) 
 advance thread = 
     case thread of 
@@ -238,39 +252,46 @@ advance thread =
 
                 Let identifier value continuation -> do
                     freshName <- freshIdentifier 
-                    (historyInstruction, newName) <- 
-                        case value of
-                            Receive channelName -> do 
-                                message <- readChannel name channelName 
-                                return (Received channelName freshName, message)
+                    case value of
+                        Receive channelName -> do 
+                            message_ <- readChannel name channelName 
+                            case message_ of
+                                Nothing ->
+                                    -- blocked on receive
+                                    return $ Blocked $ Thread name history (program : rest)
 
-                            Port -> do
-                                State.modify $ \context -> 
-                                    let 
-                                        newChannels = Map.insert freshName Queue.empty (_channels context)
-                                    in
-                                        context { _channels = newChannels } 
+                                Just message -> 
+                                    continue (Received channelName freshName) $
+                                        renameVariable identifier message continuation : rest
 
-                                return (CreatedChannel freshName, freshName)
+                        Port -> do
+                            State.modify $ \context -> 
+                                let 
+                                    newChannels = Map.insert freshName Queue.empty (_channels context)
+                                in
+                                    context { _channels = newChannels } 
 
-                            Procedure arguments body -> do
-                                -- rename the function name itself in the body, for recursive functions
-                                let renamedBody = 
-                                        if identifier `notElem` arguments then
-                                            renameVariable identifier freshName body
-                                        else
-                                            body
+                            continue (CreatedChannel freshName) $
+                                renameVariable identifier freshName continuation : rest
 
-                                insertVariable freshName (Procedure arguments renamedBody) 
-                                return (CreatedVariable freshName, freshName)
-                                
+                        Procedure arguments body -> do
+                            -- rename the function name itself in the body, for recursive functions
+                            let renamedBody = 
+                                    if identifier `notElem` arguments then
+                                        renameVariable identifier freshName body
+                                    else
+                                        body
 
-                            _ -> do
-                                insertVariable freshName value 
-                                return (CreatedVariable freshName, freshName)
+                            insertVariable freshName (Procedure arguments renamedBody) 
+                            continue (CreatedVariable freshName) $
+                                renameVariable identifier freshName continuation : rest
+                            
 
-                    continue historyInstruction $
-                        renameVariable identifier newName continuation : rest
+                        _ -> do
+                            insertVariable freshName value 
+                            continue (CreatedVariable freshName) $
+                                renameVariable identifier freshName continuation : rest
+
 
                 If condition trueBody falseBody -> do
                     verdict <- evalBoolExp condition 
@@ -309,14 +330,8 @@ advance thread =
                     continue (Sent channelName variable) rest
 
 
-
-
-
-
-
-
 {-| Move a thread one step backward -} 
-rollback :: Thread Program -> Interpreter (Value Program) (Progress (Thread Program))
+rollback :: Thread Program -> Interpreter (Value Program) (ReversibleLanguage.Progress (Thread Program))
 rollback thread@(Thread name history program) =
     case history of
         [] -> 
@@ -325,7 +340,7 @@ rollback thread@(Thread name history program) =
         
         ( mostRecent : restOfHistory ) ->
             let 
-                continue :: List Program -> Interpreter (Value Program) (Progress (Thread Program))
+                continue :: List Program -> Interpreter (Value Program) (ReversibleLanguage.Progress (Thread Program))
                 continue = return . Step . Thread name restOfHistory 
             in
             case (mostRecent, program) of
@@ -343,7 +358,7 @@ rollback thread@(Thread name history program) =
                 ( CreatedChannel identifier, continuation : restOfProgram ) -> do
                     State.modify $ \context -> 
                         context { _channels = Map.delete identifier (_channels context) 
-                                , variableCount = variableCount context - 1
+                                , _variableCount = _variableCount context - 1
                                 } 
 
                     continue (Let identifier Port continuation : restOfProgram )
