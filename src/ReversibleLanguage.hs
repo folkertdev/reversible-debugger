@@ -1,11 +1,11 @@
  {-# LANGUAGE ScopedTypeVariables , TypeFamilies, FlexibleContexts, StandaloneDeriving, UndecidableInstances, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
-module ReversibleLanguage (Context(..), Interpreter, Progress(..), Task(..), Thread(..), ReversibleLanguage(..), forward, backward, throw, executeWhile, catch) where
+module ReversibleLanguage (schedule, ThreadState, ExecutionState, Context(..), Interpreter, Progress(..), Task(..), Thread(..), ReversibleLanguage(..), forward, backward, throw, executeWhile, catch) where
 
 import Types
 import Queue
 import Data.Semigroup (Semigroup(..)) 
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
 import Control.Monad.Trans.State as State 
 import Control.Applicative (Applicative, liftA2, pure, (<*))
@@ -19,14 +19,13 @@ infixl 0 |>
 x |> f = f x
 
 
-type PID = List Int
 
 type Threads a = Map PID (Thread a)
 
 
 data Context a = 
     Context 
-        { _threads :: Map ThreadName Int
+        { _threads :: Map PID Int
         , _variableCount :: Int
         , _bindings :: Map Identifier a
         , _channels :: Map Identifier (Queue.Queue Identifier)
@@ -45,7 +44,7 @@ class (Eq a, Show a, Show (Value a), Show (History a), Eq (Value a), Eq (History
 
     spawn :: a -> a
 
-    spawned :: History a -> Maybe ThreadName
+    spawned :: History a -> Maybe PID
     createdVariable :: History a -> Maybe Identifier
 
 
@@ -62,9 +61,8 @@ data Task a
     deriving (Functor, Foldable, Traversable)
     
 
-data Thread a = Thread ThreadName (List (History a)) (List a)  
+data Thread a = Thread PID (List (History a)) (List a)  
 
-{-
 spawnThread :: PID -> a -> Threads a -> Threads a
 spawnThread parentID value threads = 
     let 
@@ -72,8 +70,105 @@ spawnThread parentID value threads =
             |> filter (\k -> length k == length parentID + 1 && parentID `isPrefixOf` k)
         childID = parentID ++ [ length siblings ]
     in
-        Map.insert childID (Thread (ThreadName $ show childID) [] value) threads
--}
+        Map.insert childID (Thread childID [] [value]) threads
+
+
+type ThreadState a = ( Threads a, Threads a, Threads a, Threads a)
+
+schedule :: ReversibleLanguage program 
+    => (Thread program -> Bool)
+    -> Thread program 
+    -> ThreadState program
+    -> Interpreter (Value program) (Either (ThreadState program) (Thread program, ThreadState program))
+schedule predicate thread@(Thread pid _ _) (active, inactive, blocked, filtered) = 
+    if predicate thread then do
+        result <- forwardThread thread 
+        case result of
+            Done newThread ->
+                return $ reschedule (active, Map.insert pid newThread inactive, blocked, filtered)
+
+            Step newThread -> 
+                return $ Right ( newThread, (active, inactive, blocked, filtered))
+
+            Blocked newThread -> 
+                return $ reschedule (active, inactive, Map.insert pid newThread blocked, filtered)
+
+            Branched parent child@(Thread childPID _ _) ->
+                return $ Right ( parent, (Map.insert childPID child active, inactive, blocked, filtered))
+    else
+        return $ reschedule ( active, inactive, blocked, filtered )
+
+
+unschedule :: ReversibleLanguage program 
+    => (Thread program -> Bool)
+    -> Thread program 
+    -> ThreadState program
+    -> Interpreter (Value program) (Either (ThreadState program) (Thread program, ThreadState program))
+unschedule predicate thread@(Thread pid history program) (active, inactive, blocked, filtered) = 
+    if predicate thread then 
+        case history of
+            [] -> return $ reschedule (active, Map.insert pid thread inactive, blocked, filtered)
+            (mostRecent:rest) -> 
+                case spawned mostRecent of
+                    Nothing -> do
+                        -- reverse the parent thread, keeping the children constant
+                        newParent <- backwardThread thread 
+                        case newParent of
+                            Done newThread ->
+                                return $ reschedule (active, Map.insert pid newThread inactive, blocked, filtered)
+
+                            Step newThread -> 
+                                return $ Right ( newThread, (active, inactive, blocked, filtered))
+
+                            Blocked _ -> 
+                                error "backwardThread blocked"
+
+                            Branched _ _ -> 
+                                error "backwardThread branched"
+
+
+                    Just spawnedName -> 
+                       case Map.lookup spawnedName active of
+                            Nothing -> 
+                               case Map.lookup spawnedName inactive of
+                                   Just (Thread _ _ [childProgram]) -> do
+                                       -- child is already completely rolled 
+                                       State.modify $ \context -> 
+                                            let 
+                                                newThreads = Map.adjust (\v -> v - 1 :: Int) pid $ Map.delete spawnedName (_threads context)
+                                            in
+                                                context { _threads = newThreads } 
+
+                                       return $ Right ( Thread pid rest (spawn childProgram : program), (active, inactive, blocked, filtered))
+
+                                   other -> 
+                                       error $ "child is invalid" ++ show other
+
+                            Just childThread -> 
+                              schedule predicate childThread (Map.insert pid thread active, inactive, blocked, filtered) 
+                                 
+
+    else
+        return $ reschedule ( active, inactive, blocked, filtered )
+
+
+
+reschedule :: ThreadState program -> Either (ThreadState program) (Thread program, ThreadState program)
+reschedule state@( active, inactive, blocked, filtered ) = 
+    case Map.minView active of
+        Just (first, rest) -> 
+            -- try to make progress on the minimal (most senior) thread 
+            Right (first, (rest, inactive, blocked, filtered))
+
+        Nothing ->
+            if Map.null blocked then
+                -- finished all threads, give back the final state
+                Left state
+            else
+                -- try to schedule the blocked threads again
+                -- in the how that they are now unblocked
+                reschedule ( blocked, inactive, Map.empty, filtered )
+        
 
 deriving instance (Eq a, Eq (History a)) => Eq (Thread a) 
 deriving instance (Show a, Show (History a)) => Show (Thread a) 
@@ -224,13 +319,19 @@ unwrapProgress progress =
         Blocked v -> v
         Branched x y -> x <> y
 
+type ExecutionState a = Either  (ThreadState a) (Thread a, ThreadState a)
 
 {-| Evaluate a program one step forward -} 
-forward :: ReversibleLanguage program => Task (Thread program) -> Interpreter (Value program) (Task (Thread program))
-forward task = 
-    unwrapProgress <$> stepOneIf (const True) task forwardThread
+forward :: ReversibleLanguage program => Thread program -> Interpreter (Value program) (ExecutionState program)
+forward thread = 
+    schedule (const True) thread (Map.empty, Map.empty, Map.empty, Map.empty)
 
 
+-- Move Backward
+
+backward :: ReversibleLanguage program => Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program)
+backward thread@(Thread name history program) =
+    unschedule (const True) thread 
 
 
 catch :: Interpreter v a -> (Error -> Interpreter v a) -> Interpreter v a
@@ -245,62 +346,4 @@ catch tryBlock handler = do
             handler error
 
 
--- Move Backward
-
-backward :: ReversibleLanguage program => Task (Thread program) -> Interpreter (Value program) (Task (Thread program))
-backward (Parallel parent children) = 
-    case parent of 
-        Thread parentName [] program ->
-            if Prelude.null children then
-                 return $ Parallel parent []
-            else
-                error "parent is done but there are still children alive"
-
-        Thread parentName (mostRecent : restOfHistory) program ->
-            case spawned mostRecent of
-                Nothing -> do
-                    -- reverse the parent thread, keeping the children constant
-                    newParent <- backwardThread parent 
-                    case newParent of
-                        Done v -> return $ Parallel v children
-                        Step v -> return $ Parallel v children
-                        Branched x y -> error "step backward branched" 
-                        Blocked v -> return $ Parallel v children
-
-
-                Just spawnedName -> 
-                    -- first empty the history of the child before reverting the parent further
-                    case find (\(Parallel (Thread name _ _) _) -> name == spawnedName) children of
-                        Nothing -> 
-                            error "non-existent child spawned"
-
-                        Just currentChild@(Parallel (Thread childName [] threadBody) []) -> do
-                            -- child is already completely rolled 
-                            State.modify $ \context -> 
-                                let 
-                                    newThreads = Map.adjust (\v -> v - 1 :: Int) parentName $ Map.delete childName (_threads context)
-                                in
-                                    context { _threads = newThreads } 
-
-                            case threadBody of
-                                [x] -> 
-                                    return $ Parallel (Thread parentName restOfHistory $ spawn x : program) (Prelude.filter (/= currentChild) children)
-
-                                _ ->
-                                    error "invalid initial thread state" 
-
-                            
-
-                        Just task -> do
-                            updatedChild <- backward task
-                            return $ Parallel parent $ Prelude.map (\child ->
-                                if child == task then
-                                    updatedChild 
-                                else 
-                                    child 
-                                                                   ) children
-
-
-
-                
 

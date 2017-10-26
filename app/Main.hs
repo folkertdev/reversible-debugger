@@ -6,7 +6,7 @@ import Interpreter
 import MicroOz
 import MicroOz.Parser as Parser
 import Types
-import ReversibleLanguage (executeWhile)
+import ReversibleLanguage (executeWhile, schedule, ThreadState, ExecutionState)
 
 import Control.Monad
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
@@ -33,7 +33,7 @@ run context computation =
         Right (a, s) -> 
             return (s, a)
 
-skipLets :: Task (Thread Program) -> Interpreter (Value Program) (Task (Thread Program))
+skipLets :: Thread Program -> Interpreter (Value Program) (Either (Thread Program, ThreadState Program) (ThreadState Program))
 skipLets task = 
     let predicate (Thread _ _ instructions) = 
             case instructions of 
@@ -41,7 +41,8 @@ skipLets task =
                 _ -> False
     in
     -- find next instruction, but don't execute it
-    executeWhile predicate task
+    -- schedule predicate task
+    undefined
 
 runInterpreter :: IO () 
 runInterpreter = do
@@ -87,7 +88,7 @@ runInterpreter = do
                             uncurry interactive =<< run context (rollVariable (Identifier var) currentTask)
 
                         [ "rollthread", var ] ->
-                            uncurry interactive =<< run context (rollThread (ThreadName var) currentTask)
+                            uncurry interactive =<< run context (rollThread (map read $ words var) currentTask)
 
                         other -> do
                             liftIO $ print $ "unknown command: " ++ show other

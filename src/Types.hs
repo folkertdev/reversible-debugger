@@ -15,17 +15,20 @@ import Control.Concurrent (forkIO, ThreadId)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, takeMVar, tryPutMVar)
 import Data.IORef
 
+
 import Queue
+
+type PID = List Int
 
 data Error
     = UndefinedVariable Identifier
-    | UndefinedThread ThreadName
+    | UndefinedThread PID
     | UndefinedChannel Identifier
 -- | TypeError Identifier String Value
     | TypeError Identifier String String
 -- | AssertionError BoolExp
     | AssertionError String
-    | BlockedOnReceive ThreadName 
+    | BlockedOnReceive PID 
     | RuntimeException String
     | ArgumentMismatch Identifier Int Int
     deriving (Eq)
@@ -36,8 +39,8 @@ instance Show Error where
             UndefinedVariable (Identifier name) -> 
                 "Variable `" ++ name ++ "` is undefined"
 
-            UndefinedThread (ThreadName name) ->
-                "Thread `" ++ name ++ "` is undefined"
+            UndefinedThread name ->
+                "Thread `" ++ show name ++ "` is undefined"
 
             UndefinedChannel (Identifier name) ->
                 "Channel `" ++ name ++ "` is undefined"
@@ -48,8 +51,8 @@ instance Show Error where
             AssertionError expression -> 
                 "The assertion `" ++ show expression ++ "` evaluated to False"
 
-            BlockedOnReceive (ThreadName name) -> 
-                "Thread `" ++ name ++ "` is blocked on a receive"
+            BlockedOnReceive name -> 
+                "Thread `" ++ show name ++ "` is blocked on a receive"
 
             RuntimeException message -> 
                 "Something went wrong: " ++ message

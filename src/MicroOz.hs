@@ -34,7 +34,7 @@ instance ReversibleLanguage.ReversibleLanguage Program where
         | CreatedVariable Identifier
         | CreatedChannel Identifier
         | CalledProcedure Identifier (List Identifier)
-        | SpawnedThread ThreadName
+        | SpawnedThread PID
         | BranchedOn BoolExp Bool Program 
         | AssertedOn BoolExp
         deriving (Eq, Show)
@@ -48,6 +48,7 @@ instance ReversibleLanguage.ReversibleLanguage Program where
         case history of
             CreatedVariable name -> Just name
             _ -> Nothing  
+
     spawned history = 
         case history of
             SpawnedThread name -> 
@@ -69,21 +70,6 @@ data Program
     | Send Identifier Identifier
     | Assert BoolExp
     deriving (Show, Eq)
-
-    
-data WithContinuations 
-    = Clet Identifier (ReversibleLanguage.Value Program) WithContinuations
-    | CIf BoolExp WithContinuations WithContinuations
-    | CSpawnThread WithContinuations
-    | CDone
-    | CApply Identifier (List Identifier) WithContinuations
-    | CSend Identifier Identifier WithContinuations
-    | CAssert BoolExp WithContinuations
-
-
-
-
-
 
 
 data BoolValue = BoolValue Bool | BoolIdentifier Identifier deriving (Show, Eq) 
@@ -118,8 +104,8 @@ data IntValue
 
 init :: Program -> (Context (Value Program),  Task (Thread Program))
 init program = 
-    ( Context (Map.singleton (ThreadName "t_0") 0) 0 Map.empty Map.empty
-    , Parallel (Thread (ThreadName "t_0") [] [ program ]) []
+    ( Context (Map.singleton [0] 0) 0 Map.empty Map.empty
+    , Parallel (Thread [0] [] [ program ]) []
     )
 
 

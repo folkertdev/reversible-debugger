@@ -22,7 +22,7 @@ library
                      , mtl
                      , HTTP
                      , network
-                     , containers
+                     , containers >= 0.5.9
                      , parsec
                      , free
                      , text

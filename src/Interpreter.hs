@@ -20,6 +20,7 @@ import Control.Applicative (Applicative, liftA2, pure, (<*))
 import Control.Monad
 import Data.Foldable (Foldable, foldrM)
 import Data.Maybe (fromMaybe)
+import Data.List (isPrefixOf)
 
 withDefault :: a -> Maybe a -> a
 withDefault = 
@@ -34,7 +35,7 @@ listThreads task =
             a : concatMap listThreads b
 
 
-activeInactiveThreads :: Task (Thread a) -> ( List ThreadName, List ThreadName ) 
+activeInactiveThreads :: Task (Thread a) -> ( List PID, List PID ) 
 activeInactiveThreads = 
     let 
         folder (Thread name _ program) ( active, inactive ) =
@@ -57,8 +58,8 @@ freshIdentifier = do
     return $ Identifier $ "var" ++ show new
 
 
-freshThreadName :: ThreadName -> Interpreter value ThreadName
-freshThreadName parentName@(ThreadName parent) = do
+freshThreadName :: PID -> Interpreter value PID
+freshThreadName parentName = do
     context <- State.get
     let usedThreadNames = _threads context  
     case Map.lookup parentName usedThreadNames of
@@ -68,7 +69,7 @@ freshThreadName parentName@(ThreadName parent) = do
         Just childCount -> do
             let 
                 childName = 
-                    ThreadName $ parent ++ "_" ++ show (childCount + 1) 
+                    parentName ++ [childCount + 1]
 
                 updater = 
                     Map.adjust (+ 1) parentName . Map.insert childName 0 
@@ -126,7 +127,7 @@ mapChannel identifier tagger =
         context { _channels = Map.adjust tagger identifier (_channels context) } 
 
 
-readChannel :: ThreadName -> Identifier -> Interpreter value (Maybe Identifier)
+readChannel :: PID -> Identifier -> Interpreter value (Maybe Identifier)
 readChannel threadName identifier = 
     let fetch = 
             withChannel identifier $ \queue ->
@@ -146,7 +147,7 @@ readChannel threadName identifier =
         fmap Just fetch `catch` handler 
 
 
-writeChannel :: ThreadName -> Identifier -> Identifier -> Interpreter value ()  
+writeChannel :: PID -> Identifier -> Identifier -> Interpreter value ()  
 writeChannel threadName identifier payload = 
     mapChannel identifier (Queue.push payload)
 
@@ -159,57 +160,67 @@ embedEither :: Monad m => Either e a  -> ExceptT e m a
 embedEither v = ExceptT (return v)
 
 {-| Revert the program state before the creation of the given variable -}
-rollVariable :: ReversibleLanguage program => Identifier -> Task (Thread program) -> Interpreter (Value program) (Task (Thread program))
-rollVariable name task = do 
+rollVariable :: ReversibleLanguage program => Identifier -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
+rollVariable name thread@(Thread pid history program) state@(active, inactive, blocked, filtered) = do 
+    let 
+        recurse = do
+            oneStepBack <- backward thread state
+            case oneStepBack of
+                Left done -> return $ Left done
+                Right (newThread, newState) -> 
+                    rollVariable name newThread newState
     lookupVariable name -- will throw if the name does not exist
-    case task of
-        Parallel (Thread _ (mostRecent : restOfHistory) program) [] -> 
+    case history of
+        [] -> 
+            -- nothing to revert 
+            return $ Left (active, Map.insert pid thread inactive, blocked, filtered)
+
+        (mostRecent : restOfHistory) -> 
             case createdVariable mostRecent of
-                Nothing ->
-                    rollVariable name =<< backward task
+                Nothing -> 
+                    recurse
 
                 Just identifier ->
                     if name == identifier then  
-                        backward task
-
+                         -- roll the assignment
+                         backward thread state
                     else
-                        rollVariable name =<< backward task
-
-        _ ->
-            rollVariable name =<< backward task
+                        recurse
 
 
 {-| Revert a whole thread -} 
-rollThread :: ReversibleLanguage program => ThreadName -> Task (Thread program) -> Interpreter (Value program) (Task (Thread program))
-rollThread threadName task = do
-    let recurse task = rollThread threadName =<< backward task 
+rollThread  :: ReversibleLanguage program => PID -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
+rollThread pid thread@(Thread parentId history program) state@(active, inactive, blocked, filtered) = do
+    let recurse task = do 
+            oneStepBack <- backward thread state
+            case oneStepBack of
+                Left done -> return $ Left done
+                Right (newThread, newState) -> 
+                    rollThread pid newThread newState
 
-    exists <- Map.member threadName . _threads <$> State.get
+    exists <- Map.member pid . _threads <$> State.get
     if not exists then
-        throw $ UndefinedThread threadName
+        throw $ UndefinedThread pid
+    else if not (parentId `isPrefixOf` pid) then
+        -- rolling thread is not an ancestor of the thread we want to roll
+        error "thread to unroll is no child of the given thread"
     else
-        case task of
+        case history of
+            [] -> 
+                -- nothing to revert 
+                return $ Left (active, Map.insert pid thread inactive, blocked, filtered)
 
-            Parallel (Thread _ [] _) [] ->
-                return task
-
-            Parallel (Thread parentName (mostRecent : restOfHistory) parentProgram) [] -> 
+            (mostRecent : restOfHistory) ->
                 case spawned mostRecent of
                     Nothing -> 
-                        if parentName == threadName then
-                            -- this is the thread we want to unroll
-                            recurse task
-                        else
-                            return task
+                        recurse thread 
 
                     Just spawnedName -> 
-                        if spawnedName == threadName then
+                        if spawnedName == pid then
                             -- undo the spawning, the rest is undone
-                            backward task
+                            backward thread state
 
                         else
-                            recurse task
+                            recurse thread
 
-            Parallel parent child ->
-                recurse task 
 
