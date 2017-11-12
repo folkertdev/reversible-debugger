@@ -1,5 +1,5 @@
- {-# LANGUAGE ScopedTypeVariables , TypeFamilies, FlexibleContexts, StandaloneDeriving, UndecidableInstances, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
-module ReversibleLanguage (schedule, ThreadState, ExecutionState, Context(..), Interpreter, Progress(..), Task(..), Thread(..), ReversibleLanguage(..), forward, backward, throw, executeWhile, catch) where
+{-# LANGUAGE ScopedTypeVariables, TypeFamilies, FlexibleContexts,StandaloneDeriving, UndecidableInstances, DeriveFunctor, NamedFieldPuns #-}   
+module ReversibleLanguage ((|>),ReversibleLanguage.init, schedule, unschedule, reschedule, ThreadState(..), ExecutionState, Context(..), Interpreter, Progress(..), Thread(..), ReversibleLanguage(..), forward, backward, throw, catch) where
 
 import Types
 import Queue
@@ -18,9 +18,7 @@ infixl 0 |>
 (|>) :: a -> (a -> b) -> b
 x |> f = f x
 
-
-
-type Threads a = Map PID (Thread a)
+type Interpreter value program = State.StateT (Context value) (Either Error) program
 
 
 data Context a = 
@@ -33,38 +31,60 @@ data Context a =
     deriving (Show)
 
 
-type Interpreter value program = State.StateT (Context value) (Either Error) program
-
-
 class (Eq a, Show a, Show (Value a), Show (History a), Eq (Value a), Eq (History a)) => ReversibleLanguage a where 
+    -- associated value type
     data Value a :: * 
+
+    -- associated history type
     data History a :: * 
+
+    -- moving individual threads
     forwardThread  :: Thread a -> Interpreter (Value a) (Progress  (Thread a))
     backwardThread :: Thread a -> Interpreter (Value a) (Progress  (Thread a))
 
+    -- the spawn instruction of the language
+    -- needed for handling the Branched case of Progress
     spawn :: a -> a
 
+    -- history inspection for correct rolling of threads and variables
     spawned :: History a -> Maybe PID
     createdVariable :: History a -> Maybe Identifier
 
 
+{-| Type to keep track of the progress that a thread makes 
 
+Based on [a monad for deterministic parallelism](https://simonmar.github.io/bib/papers/monad-par.pdf)
+-} 
 data Progress work 
-    = Done work
+    = Done 
     | Step work 
     | Blocked work
     | Branched work work
     deriving (Show, Eq, Functor)
 
-data Task a 
-    = Parallel a (List (Task a))
-    deriving (Functor, Foldable, Traversable)
-    
 
+{-| An individual thread, with 
+
+* a unique identifier
+* list of history instructions 
+* list of remaining program instructions
+-}
 data Thread a = Thread PID (List (History a)) (List a)  
 
-spawnThread :: PID -> a -> Threads a -> Threads a
-spawnThread parentID value threads = 
+type Threads a = Map PID (Thread a)
+
+data ThreadState a = 
+    ThreadState
+        { active :: Threads a
+        , inactive :: Threads a
+        , blocked :: Threads a
+        , filtered :: Threads a
+        } 
+
+
+{-| -} 
+spawnChildThread :: PID -> a -> Threads a -> Threads a
+spawnChildThread parentID value threads = 
     let 
         siblings = Map.keys threads 
             |> filter (\k -> length k == length parentID + 1 && parentID `isPrefixOf` k)
@@ -73,30 +93,29 @@ spawnThread parentID value threads =
         Map.insert childID (Thread childID [] [value]) threads
 
 
-type ThreadState a = ( Threads a, Threads a, Threads a, Threads a)
-
 schedule :: ReversibleLanguage program 
     => (Thread program -> Bool)
     -> Thread program 
     -> ThreadState program
     -> Interpreter (Value program) (Either (ThreadState program) (Thread program, ThreadState program))
-schedule predicate thread@(Thread pid _ _) (active, inactive, blocked, filtered) = 
+schedule predicate thread@(Thread pid _ _) state@ThreadState{active, inactive, blocked, filtered} = 
     if predicate thread then do
         result <- forwardThread thread 
         case result of
-            Done newThread ->
-                return $ reschedule (active, Map.insert pid newThread inactive, blocked, filtered)
+            Done ->
+                return $ reschedule (state { inactive = Map.insert pid thread inactive }) 
 
             Step newThread -> 
-                return $ Right ( newThread, (active, inactive, blocked, filtered))
+                return $ Right ( newThread, state ) 
 
             Blocked newThread -> 
-                return $ reschedule (active, inactive, Map.insert pid newThread blocked, filtered)
+                return $ reschedule (state { blocked = Map.insert pid newThread blocked })
 
             Branched parent child@(Thread childPID _ _) ->
-                return $ Right ( parent, (Map.insert childPID child active, inactive, blocked, filtered))
+                return $ Right ( parent, state { active = Map.insert childPID child active } )
+    
     else
-        return $ reschedule ( active, inactive, blocked, filtered )
+        return $ reschedule state 
 
 
 unschedule :: ReversibleLanguage program 
@@ -104,21 +123,23 @@ unschedule :: ReversibleLanguage program
     -> Thread program 
     -> ThreadState program
     -> Interpreter (Value program) (Either (ThreadState program) (Thread program, ThreadState program))
-unschedule predicate thread@(Thread pid history program) (active, inactive, blocked, filtered) = 
+unschedule predicate thread@(Thread pid history program) state@ThreadState{active, inactive, blocked, filtered} = 
     if predicate thread then 
         case history of
-            [] -> return $ reschedule (active, Map.insert pid thread inactive, blocked, filtered)
+            [] -> 
+                return $ reschedule (state { inactive = Map.insert pid thread inactive }) 
+
             (mostRecent:rest) -> 
                 case spawned mostRecent of
                     Nothing -> do
                         -- reverse the parent thread, keeping the children constant
                         newParent <- backwardThread thread 
                         case newParent of
-                            Done newThread ->
-                                return $ reschedule (active, Map.insert pid newThread inactive, blocked, filtered)
+                            Done ->
+                                return $ reschedule (state { inactive = Map.insert pid thread inactive }) 
 
                             Step newThread -> 
-                                return $ Right ( newThread, (active, inactive, blocked, filtered))
+                                return $ Right ( newThread, state ) 
 
                             Blocked _ -> 
                                 error "backwardThread blocked"
@@ -139,26 +160,26 @@ unschedule predicate thread@(Thread pid history program) (active, inactive, bloc
                                             in
                                                 context { _threads = newThreads } 
 
-                                       return $ Right ( Thread pid rest (spawn childProgram : program), (active, inactive, blocked, filtered))
+                                       return $ Right ( Thread pid rest (spawn childProgram : program), state ) 
 
                                    other -> 
                                        error $ "child is invalid" ++ show other
 
                             Just childThread -> 
-                              schedule predicate childThread (Map.insert pid thread active, inactive, blocked, filtered) 
+                                schedule predicate childThread (state { active = Map.insert pid thread active })
                                  
 
     else
-        return $ reschedule ( active, inactive, blocked, filtered )
+        return $ reschedule state 
 
 
 
 reschedule :: ThreadState program -> Either (ThreadState program) (Thread program, ThreadState program)
-reschedule state@( active, inactive, blocked, filtered ) = 
+reschedule state@ThreadState{active, inactive, blocked, filtered} =     
     case Map.minView active of
         Just (first, rest) -> 
             -- try to make progress on the minimal (most senior) thread 
-            Right (first, (rest, inactive, blocked, filtered))
+            Right (first, state { active = rest }) 
 
         Nothing ->
             if Map.null blocked then
@@ -167,164 +188,27 @@ reschedule state@( active, inactive, blocked, filtered ) =
             else
                 -- try to schedule the blocked threads again
                 -- in the how that they are now unblocked
-                reschedule ( blocked, inactive, Map.empty, filtered )
+                reschedule (state { active = blocked, blocked = Map.empty })
         
 
 deriving instance (Eq a, Eq (History a)) => Eq (Thread a) 
 deriving instance (Show a, Show (History a)) => Show (Thread a) 
 
-deriving instance Show a => Show (Task a)
-deriving instance Eq a => Eq (Task a)
-
-
-
-
-joinTask :: Task (Task a) -> Task a
-joinTask task =
-    case task of 
-        Parallel parent children -> 
-            case parent of
-                Parallel node subchildren ->
-                    Parallel node (subchildren <> fmap joinTask children)
-
-instance Applicative Task where
-    pure = return
-    (<*>) = ap
-
-instance Monad Task where
-    return x = Parallel x [] 
-    x >>= f = joinTask (fmap f x)
-
-instance Semigroup (Task a) where
-    a <> b =
-        case a of
-            Parallel x y -> 
-                Parallel x (b : y) 
-
-f :: Monad m => Task (Thread a) -> (Thread a -> m (Progress (Thread a))) -> m (Task (Thread a))
-f task tagger = 
-    let helper :: Monad m => m (Task (Progress (Thread a))) -> m (Task (Thread a))
-        helper = fmap (joinTask . fmap helper2)
-
-        helper2 :: Progress (Thread a) -> Task (Thread a)
-        helper2 progress =
-            case progress of
-                Done v -> pure v
-                Step v -> pure v
-                Blocked v -> pure v
-                Branched a b -> pure a <> pure b
-
-
-    in
-    helper $ traverse tagger task
-
-stepOneIf :: ReversibleLanguage a 
-    => (Thread a -> Bool)
-    -> Task (Thread a) 
-    -> (Thread a -> Interpreter (Value a) (Progress (Thread a))) 
-    -> Interpreter (Value a) (Progress (Task (Thread a)))
-stepOneIf predicate (Parallel parent children) tagger = 
-    let 
-        rewrap parent (didWork, newChildren) = 
-            if didWork then
-                Step $ Parallel parent newChildren
-            else 
-                Done $ Parallel parent newChildren
-
-        recurse parent = 
-            foldrM (folder (\task -> stepOneIf predicate task tagger)) (False, []) children
-                |> fmap (rewrap parent)
-    
-    in 
-    if predicate parent then do
-        newParent <- tagger parent
-
-        case newParent of
-            Step v -> 
-                return $ Step $ Parallel v children
-
-            Branched p c -> 
-                return $ Step $ Parallel p (pure c : children) 
-
-            Done v -> 
-                recurse v
-                    
-            Blocked v -> 
-                recurse v
-    else
-        recurse parent
 
 throw :: Error -> StateT s (Either Error) a
 throw error = State.StateT (\s -> Left error)
 
 
-folder :: (ReversibleLanguage program) 
-    => (Task (Thread program) -> Interpreter (Value program) (Progress (Task (Thread program))))
-    -> Task (Thread program) 
-    -> (Bool, List (Task (Thread program))) 
-    -> Interpreter (Value program) (Bool, List (Task (Thread program)))
-folder tagger current ( hasSucceeded, accum) =
-    if hasSucceeded then 
-        return ( True, current  : accum) 
-    else do
-        context <- State.get
-        let result = runStateT (tagger current) context -- runStateT (forward current) context
-        case result of
-            Left e ->
-                -- evaluating the child throws an error, try with another child
-                return (False, current : accum)
-
-            Right (updated, newContext) -> do
-                put newContext
-                case updated of
-                    Step v -> 
-                        return ( True, v : accum) 
-
-                    Branched p c -> 
-                        return ( True, (p <> c) : accum) 
-
-                    Done v -> 
-                        return ( False, v : accum) 
-
-                    Blocked v -> 
-                        return ( False, v : accum) 
-
-
-{-| Will execute any (child) thread for which the predicate holds -} 
-executeWhile :: ReversibleLanguage program => (Thread program -> Bool) -> Task (Thread program) -> Interpreter (Value program) (Task (Thread program))
-executeWhile predicate task = do
-    result <- stepOneIf predicate task forwardThread
-    case result of
-        Done v -> return v
-        Step v -> execute v
-        Blocked v -> return v
-        Branched x y -> execute (x <> y) 
-
-{-| Execute a program to completion (or deadlock) -} 
-execute :: ReversibleLanguage program => Task (Thread program) -> Interpreter (Value program) (Task (Thread program))
-execute task = do
-    result <- stepOneIf (const True) task forwardThread
-    case result of
-        Done v -> return v
-        Step v -> execute v
-        Blocked v -> return v
-        Branched x y -> execute (x <> y) 
-
-
-unwrapProgress :: Progress (Task (Thread a)) -> Task (Thread a) 
-unwrapProgress progress =
-    case progress of
-        Done v -> v
-        Step v -> v
-        Blocked v -> v
-        Branched x y -> x <> y
-
 type ExecutionState a = Either  (ThreadState a) (Thread a, ThreadState a)
 
 {-| Evaluate a program one step forward -} 
-forward :: ReversibleLanguage program => Thread program -> Interpreter (Value program) (ExecutionState program)
-forward thread = 
-    schedule (const True) thread (Map.empty, Map.empty, Map.empty, Map.empty)
+forward :: ReversibleLanguage program => Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program)
+forward = 
+    schedule (const True) 
+
+init :: ReversibleLanguage program => Thread program -> Interpreter (Value program) (ExecutionState program)
+init thread = 
+    schedule (const True) thread (ThreadState Map.empty Map.empty Map.empty Map.empty)
 
 
 -- Move Backward

@@ -102,10 +102,10 @@ data IntValue
     | IntIdentifier Identifier
     deriving (Show, Eq)
 
-init :: Program -> (Context (Value Program),  Task (Thread Program))
+init :: Program -> (Context (Value Program), Thread Program) 
 init program = 
     ( Context (Map.singleton [0] 0) 0 Map.empty Map.empty
-    , Parallel (Thread [0] [] [ program ]) []
+    , Thread [0] [] [ program ]
     )
 
 
@@ -221,7 +221,7 @@ advance thread =
     case thread of 
         Thread _ _ [] -> 
             -- the thread contains no further instructions
-            return $ Done thread
+            return Done 
 
         Thread name history (program : rest) -> 
             let 
@@ -322,7 +322,7 @@ rollback thread@(Thread name history program) =
     case history of
         [] -> 
             -- do nothing
-            return $ Done thread
+            return Done 
         
         ( mostRecent : restOfHistory ) ->
             let 
@@ -330,7 +330,7 @@ rollback thread@(Thread name history program) =
                 continue = return . Step . Thread name restOfHistory 
             in
             case (mostRecent, program) of
-                ( Skipped, restOfProgram ) ->
+                ( Skipped, _ ) ->
                     continue (Skip : program)
 
                 ( Composed, first:second:restOfProgram ) ->

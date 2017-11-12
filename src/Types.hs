@@ -31,7 +31,13 @@ data Error
     | BlockedOnReceive PID 
     | RuntimeException String
     | ArgumentMismatch Identifier Int Int
+    | ThreadScheduleError PID ThreadScheduleError 
     deriving (Eq)
+
+
+data ThreadScheduleError = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist deriving (Eq, Show)
+
+
 
 instance Show Error where
     show e = 
@@ -59,6 +65,11 @@ instance Show Error where
 
             ArgumentMismatch (Identifier name) expected actual -> 
                 "Function `" ++ name ++ "` expects " ++ show expected ++ " arguments, but got " ++ show actual
+
+            ThreadScheduleError pid error -> 
+                "The scheduler encountered a problem with thread `" ++ show pid ++ "`:\n" ++ show error
+
+
 
 type List = []
 

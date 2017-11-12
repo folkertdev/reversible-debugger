@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-{-# LANGUAGE ScopedTypeVariables, Rank2Types #-}
-module Interpreter (Thread(..), Task(..), Context, Interpreter, forward, backward, activeInactiveThreads, lookupVariable, freshIdentifier, insertVariable, readChannel, writeChannel, freshThreadName, removeVariable, rollVariable, rollThread) where
+{-# LANGUAGE ScopedTypeVariables, Rank2Types, NamedFieldPuns #-}
+module Interpreter (Thread(..), Context, Interpreter, forward, backward, lookupVariable, freshIdentifier, insertVariable, readChannel, writeChannel, freshThreadName, removeVariable, rollVariable, rollThread, advanceThread) where
 
 {-| The main body of code
 
@@ -16,37 +16,16 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
 import Control.Monad.Trans.State as State 
-import Control.Applicative (Applicative, liftA2, pure, (<*))
+import Control.Applicative (Applicative, liftA2, pure, (<*), (<|>))
 import Control.Monad
 import Data.Foldable (Foldable, foldrM)
 import Data.Maybe (fromMaybe)
 import Data.List (isPrefixOf)
+import Debug.Trace
 
 withDefault :: a -> Maybe a -> a
 withDefault = 
     fromMaybe 
-
-
-
-listThreads :: Task (Thread a) -> List (Thread a)
-listThreads task = 
-    case task of
-        Parallel a b -> 
-            a : concatMap listThreads b
-
-
-activeInactiveThreads :: Task (Thread a) -> ( List PID, List PID ) 
-activeInactiveThreads = 
-    let 
-        folder (Thread name _ program) ( active, inactive ) =
-            case program of
-                [] ->
-                    ( active, name : inactive )
-
-                _ -> 
-                    ( name : active, inactive )
-    in
-        foldr folder ([], []) . listThreads  
 
 
 {-| Generate a guaranteed unused (fresh) new identifier -}
@@ -161,7 +140,7 @@ embedEither v = ExceptT (return v)
 
 {-| Revert the program state before the creation of the given variable -}
 rollVariable :: ReversibleLanguage program => Identifier -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
-rollVariable name thread@(Thread pid history program) state@(active, inactive, blocked, filtered) = do 
+rollVariable name thread@(Thread pid history program) state@ThreadState{active, inactive, blocked, filtered} = do 
     let 
         recurse = do
             oneStepBack <- backward thread state
@@ -173,7 +152,7 @@ rollVariable name thread@(Thread pid history program) state@(active, inactive, b
     case history of
         [] -> 
             -- nothing to revert 
-            return $ Left (active, Map.insert pid thread inactive, blocked, filtered)
+            return $ Left (state { inactive = Map.insert pid thread inactive }) 
 
         (mostRecent : restOfHistory) -> 
             case createdVariable mostRecent of
@@ -187,28 +166,56 @@ rollVariable name thread@(Thread pid history program) state@(active, inactive, b
                     else
                         recurse
 
+parent :: ReversibleLanguage program => Thread program -> ThreadState program -> Interpreter (Value program) (Maybe (Thread program, ThreadState program))
+parent child@(Thread pid _ _) state@ThreadState{active, inactive, blocked, filtered} = 
+    let 
+        -- we only actually return the parent when it is valid
+        validThreads = mconcat [ active, inactive, blocked, blocked ]
+        parentID = Prelude.init pid
+    in
+        return $ 
+            case Map.lookup parentID validThreads of
+                Nothing -> 
+                    Nothing
+                Just parent -> 
+                    Just 
+                        ( parent
+                        , ThreadState 
+                              (Map.insert pid child (Map.delete parentID active))
+                              (Map.delete parentID inactive) 
+                              (Map.delete parentID blocked)
+                              (Map.delete parentID filtered)
+                        )
+ 
+
 
 {-| Revert a whole thread -} 
 rollThread  :: ReversibleLanguage program => PID -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
-rollThread pid thread@(Thread parentId history program) state@(active, inactive, blocked, filtered) = do
+rollThread pid thread@(Thread parentId history program) state@ThreadState{ active, inactive, blocked, filtered } = do
     let recurse task = do 
             oneStepBack <- backward thread state
             case oneStepBack of
                 Left done -> return $ Left done
                 Right (newThread, newState) -> 
-                    rollThread pid newThread newState
+                    rollThread pid (traceShowId newThread) newState
 
     exists <- Map.member pid . _threads <$> State.get
-    if not exists then
+    if traceShowId $ not exists then
         throw $ UndefinedThread pid
-    else if not (parentId `isPrefixOf` pid) then
+    else if not (parentId `isPrefixOf` pid) then do
         -- rolling thread is not an ancestor of the thread we want to roll
-        error "thread to unroll is no child of the given thread"
+        -- so try to schedule the parent
+        result <- parent thread state 
+        case result of
+            Nothing -> 
+                error "cannot find the parent thread, so cannot roll"
+            Just ( parentThread, newState ) -> 
+                rollThread  pid parentThread newState 
     else
         case history of
             [] -> 
                 -- nothing to revert 
-                return $ Left (active, Map.insert pid thread inactive, blocked, filtered)
+                return $ Left (state { inactive = Map.insert pid thread inactive }) 
 
             (mostRecent : restOfHistory) ->
                 case spawned mostRecent of
@@ -223,4 +230,41 @@ rollThread pid thread@(Thread parentId history program) state@(active, inactive,
                         else
                             recurse thread
 
+advanceThread :: ReversibleLanguage program => PID -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program)
+advanceThread pid current state =  
+    case scheduleThread pid current state of 
+        Left error -> 
+            throw $ ThreadScheduleError pid error
+
+        Right (current, state) -> 
+            forward current state
+
+
+
+scheduleThread :: ReversibleLanguage program => PID -> Thread program -> ThreadState program -> Either ThreadScheduleError (Thread program, ThreadState program) 
+scheduleThread pid current@(Thread currentPID _ _) state@ThreadState{ active, inactive, blocked, filtered } = 
+    if pid == currentPID then 
+        Right (current, state) 
+    else 
+        let 
+            isActive = 
+                Map.lookup pid active
+                    |> fmap (\v -> (v, state { active = Map.insert currentPID current $ Map.delete pid active }))
+
+            -- wake up if blocked
+            isBlocked = 
+                Map.lookup pid blocked
+                    |> fmap (\v -> (v, state { active = Map.insert currentPID current active,  blocked = Map.delete pid blocked }))
+
+            errors :: ThreadScheduleError 
+            errors 
+                | Map.member pid inactive = ThreadIsFinished
+                | Map.member pid filtered = ThreadIsFiltered
+                | otherwise = ThreadDoesNotExist
+        in
+            fromMaybe (Left errors) (Right <$> (isActive <|> isBlocked))
+        
+                
+        
+    
 
