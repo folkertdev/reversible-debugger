@@ -57,6 +57,22 @@ instance ReversibleLanguage.ReversibleLanguage Program where
             _ -> 
                 Nothing
 
+    sent history =
+        case history of 
+            Sent channelName _ -> 
+                Just channelName
+
+            _ -> 
+                Nothing
+
+    received history = 
+        case history of 
+            Received channelName _ -> 
+                Just channelName
+
+            _ -> 
+                Nothing
+
 
 
 {-| The µOz Syntax -}            
@@ -328,6 +344,8 @@ rollback thread@(Thread name history program) =
             let 
                 continue :: List Program -> Interpreter (Value Program) (ReversibleLanguage.Progress (Thread Program))
                 continue = return . Step . Thread name restOfHistory 
+
+                pid = name 
             in
             case (mostRecent, program) of
                 ( Skipped, _ ) ->
@@ -363,13 +381,14 @@ rollback thread@(Thread name history program) =
 
                 ( Sent channelName valueName, restOfProgram ) -> do
                     -- reverse of send is receive
-                    message <- readChannel name channelName 
+                    rollWriteChannel pid 
 
                     continue $ Send channelName valueName : restOfProgram
 
                 ( Received channelName valueName, continuation : restOfProgram ) -> do
                     -- reverse of receive is send
-                    writeChannel name channelName valueName 
+                    -- writeChannel name channelName valueName 
+                    rollReadChannel pid valueName
 
                     -- unbind the variable
                     removeVariable valueName 

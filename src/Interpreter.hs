@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE ScopedTypeVariables, Rank2Types, NamedFieldPuns #-}
-module Interpreter (Thread(..), Context, Interpreter, forward, backward, lookupVariable, freshIdentifier, insertVariable, readChannel, writeChannel, freshThreadName, removeVariable, rollVariable, rollThread, advanceThread) where
+module Interpreter (Thread(..), Context, Interpreter, forward, backward, lookupVariable, freshIdentifier, insertVariable, readChannel, writeChannel, freshThreadName, removeVariable, rollVariable, rollThread, advanceThread, rollReadChannel, rollWriteChannel) where
 
 {-| The main body of code
 
@@ -11,6 +11,7 @@ The interesting stuff happens in the backward and forward functions.
 import Types
 import ReversibleLanguage 
 import qualified Queue
+import Queue (QueueHistory(..))
 
 import qualified Data.Map as Map 
 import Data.Map (Map)
@@ -110,7 +111,7 @@ readChannel :: PID -> Identifier -> Interpreter value (Maybe Identifier)
 readChannel threadName identifier = 
     let fetch = 
             withChannel identifier $ \queue ->
-                case Queue.pop queue of
+                case Queue.pop threadName queue of
                     Just ( first, rest ) -> do 
                         -- put the rest of the queue back into the context
                         mapChannel identifier (const rest)
@@ -125,10 +126,33 @@ readChannel threadName identifier =
     in
         fmap Just fetch `catch` handler 
 
+rollReadChannel :: PID -> Identifier -> Identifier -> Interpreter value () 
+rollReadChannel pid channelName payload = 
+    withChannel channelName $ \channel -> 
+        case Queue.tryRevertPop pid payload channel of
+            Right newQueue -> 
+                State.modify $ \context ->
+                    context { _channels = Map.adjust (const newQueue) channelName (_channels context) } 
+                 
+            Left error -> 
+                throw $ RuntimeException (show error)
+
 
 writeChannel :: PID -> Identifier -> Identifier -> Interpreter value ()  
 writeChannel threadName identifier payload = 
-    mapChannel identifier (Queue.push payload)
+    mapChannel identifier (Queue.push threadName payload)
+
+
+rollWriteChannel :: PID -> Identifier -> Interpreter value () 
+rollWriteChannel pid channelName = 
+    withChannel channelName $ \channel -> 
+        case Queue.tryRevertPush pid channel of
+            Right newQueue -> 
+                State.modify $ \context ->
+                    context { _channels = Map.adjust (const newQueue) channelName (_channels context) } 
+                 
+            Left error -> 
+                throw $ RuntimeException (show error)
 
 
 
@@ -137,6 +161,26 @@ continues the program
 -} 
 embedEither :: Monad m => Either e a  -> ExceptT e m a
 embedEither v = ExceptT (return v)
+
+rollReceive :: ReversibleLanguage program => Identifier -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
+rollReceive channelName thread threads =
+    withChannel channelName $ \channel -> 
+        case Queue.mostRecentAction channel of
+            Nothing -> 
+                _ 
+
+            Just (Added pid)  ->
+                case scheduleThread pid current state of 
+                    Left error -> 
+                        throw $ ThreadScheduleError pid error
+
+                    Right (current, state) -> 
+                        revert current state 
+
+            Just (Removed pid) ->
+                scheduleThread pid thread threads 
+
+    
 
 {-| Revert the program state before the creation of the given variable -}
 rollVariable :: ReversibleLanguage program => Identifier -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 

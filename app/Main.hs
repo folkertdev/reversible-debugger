@@ -3,10 +3,11 @@ module Main where
 import System.Environment
 
 import Interpreter
+import DebuggerParser (Instruction(..), parse)
 import MicroOz
 import MicroOz.Parser as Parser
 import Types
-import ReversibleLanguage (schedule, reschedule, ThreadState(..), ExecutionState, init)
+import ReversibleLanguage (schedule, reschedule, throw, ThreadState(..), ExecutionState, init)
 
 import Control.Monad
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
@@ -20,19 +21,12 @@ import Debug.Trace
 
 main :: IO ()
 main = runInterpreter 
-        
+
+
+    
+
 
 repeatedApplication n x = foldl (>=>) return $ replicate n x
-
-run :: Show v => Context v -> Interpreter v a -> IO (Context v, a)
-run context computation = 
-    case runStateT computation context of
-        Left e -> do
-            print $ show context 
-            error (show e)
-
-        Right (a, s) -> 
-            return (s, a)
 
 skipLets :: Thread Program -> ThreadState Program -> Interpreter (Value Program) (Either (ThreadState Program) (Thread Program, ThreadState Program))
 skipLets thread threads = 
@@ -46,63 +40,104 @@ skipLets thread threads =
             Left done -> return $ Right (thread, threads) 
             Right (t, ts) -> skipLets t ts
 
-runInterpreter :: IO () 
-runInterpreter = do
-    [ filename ] <- getArgs
-    code <- readFile filename 
+data ReplState program 
+    = Done (Context (Value program)) (ThreadState program)
+    | Active (Context (Value program)) (Thread program) (ThreadState program)
 
-    let parseResult  = Parser.program code
-    case parseResult of
-        Left error ->
+getContext :: ReplState program -> Context (Value program)
+getContext state = 
+    case state of
+        Done context _ -> context
+        Active context _ _ -> context
+    
+
+iteration :: ReplState Program -> IO (Maybe (ReplState Program))
+iteration state = do
+    command <- getLine
+    case DebuggerParser.parse command of 
+        Left error -> do
             print error
-        Right program -> do
-            let ( context, thread) = MicroOz.init program 
-                
-            let 
-                interactive :: Context (Value Program) -> Either (ThreadState Program) (Thread Program, ThreadState Program) -> IO (Context (Value Program))
-                interactive context currentTask = 
-                    case currentTask of
-                        Left done -> return context 
-                        Right ( currentThread, otherThreads) -> do
-                            -- print $ activeInactiveThreads currentThread otherThreads
-                            Pretty.pPrint currentThread 
-                            command <- getLine
-                            case words command of 
-                                [ "x" ] ->
-                                    -- exit
-                                    return context
+            return $ Just state 
 
-                                [ "f" ] -> 
-                                    uncurry interactive =<< run context (forward currentThread otherThreads)
+        Right instruction -> 
+            interpretInstruction instruction state 
 
-                                [ "skiplets" ] -> 
-                                    -- advances the program until the next statement that is not a Let
-                                    uncurry interactive =<< run context (skipLets currentThread otherThreads)
+interpretInstruction :: Instruction -> ReplState Program -> IO (Maybe (ReplState Program)) 
+interpretInstruction instruction state =  
+    let 
 
-                                ( "fthread": var ) -> do
-                                    let pid = map read var
-                                    print $ "forwarding thread " ++ show pid
-                            
-                                    uncurry interactive =<< run context (advanceThread pid currentThread otherThreads)
+        helper :: Interpreter (Value Program) (ExecutionState Program) -> IO (Maybe (ReplState Program)) 
+        helper computation = 
+            case runStateT computation (getContext state) of 
+                Left error -> do
+                    print error
+                    return $ Just state 
 
-                                [ "b" ] -> 
-                                    uncurry interactive =<< run context (backward currentThread otherThreads)
+                Right (a, s) ->
+                    return . Just $ 
+                        case a of
+                            Left threads -> 
+                                Done s threads 
 
-                                [ "rollvariable", var ] ->
-                                    uncurry interactive =<< run context (rollVariable (Identifier var) currentThread otherThreads)
+                            Right (current, other) ->
+                                Active s current other
 
-                                ("rollthread": var)  -> do
-                                    let pid = map read var
-                                    print $ "unrolling thread " ++ show pid
-                            
-                                    uncurry interactive =<< run context (rollThread pid currentThread otherThreads)
+        mapOverThreads f = 
+            case state of 
+                Done _ threads -> 
+                    throw $ RuntimeException "cannot perform action on done threads"
 
-                                other -> do
-                                    liftIO $ print $ "unknown command: " ++ show other
-                                    interactive context currentTask
-                                    
+                Active _ thread threads -> 
+                    f thread threads
+                     
 
-            result <- interactive context (Right (thread , ThreadState Map.empty Map.empty Map.empty Map.empty))
-            print result
+    in
+    case instruction of
+        Forth pid-> 
+            helper $ mapOverThreads (advanceThread pid)
 
+        Back pid-> 
+            helper $ mapOverThreads backward 
+
+        Roll pid n -> do
+            result <- interpretInstruction (Back pid) state 
+            case result of 
+                Nothing -> 
+                    return $ Just state  
+
+                Just newState -> 
+                    interpretInstruction (Roll pid (n - 1)) newState 
+            
+        RollSend channelName n -> 
+            _
+        RollReceive channelName n -> 
+            _
+        RollThread pid -> 
+            helper $ mapOverThreads (rollThread pid) 
+
+        RollVariable identifier -> 
+            helper $ mapOverThreads (rollVariable identifier) 
+
+        Run -> 
+            _
+ 
+
+        ListThreads -> do
+            print state
+            return $ Just state 
+            
+        Store -> do
+            print (getContext state)
+            return $ Just state 
+            
+        Print id ->  
+            _
+        History id -> 
+            _
+        Help-> do 
+            print "help stuff" 
+            return $ Just state 
+
+        Quit-> 
+            return Nothing 
 

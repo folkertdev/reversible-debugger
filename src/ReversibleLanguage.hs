@@ -49,6 +49,8 @@ class (Eq a, Show a, Show (Value a), Show (History a), Eq (Value a), Eq (History
     -- history inspection for correct rolling of threads and variables
     spawned :: History a -> Maybe PID
     createdVariable :: History a -> Maybe Identifier
+    sent :: History a -> Maybe Identifier
+    received :: History a -> Maybe Identifier
 
 
 {-| Type to keep track of the progress that a thread makes 
