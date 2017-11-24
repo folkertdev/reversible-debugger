@@ -15,7 +15,7 @@ cabal-version:       >=1.10
 
 library 
   hs-source-dirs:      src
-  exposed-modules:     Types, Interpreter, ReversibleLanguage, MicroOz, MicroOz.Parser, DebuggerParser
+  exposed-modules:     Types, Data.Thread, Data.ThreadState, Cmd, MicroOz, MicroOz.Parser, DebuggerParser
   other-modules:       Queue 
   build-depends:       base >= 4.7 && < 5
                      , transformers
@@ -28,6 +28,7 @@ library
                      , text
                      , async
                      , deepseq
+                     , semigroups
 
 
 

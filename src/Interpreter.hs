@@ -1,6 +1,26 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE ScopedTypeVariables, Rank2Types, NamedFieldPuns #-}
-module Interpreter (Thread(..), Context, Interpreter, forward, backward, lookupVariable, freshIdentifier, insertVariable, readChannel, writeChannel, freshThreadName, removeVariable, rollVariable, rollThread, advanceThread, rollReadChannel, rollWriteChannel) where
+module Interpreter 
+    (Thread(..)
+    , Context
+    , Interpreter
+    , forward
+    , backward
+    , lookupVariable
+    , freshIdentifier
+    , insertVariable
+    , readChannel
+    , writeChannel
+    , freshThreadName
+    , removeVariable
+    , rollVariable
+    , rollThread
+    , advanceThread
+    , rollReadChannel
+    , rollWriteChannel
+    , rollReceive
+    , rollSend
+    ) where
 
 {-| The main body of code
 
@@ -8,13 +28,15 @@ The interesting stuff happens in the backward and forward functions.
 
 -}
 
+import Prelude hiding (head)
 import Types
-import ReversibleLanguage 
+import Data.ReversibleLanguage as ReversibleLanguage
 import qualified Queue
 import Queue (QueueHistory(..))
 
 import qualified Data.Map as Map 
 import Data.Map (Map)
+import qualified Data.Maybe as Maybe
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
 import Control.Monad.Trans.State as State 
 import Control.Applicative (Applicative, liftA2, pure, (<*), (<|>))
@@ -162,25 +184,83 @@ continues the program
 embedEither :: Monad m => Either e a  -> ExceptT e m a
 embedEither v = ExceptT (return v)
 
+head list = 
+    case list of
+        [] -> Nothing
+        (x:_) -> Just x
+
 rollReceive :: ReversibleLanguage program => Identifier -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
 rollReceive channelName thread threads =
     withChannel channelName $ \channel -> 
         case Queue.mostRecentAction channel of
             Nothing -> 
-                _ 
+                return $ Right ( thread, threads ) 
 
-            Just (Added pid)  ->
-                case scheduleThread pid current state of 
+            Just (Added pid)  -> do
+                -- first roll a send, then try to roll receive
+                rolledSend <- rollSend channelName thread threads
+                case rolledSend of 
+                    Left done -> return $ Left done 
+                    Right (t, ts) -> 
+                        rollReceive channelName t ts 
+                
+
+
+            Just (Removed pid) ->
+                -- unroll until the receive is reverted
+                case scheduleThread pid thread threads of 
                     Left error -> 
                         throw $ ThreadScheduleError pid error
 
-                    Right (current, state) -> 
-                        revert current state 
+                    Right (current, state) ->
+                        go (predicate pid channelName) current state
 
-            Just (Removed pid) ->
-                scheduleThread pid thread threads 
+go predicate thread threads = 
+    if predicate thread then
+        return $ Right (thread, threads) 
+    else do
+        oneStepBack <- backward thread threads
+        case oneStepBack of
+            Left done -> return $ Left done
+            Right (t, ts) -> 
+                go predicate t ts 
 
+
+predicate onThread onChannel thread@(Thread pid history _) = 
+    let receivedOnCorrectChannel =
+            case received =<< head history of
+                Nothing -> False 
+                Just receivedOn -> 
+                    receivedOn == onChannel
+    in 
+        onThread == pid && receivedOnCorrectChannel 
+
+                
+rollSend :: ReversibleLanguage program => Identifier -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
+rollSend channelName thread threads =
+    withChannel channelName $ \channel -> 
+        case Queue.mostRecentAction channel of
+            Nothing -> 
+                return $ Right ( thread, threads ) 
+
+            Just (Added pid)  -> 
+                -- unroll until the send is reverted
+                case scheduleThread pid thread threads of 
+                    Left error -> 
+                        throw $ ThreadScheduleError pid error
+
+                    Right (current, state) ->
+                        go (predicate pid channelName) current state
+
+            Just (Removed pid) -> do
+                -- first roll a receive, then try to roll receive
+                rolledReceive <- rollReceive channelName thread threads
+                case rolledReceive of 
+                    Left done -> return $ Left done 
+                    Right (t, ts) -> 
+                        rollSend channelName t ts 
     
+
 
 {-| Revert the program state before the creation of the given variable -}
 rollVariable :: ReversibleLanguage program => Identifier -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
@@ -209,6 +289,7 @@ rollVariable name thread@(Thread pid history program) state@ThreadState{active, 
                          backward thread state
                     else
                         recurse
+
 
 parent :: ReversibleLanguage program => Thread program -> ThreadState program -> Interpreter (Value program) (Maybe (Thread program, ThreadState program))
 parent child@(Thread pid _ _) state@ThreadState{active, inactive, blocked, filtered} = 
@@ -285,28 +366,6 @@ advanceThread pid current state =
 
 
 
-scheduleThread :: ReversibleLanguage program => PID -> Thread program -> ThreadState program -> Either ThreadScheduleError (Thread program, ThreadState program) 
-scheduleThread pid current@(Thread currentPID _ _) state@ThreadState{ active, inactive, blocked, filtered } = 
-    if pid == currentPID then 
-        Right (current, state) 
-    else 
-        let 
-            isActive = 
-                Map.lookup pid active
-                    |> fmap (\v -> (v, state { active = Map.insert currentPID current $ Map.delete pid active }))
-
-            -- wake up if blocked
-            isBlocked = 
-                Map.lookup pid blocked
-                    |> fmap (\v -> (v, state { active = Map.insert currentPID current active,  blocked = Map.delete pid blocked }))
-
-            errors :: ThreadScheduleError 
-            errors 
-                | Map.member pid inactive = ThreadIsFinished
-                | Map.member pid filtered = ThreadIsFiltered
-                | otherwise = ThreadDoesNotExist
-        in
-            fromMaybe (Left errors) (Right <$> (isActive <|> isBlocked))
         
                 
         

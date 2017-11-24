@@ -1,9 +1,53 @@
-{-# LANGUAGE ScopedTypeVariables, TypeFamilies #-}
+{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns #-}
 module MicroOz where 
 
+import qualified Data.Map as Map
+import qualified Queue 
+import Data.Thread as Thread
+import Data.Context as Context 
+import Data.ThreadState as ThreadState (Progress(..), ThreadState(..), OtherThreads(..), add, scheduleThread, schedule, mapActive)
+import Types
+import Control.Monad.State as State
+import Control.Monad.Except as Except
+import Control.Applicative (liftA2)
+import qualified Cmd
+import Data.Bifunctor as Bifunctor
+
+type Map = Map.Map
+type Queue = Queue.Queue
+type QueueHistory = Queue.QueueHistory
+
+throw :: Error -> StateT s (Either Error) a
+throw error = State.StateT (\s -> Left error)
+
+{-| Values in the language. These may appear on the right-hand side of a variable declaration -} 
+data Value 
+    = VTrue
+    | VFalse
+    | Receive Identifier
+    | Procedure (List Identifier) Program
+    | Port 
+    | VInt IntExp
+    deriving (Show, Eq)
+
+
+{-| Data type representing actions that have lead to the current program state -} 
+data History 
+    = Skipped
+    | Composed 
+    | Sent Identifier Identifier
+    | Received { channelName :: Identifier, binding :: Identifier, payload :: Identifier }
+    | CreatedVariable Identifier
+    | CreatedChannel Identifier
+    | CalledProcedure Identifier (List Identifier)
+    | SpawnedThread PID
+    | BranchedOn BoolExp Bool Program 
+    | AssertedOn BoolExp
+    deriving (Eq, Show)
+
+{-
 
 import qualified ReversibleLanguage (ReversibleLanguage(..))
-import ReversibleLanguage (ReversibleLanguage(Value, History), Progress(..), Context(..), throw)
 import Control.Monad.Trans.State as State 
 import Control.Applicative (liftA2)
 import Interpreter
@@ -13,32 +57,9 @@ import qualified Data.Map as Map
 
 
 instance ReversibleLanguage.ReversibleLanguage Program where 
-    {-| Values in the language. These may appear on the right-hand side of a variable declaration -} 
-    data Value Program 
-        = VTrue
-        | VFalse
-        | Receive Identifier
-        | Procedure (List Identifier) Program
-        | Port 
-        | VInt IntExp
-        deriving (Show, Eq)
 
 
          
-    {-| Data type representing actions that have lead to the current program state -} 
-    data History Program
-        = Skipped
-        | Composed 
-        | Sent Identifier Identifier
-        | Received Identifier Identifier
-        | CreatedVariable Identifier
-        | CreatedChannel Identifier
-        | CalledProcedure Identifier (List Identifier)
-        | SpawnedThread PID
-        | BranchedOn BoolExp Bool Program 
-        | AssertedOn BoolExp
-        deriving (Eq, Show)
-
     forwardThread = advance
     backwardThread = rollback
 
@@ -73,12 +94,13 @@ instance ReversibleLanguage.ReversibleLanguage Program where
             _ -> 
                 Nothing
 
+-}
 
 
 {-| The µOz Syntax -}            
 data Program 
     = Sequence Program Program
-    | Let Identifier (ReversibleLanguage.Value Program) Program
+    | Let Identifier Value Program
     | If BoolExp Program Program
     | SpawnThread Program
     | Skip
@@ -118,11 +140,13 @@ data IntValue
     | IntIdentifier Identifier
     deriving (Show, Eq)
 
+{-
 init :: Program -> (Context (Value Program), Thread Program) 
 init program = 
     ( Context (Map.singleton [0] 0) 0 Map.empty Map.empty
     , Thread [0] [] [ program ]
     )
+-}
 
 
 renameVariableInBoolExp old new exp = 
@@ -197,7 +221,7 @@ renameVariable old new program =
             Send (tagger channelName) (tagger contents)
 
 
-renameVariableInValue :: Identifier -> Identifier -> Value Program -> Value Program
+renameVariableInValue :: Identifier -> Identifier -> Value -> Value 
 renameVariableInValue old new value = 
     case value of
         VTrue -> VTrue
@@ -220,32 +244,154 @@ renameVariableInValue old new value =
             VInt $ renameVariableInIntExp old new ie 
 
 
-
-lookupProcedure  :: Identifier -> Interpreter (Value Program) (List Identifier, Program) 
+-- lookupProcedure  :: Identifier -> Interpreter (Value Program) (List Identifier, Program) 
+lookupProcedure :: (MonadState (Context Value) m, MonadError Error m) => Identifier -> m (List Identifier, Program)
 lookupProcedure identifier = do
-    value <- lookupVariable identifier
+    value <- lookupVariable identifier 
     case value of
         Procedure arguments body -> 
             return (arguments, body)
 
         _ ->
-            throw $ TypeError identifier "I expected a Procedure but instead got" (show value)
+            Except.throwError $ TypeError identifier "I expected a Procedure but instead got" (show value)
+
+step ::  (MonadState (Context Value) m, MonadError Error m) => ( List Msg, ThreadState History Program ) -> m ( List Msg, ThreadState History Program ) 
+step ( messages, state ) = 
+    case messages of 
+        [] ->
+            forward state 
+
+        ((msg@(Action _ (Spawn _))):rest) -> do
+            -- spawns should happen in the same step
+            afterSpawn <- handleSideEffects msg state
+            step ( rest, afterSpawn )
+
+        (msg:rest) -> 
+            (,) <$> pure rest <*> handleSideEffects msg state
+
+embedThreadScheduleError :: MonadError Error m =>  Either ThreadScheduleError a -> m a
+embedThreadScheduleError value = 
+    case value of 
+        Left e ->
+            Except.throwError $ SchedulingError e
+
+        Right v ->
+            return v
+
+rollThread :: (MonadState (Context Value) m, MonadError Error m) => PID -> ThreadState History Program -> m (ThreadState History Program) 
+rollThread pid state = 
+    embedThreadScheduleError (scheduleThread pid state) >>= \state -> 
+        case state of
+            Running current rest -> do
+                ( progress, cmd ) <- rollback current 
+
+                let messages = Cmd.unpack cmd 
+
+                case progress of
+                    Done -> 
+                        foldM (flip handleSideEffects) (Stuck $ rest { inactive = Map.insert pid current (inactive rest) }) messages
+
+                    Step newCurrent -> do
+                        newerCurrent <- foldM (flip handleSideEffects) (Running newCurrent rest) messages
+                        rollThread pid newerCurrent
+
+                    Blocked _ -> 
+                        error "backwards move cannot block"
+            Stuck _ -> 
+                -- scheduleThread will have errored
+                undefined
 
 
-advance :: Thread Program -> Interpreter (Value Program) (Progress (Thread Program)) 
-advance thread = 
-    case thread of 
-        Thread _ _ [] -> 
-            -- the thread contains no further instructions
-            return Done 
+        
+        
+        
 
-        Thread name history (program : rest) -> 
-            let 
-                continue :: History Program -> List Program -> Interpreter (Value Program) (Progress (Thread Program)) 
-                continue historyInstruction instructions = 
-                    return $ Step (Thread name (historyInstruction : history) instructions)
-            in
-            case program of
+
+rollSend :: (MonadState (Context Value) m, MonadError Error m) => PID -> ChannelName -> Identifier -> ThreadState History Program -> m (ThreadState History Program)
+rollSend sender channelName payload state = 
+    undefined
+                        
+rollReceive :: (MonadState (Context Value) m, MonadError Error m) => PID -> ChannelName -> ThreadState History Program -> m (ThreadState History Program)
+rollReceive receiver channelName state = 
+    undefined
+
+
+
+
+
+
+
+
+
+handleSideEffects :: (MonadState (Context Value) m, MonadError Error m) => Msg -> ThreadState History Program -> m (ThreadState History Program)
+handleSideEffects (Action caller action) state =  
+    case action of
+        Spawn newProgram -> do 
+            pid <- freshThreadName caller  
+            return $ ThreadState.add (Thread pid [] [newProgram]) state
+
+        RollThread threadToRoll -> 
+            rollThread threadToRoll state
+
+        RollVariable _ -> undefined
+        
+        RollSend [] ->  
+            return state
+
+        RollSend (h:hs) -> 
+            -- aquire pid 
+            -- switch to that thread
+            -- make it take a step back
+            -- recurse (this will roll the previous thread until its channel action is rolled)
+            undefined
+
+        RollReceive [] -> 
+            return state
+
+        RollReceive (h:hs) -> 
+            -- same as send
+            undefined
+
+
+
+-- backward side effects: things other threads should do 
+data Msg = Action PID Action 
+
+type ChannelName = Identifier 
+data Action = RollThread PID | RollVariable Identifier | RollSend (List QueueHistory) | RollReceive (List QueueHistory) | Spawn Program
+
+forward :: (MonadState (Context Value) m, MonadError Error m) => ThreadState History Program -> m ( List Msg, ThreadState History Program )
+forward state = do
+    ( newState, command ) <- ThreadState.schedule advance (const True) state  
+    return ( Cmd.unpack command, newState ) 
+
+
+advance :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd Msg)
+advance thread@(Thread pid histories program) = 
+    case program of
+        [] -> 
+            return ( Done, Cmd.none )
+
+        (p:ps) -> do
+            (h, newProgram, cmd ) <- advanceP pid p ps
+            return ( Step $ Thread pid (h:histories) newProgram, cmd )
+
+
+rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd Msg)
+rollback thread@(Thread pid histories program) = 
+    case histories of
+        [] -> 
+            return ( Done, Cmd.none )
+
+        (h:hs) -> do
+            ( newProgram, cmd ) <- backwardP pid h program 
+            return ( Step $ Thread pid hs newProgram, cmd )
+
+advanceP :: (MonadState (Context Value) m, MonadError Error m) => PID -> Program -> List Program -> m ( History, List Program, Cmd.Cmd Msg)
+advanceP pid program rest = 
+    let continue history rest = return ( history, rest, Cmd.none ) 
+    in
+        case program of
                 Skip ->
                     continue Skipped rest 
 
@@ -256,22 +402,23 @@ advance thread =
                     freshName <- freshIdentifier 
                     case value of
                         Receive channelName -> do 
-                            message_ <- readChannel name channelName 
+                            message_ <- readChannel pid channelName 
                             case message_ of
                                 Nothing ->
                                     -- blocked on receive
-                                    return $ Blocked $ Thread name history (program : rest)
+                                    -- return -- $ Blocked $ Thread pid history (program : rest)
+                                    Except.throwError $ BlockedOnReceive pid
 
                                 Just message -> 
-                                    continue (Received channelName freshName) $
+                                    continue Received{ channelName = channelName, binding = identifier, payload = message } $
                                         renameVariable identifier message continuation : rest
 
                         Port -> do
                             State.modify $ \context -> 
                                 let 
-                                    newChannels = Map.insert freshName Queue.empty (_channels context)
+                                    newChannels = Map.insert freshName Queue.empty (channels context)
                                 in
-                                    context { _channels = newChannels } 
+                                    context { channels = newChannels } 
 
                             continue (CreatedChannel freshName) $
                                 renameVariable identifier freshName continuation : rest
@@ -284,13 +431,13 @@ advance thread =
                                     else
                                         body
 
-                            insertVariable freshName (Procedure arguments renamedBody) 
+                            State.modify $ insertVariable freshName (Procedure arguments renamedBody) 
                             continue (CreatedVariable freshName) $
                                 renameVariable identifier freshName continuation : rest
                             
 
                         _ -> do
-                            insertVariable freshName value 
+                            State.modify $ insertVariable freshName value 
                             continue (CreatedVariable freshName) $
                                 renameVariable identifier freshName continuation : rest
 
@@ -305,21 +452,23 @@ advance thread =
                 Assert condition -> do
                     verdict <- evalBoolExp condition 
                     if not verdict then
-                       throw $ AssertionError (show condition)
+                       Except.throwError $ AssertionError (show condition)
                     else
                         continue (AssertedOn condition) rest
 
 
                 SpawnThread work -> do
-                    threadName <- freshThreadName name
-                    return $ Branched 
-                        ( Thread name (SpawnedThread threadName : history) rest)
-                        ( Thread threadName [] [ work ])
+                    threadName <- freshThreadName pid 
+                    return 
+                        ( SpawnedThread threadName
+                        , rest
+                        , Cmd.create $ Action pid (Spawn work )
+                        ) 
 
                 Apply functionName arguments -> do
                     ( parameters, body ) <- lookupProcedure functionName 
                     if length arguments /= length parameters then
-                        throw $ ArgumentMismatch functionName (length parameters) (length arguments) 
+                        Except.throwError $ ArgumentMismatch functionName (length parameters) (length arguments) 
                     else 
                         let
                             withRenamedVariables = 
@@ -328,26 +477,15 @@ advance thread =
                             continue (CalledProcedure functionName arguments) (withRenamedVariables : rest)
                                 
                 Send channelName variable -> do
-                    writeChannel name channelName variable 
+                    writeChannel pid channelName variable 
                     continue (Sent channelName variable) rest
 
 
-{-| Move a thread one step backward -} 
-rollback :: Thread Program -> Interpreter (Value Program) (ReversibleLanguage.Progress (Thread Program))
-rollback thread@(Thread name history program) =
-    case history of
-        [] -> 
-            -- do nothing
-            return Done 
-        
-        ( mostRecent : restOfHistory ) ->
-            let 
-                continue :: List Program -> Interpreter (Value Program) (ReversibleLanguage.Progress (Thread Program))
-                continue = return . Step . Thread name restOfHistory 
-
-                pid = name 
-            in
-            case (mostRecent, program) of
+backwardP :: (MonadState (Context Value) m, MonadError Error m) => PID -> History -> List Program -> m ( List Program, Cmd.Cmd Msg ) 
+backwardP pid history program = do
+    context <- State.get
+    let continue newProgram = return ( newProgram, Cmd.none )
+    case (history, program) of 
                 ( Skipped, _ ) ->
                     continue (Skip : program)
 
@@ -355,17 +493,18 @@ rollback thread@(Thread name history program) =
                     continue (Sequence first second : restOfProgram)
 
                 ( CreatedVariable identifier, continuation : restOfProgram ) -> do
-                    value <- lookupVariable identifier 
-                    removeVariable identifier 
+                    value <- Context.lookupVariable identifier 
+                    State.modify $ removeVariable identifier 
                     continue (Let identifier value continuation : restOfProgram )
 
-                ( CreatedChannel identifier, continuation : restOfProgram ) -> do
-                    State.modify $ \context -> 
-                        context { _channels = Map.delete identifier (_channels context) 
-                                , _variableCount = _variableCount context - 1
-                                } 
-
-                    continue (Let identifier Port continuation : restOfProgram )
+                ( CreatedChannel identifier, continuation : restOfProgram ) -> 
+                    let newContext = 
+                            context { channels = Map.delete identifier (channels context) 
+                                    , variableCount = variableCount context - 1
+                                    } 
+                    in do
+                        State.modify (const newContext)
+                        return ( Let identifier Port continuation : restOfProgram, Cmd.none )
 
                 ( BranchedOn condition True falseBody, trueBody : restOfProgram ) ->
                     continue (If condition trueBody falseBody : restOfProgram)
@@ -380,28 +519,49 @@ rollback thread@(Thread name history program) =
                     continue (Apply functionName arguments : restOfProgram)
 
                 ( Sent channelName valueName, restOfProgram ) -> do
-                    -- reverse of send is receive
-                    rollWriteChannel pid 
+                    -- find out whether this send is the "latest" command on the channel
+                    mostRecent <- withChannel channelName (return . Queue.hasJustSent pid)  
+                    if mostRecent then do
+                        -- remove value from the queue
+                        mapChannel channelName (fst . Queue.unpush)
 
-                    continue $ Send channelName valueName : restOfProgram
+                        -- reconstruct the send instruction
+                        return 
+                            ( Send channelName valueName : restOfProgram
+                            , Cmd.none 
+                            )
+                    else do 
+                        toRollFirst <- withChannel channelName (return . Queue.followingReceive pid)
+                        return 
+                            ( restOfProgram
+                            , Cmd.create (Action pid (RollSend  toRollFirst ))
+                            )
 
-                ( Received channelName valueName, continuation : restOfProgram ) -> do
-                    -- reverse of receive is send
-                    -- writeChannel name channelName valueName 
-                    rollReadChannel pid valueName
+                ( Received{ channelName, binding, payload }, continuation : restOfProgram ) -> do
+                    -- find out whether this receive is the "latest" command on the channel
+                    mostRecent <- withChannel channelName (return . Queue.hasJustReceived pid)  
+                    if mostRecent then do
+                        -- put the received value back onto the queue
+                        mapChannel channelName $ \channel -> Queue.unpop payload channel
 
-                    -- unbind the variable
-                    removeVariable valueName 
-
-                    continue $ Let valueName (Receive channelName) continuation : restOfProgram 
+                        -- reconstruct the receive instruction
+                        return 
+                            ( Let binding (Receive channelName) (renameVariable payload binding continuation) : restOfProgram 
+                            , Cmd.none 
+                            )
+                    else do 
+                        toRollFirst <- withChannel channelName (return . Queue.followingReceive pid)
+                        return 
+                            ( restOfProgram
+                            , Cmd.create (Action pid (RollReceive toRollFirst ))
+                            )
 
                 ( _, restOfProgram) ->
                     -- the program has a pattern incompatible with the history instruction we're currently matching
-                    error $ show mostRecent ++ " encountered a pattern it cannot match: " ++ show restOfProgram 
+                    error $ show history ++ " encountered a pattern it cannot match: " ++ show restOfProgram 
 
 
-
-evalBoolExp :: BoolExp -> Interpreter (Value Program) Bool 
+evalBoolExp :: (MonadState (Context Value) m, MonadError Error m) => BoolExp -> m Bool 
 evalBoolExp expression = 
     let
         toFunction operator =
@@ -429,7 +589,7 @@ evalBoolExp expression =
                 liftA2 (toFunction op) (evalIntValue a) (evalIntValue b)
 
 
-evalIntExp :: IntExp -> Interpreter (Value Program) Int 
+evalIntExp :: (MonadState (Context Value) m, MonadError Error m) => IntExp -> m Int 
 evalIntExp expression = 
     let evalOperator f a b = do
             x <- evalIntValue  a
@@ -453,7 +613,7 @@ evalIntExp expression =
                 evalOperator div a b
 
 
-evalIntValue :: IntValue -> Interpreter (Value Program) Int
+evalIntValue :: (MonadState (Context Value) m, MonadError Error m) => IntValue -> m Int 
 evalIntValue value =
     case value of
         IntValue int -> 
@@ -466,10 +626,12 @@ evalIntValue value =
                     evalIntExp intExpr
 
                 _ ->
-                    throw $ TypeError reference "I expected an IntExpr but got" (show dereferenced)
+                    Except.throwError $ TypeError reference "I expected an IntExpr but got" (show dereferenced)
 
+
+type S a = StateT (Context Value) (Either Error) a
              
-evalBoolValue :: BoolValue -> Interpreter (Value Program) Bool
+evalBoolValue :: (MonadState (Context Value) m, MonadError Error m) => BoolValue -> m Bool 
 evalBoolValue value = 
     case value of
         BoolValue bool -> 
@@ -485,4 +647,4 @@ evalBoolValue value =
                     return False
 
                 other -> 
-                    throw $ TypeError identifier "I expected a boolean value but got" (show other)
+                    Except.throwError $ TypeError identifier "I expected a boolean value but got" (show other)

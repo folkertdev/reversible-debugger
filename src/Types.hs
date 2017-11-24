@@ -16,7 +16,11 @@ import Control.Concurrent.MVar (MVar, newEmptyMVar, takeMVar, tryPutMVar)
 import Data.IORef
 
 
-import Queue
+
+
+infixl 0 |>
+(|>) :: a -> (a -> b) -> b
+x |> f = f x
 
 type PID = List Int
 
@@ -31,11 +35,11 @@ data Error
     | BlockedOnReceive PID 
     | RuntimeException String
     | ArgumentMismatch Identifier Int Int
-    | ThreadScheduleError PID ThreadScheduleError 
+    | SchedulingError ThreadScheduleError 
     deriving (Eq)
 
-
-data ThreadScheduleError = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist deriving (Eq, Show)
+data ThreadScheduleError = ThreadScheduleError PID ThreadScheduleErrorCause deriving (Eq, Show)
+data ThreadScheduleErrorCause = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist | DeadLock deriving (Eq, Show)
 
 
 
@@ -66,8 +70,8 @@ instance Show Error where
             ArgumentMismatch (Identifier name) expected actual -> 
                 "Function `" ++ name ++ "` expects " ++ show expected ++ " arguments, but got " ++ show actual
 
-            ThreadScheduleError pid error -> 
-                "The scheduler encountered a problem with thread `" ++ show pid ++ "`:\n" ++ show error
+            SchedulingError (ThreadScheduleError pid cause) -> 
+                "The scheduler encountered a problem with thread `" ++ show pid ++ "`:\n" ++ show cause
 
 
 

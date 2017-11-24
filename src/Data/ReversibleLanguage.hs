@@ -1,8 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables, TypeFamilies, FlexibleContexts,StandaloneDeriving, UndecidableInstances, DeriveFunctor, NamedFieldPuns #-}   
-module ReversibleLanguage ((|>),ReversibleLanguage.init, schedule, unschedule, reschedule, ThreadState(..), ExecutionState, Context(..), Interpreter, Progress(..), Thread(..), ReversibleLanguage(..), forward, backward, throw, catch) where
+module Data.ReversibleLanguage ((|>),ReversibleLanguage.init, schedule, unschedule, ThreadState(..), ExecutionState, Context(..), Interpreter, Progress(..), ReversibleLanguage(..), forward, backward, throw, catch) where
 
 import Types
 import Queue
+import qualified Data.Thread as Thread
+
 import Data.Semigroup (Semigroup(..)) 
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -14,11 +16,9 @@ import Data.Foldable (Foldable, foldrM, asum, find)
 import Data.Maybe (fromMaybe)
 import Data.List (isPrefixOf)
 
-infixl 0 |>
-(|>) :: a -> (a -> b) -> b
-x |> f = f x
 
-type Interpreter value program = State.StateT (Context value) (Either Error) program
+
+type Thread a = Thread.Thread (History a) a
 
 
 data Context a = 
@@ -53,71 +53,7 @@ class (Eq a, Show a, Show (Value a), Show (History a), Eq (Value a), Eq (History
     received :: History a -> Maybe Identifier
 
 
-{-| Type to keep track of the progress that a thread makes 
 
-Based on [a monad for deterministic parallelism](https://simonmar.github.io/bib/papers/monad-par.pdf)
--} 
-data Progress work 
-    = Done 
-    | Step work 
-    | Blocked work
-    | Branched work work
-    deriving (Show, Eq, Functor)
-
-
-{-| An individual thread, with 
-
-* a unique identifier
-* list of history instructions 
-* list of remaining program instructions
--}
-data Thread a = Thread PID (List (History a)) (List a)  
-
-type Threads a = Map PID (Thread a)
-
-data ThreadState a = 
-    ThreadState
-        { active :: Threads a
-        , inactive :: Threads a
-        , blocked :: Threads a
-        , filtered :: Threads a
-        } 
-
-
-{-| -} 
-spawnChildThread :: PID -> a -> Threads a -> Threads a
-spawnChildThread parentID value threads = 
-    let 
-        siblings = Map.keys threads 
-            |> filter (\k -> length k == length parentID + 1 && parentID `isPrefixOf` k)
-        childID = parentID ++ [ length siblings ]
-    in
-        Map.insert childID (Thread childID [] [value]) threads
-
-
-schedule :: ReversibleLanguage program 
-    => (Thread program -> Bool)
-    -> Thread program 
-    -> ThreadState program
-    -> Interpreter (Value program) (Either (ThreadState program) (Thread program, ThreadState program))
-schedule predicate thread@(Thread pid _ _) state@ThreadState{active, inactive, blocked, filtered} = 
-    if predicate thread then do
-        result <- forwardThread thread 
-        case result of
-            Done ->
-                return $ reschedule (state { inactive = Map.insert pid thread inactive }) 
-
-            Step newThread -> 
-                return $ Right ( newThread, state ) 
-
-            Blocked newThread -> 
-                return $ reschedule (state { blocked = Map.insert pid newThread blocked })
-
-            Branched parent child@(Thread childPID _ _) ->
-                return $ Right ( parent, state { active = Map.insert childPID child active } )
-    
-    else
-        return $ reschedule state 
 
 
 unschedule :: ReversibleLanguage program 
@@ -175,23 +111,6 @@ unschedule predicate thread@(Thread pid history program) state@ThreadState{activ
         return $ reschedule state 
 
 
-
-reschedule :: ThreadState program -> Either (ThreadState program) (Thread program, ThreadState program)
-reschedule state@ThreadState{active, inactive, blocked, filtered} =     
-    case Map.minView active of
-        Just (first, rest) -> 
-            -- try to make progress on the minimal (most senior) thread 
-            Right (first, state { active = rest }) 
-
-        Nothing ->
-            if Map.null blocked then
-                -- finished all threads, give back the final state
-                Left state
-            else
-                -- try to schedule the blocked threads again
-                -- in the how that they are now unblocked
-                reschedule (state { active = blocked, blocked = Map.empty })
-        
 
 deriving instance (Eq a, Eq (History a)) => Eq (Thread a) 
 deriving instance (Show a, Show (History a)) => Show (Thread a) 

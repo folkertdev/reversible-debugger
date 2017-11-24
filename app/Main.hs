@@ -1,5 +1,9 @@
+{-# LANGUAGE StandaloneDeriving, FlexibleContexts, UndecidableInstances #-}
 module Main where
 
+main = return () 
+
+{-
 import System.Environment
 
 import Interpreter
@@ -7,7 +11,7 @@ import DebuggerParser (Instruction(..), parse)
 import MicroOz
 import MicroOz.Parser as Parser
 import Types
-import ReversibleLanguage (schedule, reschedule, throw, ThreadState(..), ExecutionState, init)
+import ReversibleLanguage (schedule, reschedule, throw, ThreadState(..), ExecutionState, init, ReversibleLanguage)
 
 import Control.Monad
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
@@ -20,10 +24,23 @@ import qualified Text.Show.Pretty as Pretty
 import Debug.Trace 
 
 main :: IO ()
-main = runInterpreter 
+main = do
+    [ path ] <- getArgs 
+    contents <- readFile path
+    case Parser.program contents of
+        Left e -> 
+            error (show e)
+        Right program -> do 
+            let ( context, thread ) = MicroOz.init program
+            go $ Active context thread ThreadState{ active = Map.empty, inactive = Map.empty, blocked = Map.empty, filtered = Map.empty }
 
 
-    
+
+
+go :: ReplState Program -> IO () 
+go state = do
+    stepped <- iteration state 
+    mapM_ go stepped
 
 
 repeatedApplication n x = foldl (>=>) return $ replicate n x
@@ -44,6 +61,8 @@ data ReplState program
     = Done (Context (Value program)) (ThreadState program)
     | Active (Context (Value program)) (Thread program) (ThreadState program)
 
+deriving instance (ReversibleLanguage program) => Show (ReplState program) 
+
 getContext :: ReplState program -> Context (Value program)
 getContext state = 
     case state of
@@ -61,6 +80,12 @@ iteration state = do
 
         Right instruction -> 
             interpretInstruction instruction state 
+
+run thread threads = do
+    stepped <- forward thread threads
+    case stepped of 
+        Left done -> return $ Left done
+        Right (t, ts) -> run t ts 
 
 interpretInstruction :: Instruction -> ReplState Program -> IO (Maybe (ReplState Program)) 
 interpretInstruction instruction state =  
@@ -109,9 +134,11 @@ interpretInstruction instruction state =
                     interpretInstruction (Roll pid (n - 1)) newState 
             
         RollSend channelName n -> 
-            _
+            helper $ mapOverThreads (Interpreter.rollSend channelName)
+
         RollReceive channelName n -> 
-            _
+            helper $ mapOverThreads (Interpreter.rollReceive channelName)
+
         RollThread pid -> 
             helper $ mapOverThreads (rollThread pid) 
 
@@ -119,7 +146,7 @@ interpretInstruction instruction state =
             helper $ mapOverThreads (rollVariable identifier) 
 
         Run -> 
-            _
+            helper $ mapOverThreads run
  
 
         ListThreads -> do
@@ -131,9 +158,11 @@ interpretInstruction instruction state =
             return $ Just state 
             
         Print id ->  
-            _
+            undefined
+
         History id -> 
-            _
+            undefined
+
         Help-> do 
             print "help stuff" 
             return $ Just state 
@@ -141,3 +170,4 @@ interpretInstruction instruction state =
         Quit-> 
             return Nothing 
 
+-}
