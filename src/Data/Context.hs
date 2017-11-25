@@ -9,9 +9,11 @@ import qualified Data.Map as Map
 import Types
 import Data.Thread as Thread (Thread(..))
 import Data.List as List
+import Data.Monoid ((<>))
 
 import Control.Monad.Except as Except
 import Control.Monad.State as State
+import qualified Utils
 
 
 data Context value = 
@@ -21,7 +23,17 @@ data Context value =
     , channels :: Map Identifier (Queue Identifier)
     , threads :: Map PID Int
     } 
-    deriving (Show, Eq)
+
+instance Show value => Show (Context value) where
+    show (Context bindings variableCount channels threads) = 
+        "Context:"
+            <> "\n"
+            <> "variable count: "
+            <> show variableCount
+            <> "\n"
+            <> Utils.showMap "bindings" bindings
+            <> Utils.showMap "channels" channels
+            <> Utils.showMap "threads" threads
 
 singleton :: Thread h a -> Context value
 singleton (Thread pid _ _) = 
@@ -214,3 +226,4 @@ readChannel threadName identifier =
 writeChannel :: MonadState (Context value) m => PID -> Identifier -> Identifier -> m ()  
 writeChannel threadName identifier payload = 
     mapChannel identifier (Queue.push threadName payload)
+

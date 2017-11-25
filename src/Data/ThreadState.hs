@@ -1,14 +1,16 @@
-{-# LANGUAGE ScopedTypeVariables, StandaloneDeriving, UndecidableInstances, NamedFieldPuns, FlexibleContexts #-}   
+{-# LANGUAGE ScopedTypeVariables, UndecidableInstances, NamedFieldPuns, FlexibleContexts #-}   
 
 module Data.ThreadState where 
 
 import Queue
+import qualified Utils
 import Data.Map (Map)
 import Data.Map as Map
 import Types
 import Data.Thread as Thread (Thread(..), pid)
 import Data.Maybe (fromMaybe)
 import Control.Applicative ((<|>))
+import Data.Monoid ((<>))
 
 import Control.Monad.Except as Except
 
@@ -22,9 +24,32 @@ data OtherThreads history a =
         , filtered :: Threads history a
         } 
 
+
+instance (Show h, Show a) => Show (OtherThreads h a) where
+    show (OtherThreads active inactive blocked filtered) = 
+        "Other Threads:"
+            <> "\n"
+            <> Utils.showMap "active" active
+            <> Utils.showMap "done" inactive
+            <> Utils.showMap "blocked" blocked
+            <> Utils.showMap "filtered" filtered
+
 data ThreadState history a 
     = Running (Thread history a) (OtherThreads history a) 
     | Stuck (OtherThreads history a)
+
+instance (Show h, Show a) => Show (ThreadState h a) where
+    show (Running current other) = 
+        "Running:"
+            <> "\n"
+            <> show current
+            <> "\n"
+            <> show other
+
+    show (Stuck other) = 
+        "Stuck:"
+            <> "\n"
+            <> show other
 
 mapActive :: (Thread h a -> Thread h a) -> ThreadState h a -> ThreadState h a
 mapActive tagger state = 
@@ -53,9 +78,14 @@ toOther state =
         Stuck other -> 
             other 
 
-deriving instance (Show (Thread history a)) => Show (OtherThreads history a)
-deriving instance (Show (Thread history a)) => Show (ThreadState history a)
+mapOther :: (OtherThreads h a -> OtherThreads h a) -> ThreadState h a -> ThreadState h a
+mapOther tagger state = 
+    case state of 
+        Running current other ->
+            Running current (tagger other) 
 
+        Stuck other -> 
+            Stuck (tagger other) 
 
 
 

@@ -3,10 +3,11 @@ module MicroOz where
 
 import qualified Data.Map as Map
 import qualified Data.List as List
+import qualified Data.Maybe as Maybe
 import qualified Queue 
 import Data.Thread as Thread
 import Data.Context as Context 
-import Data.ThreadState as ThreadState (Progress(..), ThreadState(..), OtherThreads(..), add, scheduleThread, schedule, mapActive)
+import Data.ThreadState as ThreadState (Progress(..), ThreadState(..), OtherThreads(..), add, reschedule, scheduleThread, schedule, mapActive, mapOther)
 import Types
 import Control.Monad.State as State
 import Control.Monad.Except as Except
@@ -394,7 +395,7 @@ backward state =
 
             case progress of
                 Done ->
-                    foldM (flip handleSideEffects) (Stuck $ rest { inactive = Map.insert pid current (inactive rest) }) messages
+                    foldM (flip handleSideEffects) (Stuck rest) messages
 
                 Step newCurrent -> 
                     foldM (flip handleSideEffects) (Running newCurrent rest) messages
@@ -405,26 +406,58 @@ backward state =
         Stuck rest ->
             return $ Stuck rest
 
+
+handleBlockedThread :: (MonadError Error m) => ThreadState h a -> Error -> m (ThreadState h a)
+handleBlockedThread state error =  
+    let insertBlocked thread other = 
+            other { blocked = Map.insert (Thread.pid thread) thread (blocked other) } 
+    in
+    case error of 
+        BlockedOnReceive pid -> 
+            case state of 
+                Running current rest -> 
+                    Stuck rest
+                        -- reschedule (makes sure the 'current' thread is not immediately rescheduled  
+                        |> ThreadState.reschedule
+                        -- insert the 'current' thread into the blocked other threads
+                        |> fmap (return . ThreadState.mapOther (insertBlocked current))
+                        -- if rescheduling failed, propagate the error 
+                        |> Maybe.fromMaybe (Except.throwError (BlockedOnReceive pid))
+
+                -- should not happen really
+                Stuck rest -> return $ Stuck rest
+
+        _ ->
+            -- propagate any other errors
+            Except.throwError error 
+
+
 forward :: (MonadState (Context Value) m, MonadError Error m) => ThreadState History Program -> m ( ThreadState History Program )
 forward state = 
-    case state of 
-        Running current@(Thread pid _ _) rest -> do
-            ( progress, commands ) <- advance current
+    flip Except.catchError (handleBlockedThread state) $ 
+        case state of 
+            Running current@(Thread pid _ _) rest -> do
+                ( progress, commands ) <- advance current 
 
-            let messages = Cmd.unpack commands
+                let messages = Cmd.unpack commands
 
-            case progress of
-                Done -> 
-                    foldM (flip handleSideEffects) (Stuck $ rest { inactive = Map.insert pid current (inactive rest) }) messages
+                case progress of
+                    Done -> 
+                        foldM (flip handleSideEffects) (Stuck $ rest { inactive = Map.insert pid current (inactive rest) }) messages
 
-                Step newCurrent -> 
-                    foldM (flip handleSideEffects) (Running newCurrent rest) messages
+                    Step newCurrent -> 
+                        foldM (flip handleSideEffects) (Running newCurrent rest) messages
 
-                Blocked _ -> 
-                    error "blocked on forward action"
+                    Blocked _ -> 
+                        error "blocked on forward action"
 
-        Stuck rest ->
-            return $ Stuck rest
+            Stuck rest ->
+                case ThreadState.reschedule state  of 
+                    Just rescheduled -> 
+                        forward rescheduled
+
+                    Nothing ->  
+                        Except.throwError $ SchedulingError $ ThreadScheduleError [] DeadLock
 
 
 advance :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd Msg)
@@ -463,10 +496,9 @@ advanceP pid program rest =
                     case value of
                         Receive channelName -> do 
                             message_ <- readChannel pid channelName 
-                            case message_ of
+                            case Debug.traceShow "receiving message from channel" message_ of
                                 Nothing ->
                                     -- blocked on receive
-                                    -- return -- $ Blocked $ Thread pid history (program : rest)
                                     Except.throwError $ BlockedOnReceive pid
 
                                 Just message -> 

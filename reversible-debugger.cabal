@@ -16,7 +16,7 @@ cabal-version:       >=1.10
 library 
   hs-source-dirs:      src
   exposed-modules:     Types, Data.Thread, Data.Context, Data.ThreadState, Cmd, MicroOz, MicroOz.Parser, DebuggerParser
-  other-modules:       Queue 
+  other-modules:       Queue, Utils
   build-depends:       base >= 4.7 && < 5
                      , transformers
                      , mtl

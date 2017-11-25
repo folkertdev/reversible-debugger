@@ -24,8 +24,14 @@ empty =
     Empty
 
 push :: PID -> a -> Queue a -> Queue a
-push pid item (Queue items history) = 
-    Queue (items <> pure item) (NonEmpty.cons (Added pid) history)
+push pid item queue =
+    case queue of 
+        Queue items history ->
+            Queue (items <> pure item) (NonEmpty.cons (Added pid) history)
+
+        Empty -> 
+            Queue (pure item) (pure (Added pid))
+
 
 
 pop :: PID -> Queue a -> Maybe (a, Queue a)
@@ -40,6 +46,7 @@ pop pid queue =
                     Just (x, Empty )
                 ( x, Just xs ) -> 
                     Just (x, Queue xs (NonEmpty.cons (Removed pid) history)) 
+
 
 data QueueHistoryError = QueueEmpty | InvalidThread { expected :: PID, actual :: PID } | InvalidAction deriving (Show) 
 
