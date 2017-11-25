@@ -1,12 +1,14 @@
 {-# LANGUAGE ScopedTypeVariables, FlexibleContexts #-}   
 
-module Data.Context where 
+module Data.Context (Context, singleton, empty, insertVariable, insertBinding, removeVariable, lookupVariable, mapChannel, withChannel, readChannel, writeChannel, insertChannel, removeChannel, insertThread, removeThread) where 
 
-import Queue
+import Queue (Queue)
+import qualified Queue
 import Data.Map (Map)
-import Data.Map as Map
+import qualified Data.Map as Map
 import Types
 import Data.Thread as Thread (Thread(..))
+import Data.List as List
 
 import Control.Monad.Except as Except
 import Control.Monad.State as State
@@ -19,13 +21,27 @@ data Context value =
     , channels :: Map Identifier (Queue Identifier)
     , threads :: Map PID Int
     } 
+    deriving (Show, Eq)
 
-insertVariable :: Identifier -> value -> Context value -> Context value 
-insertVariable identifier value context = 
-        let 
-            newBindings = Map.insert identifier value (bindings context)
-        in
-            context { bindings = newBindings } 
+singleton :: Thread h a -> Context value
+singleton (Thread pid _ _) = 
+    Context 
+        { bindings = Map.empty
+        , variableCount = 0
+        , channels = Map.empty
+        , threads = Map.singleton pid 0  
+        } 
+
+empty :: Context value 
+empty = 
+    Context 
+        { bindings = Map.empty
+        , variableCount = 0
+        , channels = Map.empty
+        , threads = Map.empty 
+        } 
+
+
 
 
 removeVariable :: Identifier -> Context value -> Context value  
@@ -60,6 +76,25 @@ lookupVariable identifier = do
             return v
 
 
+insertVariable :: MonadState (Context value) m => value -> m Identifier 
+insertVariable value = 
+    insertBinding (const value)
+
+insertBinding :: MonadState (Context value) m => (Identifier -> value) -> m Identifier
+insertBinding tagger = do
+    identifier <- freshIdentifier
+
+    let value = tagger identifier
+
+    State.modify $ \context ->
+        let newBindings = Map.insert identifier value (bindings context)
+        in
+            context { bindings = newBindings } 
+
+    return identifier
+    
+    
+
 {-| Generate a guaranteed unused (fresh) new identifier -}
 freshIdentifier :: MonadState (Context value) m => m Identifier 
 freshIdentifier = do
@@ -69,8 +104,34 @@ freshIdentifier = do
     return $ Identifier $ "var" ++ show new
 
 
-freshThreadName :: (MonadState (Context value) m, MonadError Error m) => PID -> m PID 
-freshThreadName parentName = do
+insertChannel :: MonadState (Context value) m => Queue Identifier -> m Identifier 
+insertChannel value = do
+    identifier <- freshIdentifier  
+
+    State.modify $ \context ->
+        let newBindings = Map.insert identifier value (channels context)
+        in
+            context { channels = newBindings } 
+
+    return identifier
+
+removeChannel :: MonadState (Context value) m => Identifier -> m () 
+removeChannel identifier = 
+    State.modify $ \context -> 
+        case Map.lookup identifier (channels context) of
+            Nothing -> 
+                -- variable not defined, do nothing
+                context 
+
+            Just _ -> 
+                context 
+                    { channels = Map.delete identifier (channels context)
+                    , variableCount = variableCount context - 1 
+                    } 
+
+
+insertThread :: (MonadState (Context value) m, MonadError Error m) => PID -> List h -> List a -> m (Thread h a)
+insertThread parentName history value = do
     context <- State.get
     let usedThreadNames = threads context  
     case Map.lookup parentName usedThreadNames of
@@ -80,14 +141,39 @@ freshThreadName parentName = do
         Just childCount -> do
             let 
                 childName = 
-                    parentName ++ [childCount + 1]
+                    parentName ++ [childCount ]
 
                 updater = 
                     Map.adjust (+ 1) parentName . Map.insert childName 0 
 
             State.put (context { threads =  updater usedThreadNames }) 
-            return childName
+            return $ Thread childName history value
 
+
+removeThread :: (MonadState (Context value) m, MonadError Error m) => PID -> m () 
+removeThread pid = 
+    let removeT threads =
+            case Map.lookup pid threads of
+                Nothing -> 
+                    Except.throwError $ RuntimeException $ "removing non-existent thread: "  ++ show pid 
+
+                Just 0 -> 
+                    return $ Map.delete pid threads
+
+                Just n -> 
+                    Except.throwError $ RuntimeException $ "removing non-empty thread, it has # of remaining children: "  ++ show n
+
+        decrementParent threads = 
+            let parentName = 
+                    List.init pid 
+            in
+                Map.adjust (\v -> v - 1) parentName threads
+    in do
+        context <- State.get 
+        let ts = threads context
+        newTs <- decrementParent <$> removeT ts 
+        State.put context{ threads = newTs }
+        
 
 withChannel :: (MonadState (Context value) m, MonadError Error m) => Identifier -> (Queue.Queue Identifier -> m a) -> m a 
 withChannel identifier tagger = do
@@ -128,27 +214,3 @@ readChannel threadName identifier =
 writeChannel :: MonadState (Context value) m => PID -> Identifier -> Identifier -> m ()  
 writeChannel threadName identifier payload = 
     mapChannel identifier (Queue.push threadName payload)
-
-{-
-rollWriteChannel :: (MonadState (Context value) m, MonadError Error m) => PID -> Identifier -> m () 
-rollWriteChannel pid channelName = 
-    withChannel channelName $ \channel ->  
-        case Queue.tryRevertPush pid channel of
-            Right newQueue -> 
-                State.modify $ \context ->
-                    context { channels = Map.adjust (const newQueue) channelName (channels context) } 
-                 
-            Left error -> 
-                Except.throwError $ RuntimeException (show error)
-rollReadChannel :: (MonadState (Context value) m, MonadError Error m) => PID -> Identifier -> Identifier -> m () 
-rollReadChannel pid channelName payload = 
-    withChannel channelName $ \channel -> 
-        case Queue.tryRevertPop pid payload channel of
-            Right newQueue -> 
-                State.modify $ \context ->
-                    context { channels = Map.adjust (const newQueue) channelName (channels context) } 
-                 
-            Left error -> 
-                Except.throwError $ RuntimeException (show error)
-
--}

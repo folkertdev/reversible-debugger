@@ -1,20 +1,21 @@
-{-# LANGUAGE StandaloneDeriving, FlexibleContexts, UndecidableInstances #-}
+{-# LANGUAGE FlexibleContexts, UndecidableInstances #-}
 module Main where
 
-main = return () 
+import System.Environment (getArgs)
 
-{-
-import System.Environment
-
-import Interpreter
+-- import Interpreter
 import DebuggerParser (Instruction(..), parse)
-import MicroOz
+import MicroOz (Program, Value, History, init, forward, backward, rollThread)
 import MicroOz.Parser as Parser
 import Types
-import ReversibleLanguage (schedule, reschedule, throw, ThreadState(..), ExecutionState, init, ReversibleLanguage)
+-- import ReversibleLanguage (schedule, reschedule, throw, ThreadState(..), ExecutionState, init, ReversibleLanguage)
+--
+import Data.Thread as Thread
+import Data.ThreadState as ThreadState
+import Data.Context as Context
 
 import Control.Monad
-import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
+import Control.Monad.Except as Except
 import Control.Monad.Trans.State.Lazy as State 
 import Control.Monad.Trans (liftIO)
 import Control.Concurrent.MVar 
@@ -32,16 +33,17 @@ main = do
             error (show e)
         Right program -> do 
             let ( context, thread ) = MicroOz.init program
-            go $ Active context thread ThreadState{ active = Map.empty, inactive = Map.empty, blocked = Map.empty, filtered = Map.empty }
+            go $ ReplState context (Running thread ThreadState.OtherThreads{ active = Map.empty, inactive = Map.empty, blocked = Map.empty, filtered = Map.empty })
 
 
 
 
-go :: ReplState Program -> IO () 
+go :: ReplState -> IO () 
 go state = do
     stepped <- iteration state 
     mapM_ go stepped
 
+{-
 
 repeatedApplication n x = foldl (>=>) return $ replicate n x
 
@@ -56,22 +58,23 @@ skipLets thread threads =
         case oneIteration of 
             Left done -> return $ Right (thread, threads) 
             Right (t, ts) -> skipLets t ts
+-}
 
-data ReplState program 
-    = Done (Context (Value program)) (ThreadState program)
-    | Active (Context (Value program)) (Thread program) (ThreadState program)
+data ReplState = ReplState (Context Value) (ThreadState History Program) deriving (Show)
 
-deriving instance (ReversibleLanguage program) => Show (ReplState program) 
 
-getContext :: ReplState program -> Context (Value program)
-getContext state = 
-    case state of
-        Done context _ -> context
-        Active context _ _ -> context
+getContext :: ReplState -> Context Value
+getContext (ReplState context state) = 
+    context
     
 
-iteration :: ReplState Program -> IO (Maybe (ReplState Program))
+iteration :: ReplState -> IO (Maybe ReplState)
 iteration state = do
+    print "the state is"
+    print "---"
+    print state
+    print "---"
+    print "what is your command?"
     command <- getLine
     case DebuggerParser.parse command of 
         Left error -> do
@@ -82,48 +85,43 @@ iteration state = do
             interpretInstruction instruction state 
 
 run thread threads = do
-    stepped <- forward thread threads
+    stepped <- MicroOz.forward (Running thread threads)
     case stepped of 
-        Left done -> return $ Left done
-        Right (t, ts) -> run t ts 
+        Stuck done -> return $ Left done
+        Running t ts -> run t ts 
 
-interpretInstruction :: Instruction -> ReplState Program -> IO (Maybe (ReplState Program)) 
-interpretInstruction instruction state =  
+
+interpretInstruction :: Instruction -> ReplState -> IO (Maybe ReplState) 
+interpretInstruction instruction (ReplState context state) =  
     let 
 
-        helper :: Interpreter (Value Program) (ExecutionState Program) -> IO (Maybe (ReplState Program)) 
-        helper computation = 
-            case runStateT computation (getContext state) of 
+        evaluate :: StateT (Context Value) (Either Error) (ThreadState History Program) -> IO (Maybe ReplState)
+        evaluate computation = 
+            case runStateT computation context of 
                 Left error -> do
                     print error
-                    return $ Just state 
+                    return $ Just $ ReplState context state 
 
                 Right (a, s) ->
-                    return . Just $ 
-                        case a of
-                            Left threads -> 
-                                Done s threads 
-
-                            Right (current, other) ->
-                                Active s current other
+                    return . Just $ ReplState s a
 
         mapOverThreads f = 
             case state of 
-                Done _ threads -> 
-                    throw $ RuntimeException "cannot perform action on done threads"
-
-                Active _ thread threads -> 
+                Running thread threads ->
                     f thread threads
-                     
+                
+                Stuck _ ->
+                    Except.throwError $ RuntimeException "cannot perform action on done threads"
 
     in
     case instruction of
-        Forth pid-> 
-            helper $ mapOverThreads (advanceThread pid)
+        Forth pid ->
+            evaluate $ MicroOz.forward state 
 
         Back pid-> 
-            helper $ mapOverThreads backward 
+            evaluate $ MicroOz.backward state 
 
+        {-
         Roll pid n -> do
             result <- interpretInstruction (Back pid) state 
             case result of 
@@ -134,16 +132,16 @@ interpretInstruction instruction state =
                     interpretInstruction (Roll pid (n - 1)) newState 
             
         RollSend channelName n -> 
-            helper $ mapOverThreads (Interpreter.rollSend channelName)
+            undefined
 
         RollReceive channelName n -> 
-            helper $ mapOverThreads (Interpreter.rollReceive channelName)
+            undefined
 
         RollThread pid -> 
-            helper $ mapOverThreads (rollThread pid) 
+            undefined
 
         RollVariable identifier -> 
-            helper $ mapOverThreads (rollVariable identifier) 
+            undefined
 
         Run -> 
             helper $ mapOverThreads run
@@ -167,7 +165,7 @@ interpretInstruction instruction state =
             print "help stuff" 
             return $ Just state 
 
+        -}
         Quit-> 
             return Nothing 
-
--}
+        

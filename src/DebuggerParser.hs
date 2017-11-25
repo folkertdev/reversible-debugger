@@ -52,6 +52,7 @@ data Instruction
     | History (Either PID Identifier)
     | Help 
     | Quit
+    deriving (Eq, Show)
         
 forth :: Parser Instruction
 forth = do

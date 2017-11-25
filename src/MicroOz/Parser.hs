@@ -200,7 +200,7 @@ valueParser =
             , intExpValue
             ] 
 
-procedureParser :: Parser (Value Program)
+procedureParser :: Parser Value
 procedureParser = do
             try $ string "proc"
             whitespaceOrComment 

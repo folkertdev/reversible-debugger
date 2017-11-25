@@ -9,7 +9,7 @@ import Types
 * list of history instructions 
 * list of remaining program instructions
 -}
-data Thread history a = Thread PID (List history) (List a)  
+data Thread history a = Thread PID (List history) (List a) deriving (Show, Eq)
 
 pid :: Thread history a -> PID 
 pid (Thread pid_ _ _) = pid_
