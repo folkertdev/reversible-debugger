@@ -1,5 +1,6 @@
-{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns #-}
+{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns  #-}
 module MicroOz where 
+
 
 import qualified Data.Map as Map
 import qualified Data.List as List
@@ -7,7 +8,8 @@ import qualified Data.Maybe as Maybe
 import qualified Queue 
 import Data.Thread as Thread
 import Data.Context as Context 
-import Data.ThreadState as ThreadState (Progress(..), ThreadState(..), OtherThreads(..), add, reschedule, rescheduleBackward, scheduleThread, mapActive, mapOther, addInactive, addBlocked, addUninitialized, removeUninitialized)
+import Data.ThreadState as ThreadState (Progress(..), ThreadState(..), OtherThreads(..), add, reschedule, rescheduleBackward, mapActive, mapOther, addInactive, addBlocked, addUninitialized, removeUninitialized)
+import qualified Data.ThreadState
 import Types
 import Control.Monad.State as State
 import Control.Monad.Except as Except
@@ -18,6 +20,7 @@ import Debug.Trace as Debug
 type Map = Map.Map
 type Queue = Queue.Queue
 type QueueHistory = Queue.QueueHistory
+
 
 throw :: Error -> StateT s (Either Error) a
 throw error = State.StateT (\s -> Left error)
@@ -208,10 +211,15 @@ embedThreadScheduleError value =
         Right v ->
             return v
 
+scheduleThread :: MonadError Error m => PID -> ThreadState h a -> m (ThreadState h a)
+scheduleThread pid state = embedThreadScheduleError $ Data.ThreadState.scheduleThread pid state
 
-rollThread :: (MonadState (Context Value) m, MonadError Error m) => PID -> ThreadState History Program -> m (ThreadState History Program, List Program) 
+scheduleThreadBackward :: MonadError Error m => PID -> ThreadState h a -> m (ThreadState h a)
+scheduleThreadBackward pid state = embedThreadScheduleError $ Data.ThreadState.scheduleThreadBackward pid state
+
+rollThread :: (MonadState (Context Value) m, MonadError Error m) => PID -> ThreadState History Program -> m (ThreadState History Program, Program) 
 rollThread pid state = 
-    embedThreadScheduleError (scheduleThread pid $ debugLog ("rolling thread " ++ show pid ++ " with state") state) >>= \state -> 
+    scheduleThreadBackward pid state >>= \state -> 
         case state of
             Running current@(Thread _ _ program) rest -> do
                 ( progress, cmd ) <- rollback current 
@@ -221,10 +229,15 @@ rollThread pid state =
                 case progress of
                     Done -> do
                         -- thread is completely unrolled, try scheduling the parent
-                        rescheduledParent <- embedThreadScheduleError (scheduleThread (List.init pid) $ Debug.traceShowId $ Stuck rest) 
+                        rescheduledParent <- scheduleThread (List.init pid) (Stuck rest)
                         newState <- foldM (flip handleBackwardEffects) rescheduledParent messages 
                         Context.removeThread pid
-                        return ( newState, program )
+                        case program of 
+                            -- the initial program of a thread should be just 1 instruction
+                            [ x ] -> 
+                                return ( newState, x )
+                            _ -> 
+                                error $ "invalid initial program: " ++ show program
 
 
                     Step newCurrent -> do
@@ -243,7 +256,7 @@ rollChannel history state =
                 Queue.Added v -> v
                 Queue.Removed v -> v
     in 
-        embedThreadScheduleError (scheduleThread pid state) >>= \state -> 
+        scheduleThread pid state >>= \state -> 
             case state of 
                 Running current rest -> do
                     ( progress, cmd ) <- rollback current 
@@ -271,16 +284,16 @@ handleBackwardEffects action state =
             ( newState, threadProgram ) <- rollThread toRoll state
 
             -- reschedule the parent
-            newerState <- embedThreadScheduleError (scheduleThread caller newState) 
+            newerState <- scheduleThread caller newState 
 
             -- remove child from uninitialized if it's in there
             let newererState = ThreadState.removeUninitialized toRoll newerState
 
             return $ flip ThreadState.mapActive newererState $ \(Thread pid history program)  -> 
-                Thread pid history (SpawnThread (head threadProgram) : program )
+                Thread pid history (SpawnThread threadProgram : program )
 
         Uninitialize { toUninitialize }  ->  
-            let newState = embedThreadScheduleError (scheduleThread toUninitialize state) 
+            let newState = scheduleThread toUninitialize state 
 
                 remove state = 
                     case state of 
@@ -315,6 +328,7 @@ handleForwardEffects action state =
     case action of
         Spawn thread ->
             return $ ThreadState.add thread state
+
 
 type ChannelName = Identifier 
 

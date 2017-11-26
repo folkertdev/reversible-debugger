@@ -39,7 +39,7 @@ data Error
     deriving (Eq)
 
 data ThreadScheduleError = ThreadScheduleError PID ThreadScheduleErrorCause deriving (Eq, Show)
-data ThreadScheduleErrorCause = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist | DeadLock deriving (Eq, Show)
+data ThreadScheduleErrorCause = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist | ThreadIsUninitialized | DeadLock deriving (Eq, Show)
 
 
 

@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, UndecidableInstances, NamedFieldPuns, FlexibleContexts #-}   
 
-module Data.ThreadState (OtherThreads, ThreadState(..), Threads, Progress(..), empty, singleton, mapOther, toOther, mapActive, add, addInactive, scheduleThread, reschedule, rescheduleBackward, addBlocked, addUninitialized, removeUninitialized )  where 
+module Data.ThreadState (OtherThreads, ThreadState(..), Threads, Progress(..), empty, singleton, mapOther, toOther, mapActive, add, addInactive, scheduleThread, scheduleThreadBackward, reschedule, rescheduleBackward, addBlocked, addUninitialized, removeUninitialized )  where 
 
 import qualified Utils
 import Data.Map (Map)
@@ -155,6 +155,45 @@ data Progress work
     | Step work 
     deriving (Show, Eq)
 
+scheduleThreadBackward:: PID -> ThreadState h a -> Either ThreadScheduleError (ThreadState h a) 
+scheduleThreadBackward pid threads = 
+    let work = 
+            case toOther threads of 
+                state@OtherThreads{ active, inactive, blocked, filtered, uninitialized } -> 
+                    let 
+                        isActive = 
+                            Map.lookup pid active
+                                |> fmap (\v -> (v, state { active = Map.delete pid active }))
+
+                        -- wake up if blocked
+                        isBlocked = 
+                            Map.lookup pid blocked
+                                |> fmap (\v -> (v, state { blocked = Map.delete pid blocked }))
+
+                        -- spawn if not initialized 
+                        isInactive = 
+                            Map.lookup pid inactive
+                                |> fmap (\v -> (v, state { inactive = Map.delete pid inactive }))
+
+                        errors :: ThreadScheduleError 
+                        errors 
+                            | Map.member pid uninitialized = ThreadScheduleError pid ThreadIsUninitialized
+                            | Map.member pid filtered = ThreadScheduleError pid ThreadIsFiltered
+                            | otherwise = ThreadScheduleError pid ThreadDoesNotExist
+                    in 
+                        case fromMaybe (Left errors) (Right <$> (isActive <|> isBlocked <|> isInactive)) of
+                            Left e -> 
+                                Left e
+
+                            Right ( newActive, rest ) -> 
+                                Right $ Running newActive rest
+    in
+        case threads of 
+            Running (Thread currentPID _ _) _ | currentPID == pid -> 
+                    Right threads
+
+            _ -> 
+                work 
 
 scheduleThread :: PID -> ThreadState h a -> Either ThreadScheduleError (ThreadState h a) 
 scheduleThread pid threads = 
@@ -174,7 +213,7 @@ scheduleThread pid threads =
                         -- spawn if not initialized 
                         isUninitialized = 
                             Map.lookup pid uninitialized
-                                |> fmap (\v -> (v, state { blocked = Map.delete pid uninitialized }))
+                                |> fmap (\v -> (v, state { uninitialized = Map.delete pid uninitialized }))
 
                         errors :: ThreadScheduleError 
                         errors 

@@ -17,6 +17,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Types, Data.Thread, Data.Context, Data.ThreadState, Cmd, MicroOz, MicroOz.Parser, DebuggerParser
   other-modules:       Queue, Utils
+  ghc-options:         -fwarn-incomplete-patterns
   build-depends:       base >= 4.7 && < 5
                      , transformers
                      , mtl
@@ -37,7 +38,7 @@ library
 executable reversible-debugger 
   hs-source-dirs:      app
   main-is:             Main.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N -fwarn-incomplete-patterns
   build-depends:       base
                      , reversible-debugger 
                      , containers
