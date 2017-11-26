@@ -130,6 +130,7 @@ sendParser = do
             id1 <- identifierParser
             whitespaceOrComment 
             value <- identifierParser 
+            whitespaceOrComment 
             char '}'
             whitespaceOrComment 
             return $ Send id1 value

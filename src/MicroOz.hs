@@ -7,7 +7,7 @@ import qualified Data.Maybe as Maybe
 import qualified Queue 
 import Data.Thread as Thread
 import Data.Context as Context 
-import Data.ThreadState as ThreadState (Progress(..), ThreadState(..), OtherThreads(..), add, reschedule, scheduleThread, schedule, mapActive, mapOther)
+import Data.ThreadState as ThreadState (Progress(..), ThreadState(..), OtherThreads(..), add, reschedule, rescheduleBackward, scheduleThread, mapActive, mapOther, addInactive, addBlocked)
 import Types
 import Control.Monad.State as State
 import Control.Monad.Except as Except
@@ -275,11 +275,11 @@ embedThreadScheduleError value =
             return v
 
 
-rollThread :: (MonadState (Context Value) m, MonadError Error m) => PID -> ThreadState History Program -> m (ThreadState History Program) 
+rollThread :: (MonadState (Context Value) m, MonadError Error m) => PID -> ThreadState History Program -> m (ThreadState History Program, List Program) 
 rollThread pid state = 
-    embedThreadScheduleError (scheduleThread pid state) >>= \state -> 
+    embedThreadScheduleError (scheduleThread pid $ debugLog ("rolling thread " ++ show pid ++ " with state") state) >>= \state -> 
         case state of
-            Running current rest -> do
+            Running current@(Thread _ _ program) rest -> do
                 ( progress, cmd ) <- rollback current 
 
                 let messages = Cmd.unpack cmd 
@@ -290,7 +290,7 @@ rollThread pid state =
                         rescheduledParent <- embedThreadScheduleError (scheduleThread (List.init pid) $ Debug.traceShowId $ Stuck rest) 
                         newState <- foldM (flip handleSideEffects) rescheduledParent messages
                         Context.removeThread pid
-                        return newState
+                        return ( newState, program )
 
 
                     Step newCurrent -> do
@@ -302,12 +302,6 @@ rollThread pid state =
             Stuck _ -> 
                 -- scheduleThread will have errored
                 undefined
-
-
-        
-        
-        
-
 
                         
 rollChannel :: (MonadState (Context Value) m, MonadError Error m) => QueueHistory -> ThreadState History Program -> m (ThreadState History Program)
@@ -326,7 +320,7 @@ rollChannel history state =
 
                     case progress of
                         Done -> 
-                            foldM (flip handleSideEffects) (Stuck $ rest { inactive = Map.insert pid current (inactive rest) }) messages
+                            foldM (flip handleSideEffects) (ThreadState.addInactive current $ Stuck rest) messages
 
                         Step newCurrent -> 
                             foldM (flip handleSideEffects) (Running newCurrent rest) messages
@@ -352,8 +346,17 @@ handleSideEffects (Action caller action) state =
         Spawn thread ->
             return $ ThreadState.add thread state
 
-        RollThread threadToRoll -> 
-            rollThread threadToRoll state
+        RollThread threadToRoll -> do
+            -- roll the thread, and recover its program
+            ( newState, threadProgram ) <- rollThread threadToRoll state
+
+            -- reschedule the parent
+            newerState <- embedThreadScheduleError (scheduleThread caller newState) 
+
+            return $ flip ThreadState.mapActive newerState $ \(Thread pid history program)  -> 
+                Thread pid history (SpawnThread (head threadProgram) : program )
+
+    
 
         RollVariable _ -> undefined
         
@@ -380,10 +383,15 @@ handleSideEffects (Action caller action) state =
 
 
 -- backward side effects: things other threads should do 
-data Msg = Action PID Action 
+data Msg = Action PID Action  deriving (Show)
 
 type ChannelName = Identifier 
-data Action = RollThread PID | RollVariable Identifier | RollSend (List QueueHistory) | RollReceive (List QueueHistory) | Spawn (Thread History Program)
+data Action = RollThread PID | RollVariable Identifier | RollSend (List QueueHistory) | RollReceive (List QueueHistory) | Spawn (Thread History Program) deriving (Show)
+
+
+debugLog name value = 
+    Debug.traceShow (name ++ ": " ++ show value) value
+
 
 backward :: (MonadState (Context Value) m, MonadError Error m) => ThreadState History Program -> m ( ThreadState History Program )
 backward state = 
@@ -395,7 +403,9 @@ backward state =
 
             case progress of
                 Done ->
-                    foldM (flip handleSideEffects) (Stuck rest) messages
+                    -- we re-add the current thread so it can be cleaned up 
+                    -- properly (via the messages) 
+                    foldM (flip handleSideEffects) (debugLog "starting processing of msgs with" $ Running current rest) $ debugLog "current thread is done" messages
 
                 Step newCurrent -> 
                     foldM (flip handleSideEffects) (Running newCurrent rest) messages
@@ -404,14 +414,19 @@ backward state =
                     error "blocked on backward action"
 
         Stuck rest ->
-            return $ Stuck rest
+            undefined
+            {-
+            case ThreadState.rescheduleBackward state  of 
+                Just rescheduled -> 
+                    backward rescheduled
+
+                Nothing ->  
+                    Except.throwError $ SchedulingError $ ThreadScheduleError [] DeadLock
+            -}
 
 
 handleBlockedThread :: (MonadError Error m) => ThreadState h a -> Error -> m (ThreadState h a)
 handleBlockedThread state error =  
-    let insertBlocked thread other = 
-            other { blocked = Map.insert (Thread.pid thread) thread (blocked other) } 
-    in
     case error of 
         BlockedOnReceive pid -> 
             case state of 
@@ -420,7 +435,7 @@ handleBlockedThread state error =
                         -- reschedule (makes sure the 'current' thread is not immediately rescheduled  
                         |> ThreadState.reschedule
                         -- insert the 'current' thread into the blocked other threads
-                        |> fmap (return . ThreadState.mapOther (insertBlocked current))
+                        |> fmap (return . ThreadState.addBlocked current)
                         -- if rescheduling failed, propagate the error 
                         |> Maybe.fromMaybe (Except.throwError (BlockedOnReceive pid))
 
@@ -443,7 +458,7 @@ forward state =
 
                 case progress of
                     Done -> 
-                        foldM (flip handleSideEffects) (Stuck $ rest { inactive = Map.insert pid current (inactive rest) }) messages
+                        foldM (flip handleSideEffects) (ThreadState.addInactive current $ Stuck rest) messages
 
                     Step newCurrent -> 
                         foldM (flip handleSideEffects) (Running newCurrent rest) messages
@@ -475,7 +490,8 @@ rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History
 rollback thread@(Thread pid histories program) = 
     case histories of
         [] -> 
-            return ( Done, Cmd.none )
+            return ( Done , Cmd.create (Action (List.init pid) (RollThread pid)))
+
 
         (h:hs) -> do
             ( newProgram, cmd ) <- backwardP pid h program 
@@ -634,6 +650,7 @@ backwardP pid history program = do
                             ( Let binding (Receive channelName) (renameVariable payload binding continuation) : restOfProgram 
                             , Cmd.none 
                             )
+
                     else do 
                         toRollFirst <- withChannel channelName (return . Queue.followingReceive pid)
                         return 

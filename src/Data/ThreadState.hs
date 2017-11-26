@@ -1,11 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables, UndecidableInstances, NamedFieldPuns, FlexibleContexts #-}   
 
-module Data.ThreadState where 
+module Data.ThreadState (OtherThreads, ThreadState(..), Threads, Progress(..), empty, singleton, mapOther, toOther, mapActive, add, addInactive, scheduleThread, reschedule, rescheduleBackward, addBlocked, addUninitialized)  where 
 
-import Queue
 import qualified Utils
 import Data.Map (Map)
-import Data.Map as Map
+import qualified Data.Map as Map
 import Types
 import Data.Thread as Thread (Thread(..), pid)
 import Data.Maybe (fromMaybe)
@@ -22,17 +21,34 @@ data OtherThreads history a =
         , inactive :: Threads history a
         , blocked :: Threads history a
         , filtered :: Threads history a
+        , uninitialized :: Threads history a
         } 
 
 
+empty :: ThreadState h a 
+empty = 
+    Stuck  
+        OtherThreads
+            { active = Map.empty   
+            , inactive = Map.empty 
+            , blocked = Map.empty 
+            , filtered = Map.empty 
+            , uninitialized = Map.empty 
+            } 
+
+singleton :: Thread h a -> ThreadState h a 
+singleton = flip add Data.ThreadState.empty 
+
+
 instance (Show h, Show a) => Show (OtherThreads h a) where
-    show (OtherThreads active inactive blocked filtered) = 
+    show (OtherThreads active inactive blocked filtered uninitialized) = 
         "Other Threads:"
             <> "\n"
             <> Utils.showMap "active" active
             <> Utils.showMap "done" inactive
             <> Utils.showMap "blocked" blocked
             <> Utils.showMap "filtered" filtered
+            <> Utils.showMap "uninitialized" uninitialized
 
 data ThreadState history a 
     = Running (Thread history a) (OtherThreads history a) 
@@ -51,6 +67,7 @@ instance (Show h, Show a) => Show (ThreadState h a) where
             <> "\n"
             <> show other
 
+
 mapActive :: (Thread h a -> Thread h a) -> ThreadState h a -> ThreadState h a
 mapActive tagger state = 
     case state of
@@ -68,6 +85,34 @@ add newThread state =
 
         Stuck other ->
             Running newThread other
+
+addInactive :: Thread h a -> ThreadState h a -> ThreadState h a
+addInactive newThread state = 
+    case state of 
+        Running current other@OtherThreads{ inactive } -> 
+            Running current (other { inactive = Map.insert (Thread.pid newThread) newThread inactive }) 
+
+        Stuck other@OtherThreads{inactive} ->
+            Stuck (other { inactive = Map.insert (Thread.pid newThread) newThread inactive }) 
+
+
+addBlocked :: Thread h a -> ThreadState h a -> ThreadState h a
+addBlocked newThread state = 
+    case state of 
+        Running current other@OtherThreads{ blocked } -> 
+            Running current (other { blocked = Map.insert (Thread.pid newThread) newThread blocked }) 
+
+        Stuck other@OtherThreads{blocked} ->
+            Stuck (other { blocked = Map.insert (Thread.pid newThread) newThread blocked }) 
+
+addUninitialized :: Thread h a -> ThreadState h a -> ThreadState h a
+addUninitialized newThread state = 
+    case state of 
+        Running current other@OtherThreads{ uninitialized } -> 
+            Running current (other { uninitialized = Map.insert (Thread.pid newThread) newThread uninitialized }) 
+
+        Stuck other@OtherThreads{uninitialized} ->
+            Stuck (other { uninitialized = Map.insert (Thread.pid newThread) newThread uninitialized }) 
 
 toOther :: ThreadState h a -> OtherThreads h a 
 toOther state = 
@@ -89,6 +134,7 @@ mapOther tagger state =
 
 
 
+
 -- type Interpreter value program = State.StateT (Context value) (Either Error) program
 
 
@@ -107,30 +153,43 @@ data Progress work
 
 scheduleThread :: PID -> ThreadState h a -> Either ThreadScheduleError (ThreadState h a) 
 scheduleThread pid threads = 
-    case toOther threads of 
-        state@OtherThreads{ active, inactive, blocked, filtered } -> 
-            let 
-                isActive = 
-                    Map.lookup pid active
-                        |> fmap (\v -> (v, state { active = Map.delete pid active }))
+    let work = 
+            case toOther threads of 
+                state@OtherThreads{ active, inactive, blocked, filtered, uninitialized } -> 
+                    let 
+                        isActive = 
+                            Map.lookup pid active
+                                |> fmap (\v -> (v, state { active = Map.delete pid active }))
 
-                -- wake up if blocked
-                isBlocked = 
-                    Map.lookup pid blocked
-                        |> fmap (\v -> (v, state { blocked = Map.delete pid blocked }))
+                        -- wake up if blocked
+                        isBlocked = 
+                            Map.lookup pid blocked
+                                |> fmap (\v -> (v, state { blocked = Map.delete pid blocked }))
 
-                errors :: ThreadScheduleError 
-                errors 
-                    | Map.member pid inactive = ThreadScheduleError pid ThreadIsFinished
-                    | Map.member pid filtered = ThreadScheduleError pid ThreadIsFiltered
-                    | otherwise = ThreadScheduleError pid ThreadDoesNotExist
-            in 
-                case fromMaybe (Left errors) (Right <$> (isActive <|> isBlocked)) of
-                    Left e -> 
-                        Left e
+                        -- spawn if not initialized 
+                        isUninitialized = 
+                            Map.lookup pid uninitialized
+                                |> fmap (\v -> (v, state { blocked = Map.delete pid uninitialized }))
 
-                    Right ( newActive, rest ) -> 
-                        Right $ Running newActive rest
+                        errors :: ThreadScheduleError 
+                        errors 
+                            | Map.member pid inactive = ThreadScheduleError pid ThreadIsFinished
+                            | Map.member pid filtered = ThreadScheduleError pid ThreadIsFiltered
+                            | otherwise = ThreadScheduleError pid ThreadDoesNotExist
+                    in 
+                        case fromMaybe (Left errors) (Right <$> (isActive <|> isBlocked <|> isUninitialized)) of
+                            Left e -> 
+                                Left e
+
+                            Right ( newActive, rest ) -> 
+                                Right $ Running newActive rest
+    in
+        case threads of 
+            Running (Thread currentPID _ _) _ | currentPID == pid -> 
+                    Right threads
+
+            _ -> 
+                work 
 
 
 reschedule :: ThreadState h a -> Maybe (ThreadState h a)
@@ -149,8 +208,29 @@ reschedule state =
                     Just $ Running current other
 
 
+rescheduleBackward :: ThreadState h a -> Maybe (ThreadState h a)
+rescheduleBackward state = 
+    case state of 
+        Running current rest -> 
+            return $ Running current rest
+
+        Stuck rest -> 
+            case rescheduleInternal rest of 
+                Left other@OtherThreads{ inactive } -> 
+                    -- no active threads to switch to, so bring back an inactive thread
+                    case Map.minView inactive of
+                        Just ( first, rest ) ->
+                            return $ Running first (other { inactive = rest }) 
+
+                        Nothing -> 
+                            Nothing 
+
+
+                Right (current, other) -> 
+                    Just $ Running current other
+
 rescheduleInternal :: OtherThreads h program -> Either (OtherThreads h program) (Thread h program, OtherThreads h program)
-rescheduleInternal state@OtherThreads{active, inactive, blocked, filtered} =     
+rescheduleInternal state@OtherThreads{active, inactive, blocked, filtered, uninitialized} =     
     case Map.minView active of
         Just (first, rest) -> 
             -- try to make progress on the minimal (most senior) thread 
@@ -159,150 +239,13 @@ rescheduleInternal state@OtherThreads{active, inactive, blocked, filtered} =
         Nothing ->
             if Map.null blocked then
                 -- finished all threads, give back the final state
-                Left state
+                if Map.null uninitialized then
+                    Left state
+                else
+                    rescheduleInternal (state { active = uninitialized, uninitialized = Map.empty })
             else
                 -- try to schedule the blocked threads again
                 -- in the how that they are now unblocked
                 rescheduleInternal (state { active = blocked, blocked = Map.empty })
         
 
-schedule :: (Monad m, Monoid msg) => (Thread h a -> m (Progress (Thread h a), msg)) -> (Thread h a -> Bool) -> ThreadState h a -> m (ThreadState h a, msg)
-schedule step predicate state = 
-    case state of 
-        Stuck rest -> 
-            return (Stuck rest, mempty)
-
-        Running active rest -> do
-            (result, message) <- scheduleInternal step predicate active rest
-            case result of 
-                Left remaining -> 
-                    return (Stuck remaining, message)
-
-                Right (t, ts) -> 
-                    return (Running t ts, message)
-
-
-
-
-
-scheduleInternal :: (Monad m, Monoid msg) => (Thread h a -> m (Progress (Thread h a), msg)) -> (Thread h a -> Bool) 
-                 -> Thread h a -> OtherThreads h a -> m (Either (OtherThreads h a) (Thread h a, OtherThreads h a) , msg)
-scheduleInternal step predicate thread@(Thread pid _ _) state@OtherThreads{active, inactive, blocked, filtered} = 
-    if predicate thread then do
-        ( result, msg ) <- step thread 
-        case result of
-            Done ->
-                return 
-                    ( rescheduleInternal (state { inactive = Map.insert pid thread inactive }) 
-                    , msg 
-                    )
-        
-
-            Step newThread -> 
-                return (Right ( newThread, state ) , msg ) 
-
-            Blocked newThread -> 
-                return 
-                    ( rescheduleInternal (state { blocked = Map.insert pid newThread blocked })
-                    , msg 
-                    )
-
-    
-    else
-        return (rescheduleInternal state, mempty)  
-
-data HistoryInspection history = 
-    HistoryInspection 
-        { spawned :: history -> Maybe PID
-        , createdVariable :: history -> Maybe Identifier
-            , sent :: history -> Maybe Identifier
-            , received :: history -> Maybe Identifier
-        }
-
-{-
-unschedule :: Monad m 
-           => HistoryInspection h  
-       -> (Thread h program -> m (Progress (Thread h program)))
-       -> (Thread h program -> Bool)
-       -> Thread h program 
-       -> OtherThreads h program
-       -> m (Either (OtherThreads h program) (Thread h program, OtherThreads h program))
-unschedule HistoryInspection{spawned} step predicate thread@(Thread pid history program) state@OtherThreads{active, inactive, blocked, filtered} = 
-    if predicate thread then 
-        case history of
-            [] -> 
-                return $ rescheduleInternal (state { inactive = Map.insert pid thread inactive }) 
-
-            (mostRecent:rest) -> 
-                case spawned mostRecent of
-                    Nothing -> do
-                        -- reverse the parent thread, keeping the children constant
-                        newParent <- step thread 
-                        case newParent of
-                            Done ->
-                                return $ rescheduleInternal (state { inactive = Map.insert pid thread inactive }) 
-
-                            Step newThread -> 
-                                return $ Right ( newThread, state ) 
-
-                            Blocked _ -> 
-                                error "backwardThread blocked"
-
-                            Branched _ _ -> 
-                                error "backwardThread branched"
-
-
-                    Just spawnedName -> 
-                       case Map.lookup spawnedName active of
-                            Nothing -> 
-                               case Map.lookup spawnedName inactive of
-                                   Just (Thread _ _ [childProgram]) -> do
-                                       -- child is already completely rolled 
-                                       {-
-                                       State.modify $ \context -> 
-                                            let 
-                                                newThreads = Map.adjust (\v -> v - 1 :: Int) pid $ Map.delete spawnedName (_threads context)
-                                            in
-                                                context { _threads = newThreads } 
-                                        -}
-
-                                       return $ Right ( Thread pid rest (spawn childProgram : program), state ) 
-                    
-
-                                   other -> 
-                                       error $ "child is invalid" ++ show other
-
-                            Just childThread -> 
-                                schedule predicate childThread (state { active = Map.insert pid thread active })
-                                 
-
-    else
-        return $ reschedule state 
-
-{-
-
-data MicroOz
-
-data History 
-
-data Value 
-
-forwardT :: Map Identifier Value -> Thread History MicroOz -> Thread History MicroOz 
-
-forward :: Map Identifier Value -> ThreadState History MicroOz -> ThreadState History MicroOz
-
-
-
-
-
-backwardT :: Map Identifier Value -> Thread History MicroOz -> (Map Identifier Value, Thread History MicroOz)
-
-backward :: Map Identifier Value -> ThreadState History MicroOz -> (Map Identifier Value, ThreadState History MicroOz)
-
-data FSE = Spawn 
-
-data BSE = RollReceive PID Identifier | RollThread PID
-
-
--}
--}

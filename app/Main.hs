@@ -33,7 +33,7 @@ main = do
             error (show e)
         Right program -> do 
             let ( context, thread ) = MicroOz.init program
-            go $ ReplState context (Running thread ThreadState.OtherThreads{ active = Map.empty, inactive = Map.empty, blocked = Map.empty, filtered = Map.empty })
+            go $ ReplState context (ThreadState.singleton thread) 
 
 
 
