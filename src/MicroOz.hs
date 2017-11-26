@@ -128,11 +128,6 @@ renameVariableInIntExp old new intExp =
             Multiply value expr -> Multiply (renameIntValue old new value) (renameVariableInIntExp old new expr)
 
 
-
-
-
-
-
 {-| Rename a variable in the whole expression
 
 Renaming is used in evaluating a function, where the paramater names in the body 
@@ -193,7 +188,6 @@ renameVariableInValue old new value =
             VInt $ renameVariableInIntExp old new ie 
 
 
--- lookupProcedure  :: Identifier -> Interpreter (Value Program) (List Identifier, Program) 
 lookupProcedure :: (MonadState (Context Value) m, MonadError Error m) => Identifier -> m (List Identifier, Program)
 lookupProcedure identifier = do
     value <- lookupVariable identifier 
@@ -228,13 +222,13 @@ rollThread pid state =
                     Done -> do
                         -- thread is completely unrolled, try scheduling the parent
                         rescheduledParent <- embedThreadScheduleError (scheduleThread (List.init pid) $ Debug.traceShowId $ Stuck rest) 
-                        newState <- foldM (flip handleSideEffects) rescheduledParent messages
+                        newState <- foldM (flip handleBackwardEffects) rescheduledParent messages 
                         Context.removeThread pid
                         return ( newState, program )
 
 
                     Step newCurrent -> do
-                        newerCurrent <- foldM (flip handleSideEffects) (Running newCurrent rest) messages
+                        newerCurrent <- foldM (flip handleBackwardEffects) (Running newCurrent rest) messages
                         rollThread pid newerCurrent
 
                     Blocked _ -> 
@@ -260,10 +254,10 @@ rollChannel history state =
 
                     case progress of
                         Done -> 
-                            foldM (flip handleSideEffects) (ThreadState.addUninitialized current $ Stuck rest) messages
+                            foldM (flip handleBackwardEffects) (ThreadState.addUninitialized current $ Stuck rest) messages
 
                         Step newCurrent -> 
-                            foldM (flip handleSideEffects) (Running newCurrent rest) messages
+                            foldM (flip handleBackwardEffects) (Running newCurrent rest) messages
 
                         Blocked _ -> 
                             error "backwards move cannot block"
@@ -273,34 +267,24 @@ rollChannel history state =
                     error "deadlock? "
 
 
-
-
-
-
-
-
-
-handleSideEffects :: (MonadState (Context Value) m, MonadError Error m) => Msg -> ThreadState History Program -> m (ThreadState History Program)
-handleSideEffects (Action caller action) state =  
+handleBackwardEffects :: (MonadState (Context Value) m, MonadError Error m) => BackwardMsg -> ThreadState History Program -> m (ThreadState History Program)
+handleBackwardEffects action state = 
     case action of
-        Spawn thread ->
-            return $ ThreadState.add thread state
-
-        RollThread threadToRoll -> do
+        RollThread { caller, toRoll }  -> do
             -- roll the thread, and recover its program
-            ( newState, threadProgram ) <- rollThread threadToRoll state
+            ( newState, threadProgram ) <- rollThread toRoll state
 
             -- reschedule the parent
             newerState <- embedThreadScheduleError (scheduleThread caller newState) 
 
             -- remove child from uninitialized if it's in there
-            let newererState = ThreadState.removeUninitialized threadToRoll newerState
+            let newererState = ThreadState.removeUninitialized toRoll newerState
 
             return $ flip ThreadState.mapActive newererState $ \(Thread pid history program)  -> 
                 Thread pid history (SpawnThread (head threadProgram) : program )
 
-        Uninitialize pid ->  
-            let newState = embedThreadScheduleError (scheduleThread pid state) 
+        Uninitialize { toUninitialize }  ->  
+            let newState = embedThreadScheduleError (scheduleThread toUninitialize state) 
 
                 remove state = 
                     case state of 
@@ -311,43 +295,46 @@ handleSideEffects (Action caller action) state =
                             Stuck other 
             in
                 fmap remove newState
-                
-
-        RollVariable _ -> undefined
         
-        RollSend [] ->  
+        RollSend _ [] ->  
             return state
 
-        RollSend (h:hs) -> do
+        RollSend caller (h:hs) -> do
             -- aquire pid 
             -- switch to that thread
             -- make it take a step back
             -- recurse (this will roll the previous thread until its channel action is rolled)
             stepBack <- rollChannel h state
-            handleSideEffects (Action caller $ RollSend hs) stepBack
+            handleBackwardEffects (RollSend caller hs) stepBack
 
-            
-
-        RollReceive [] -> 
+        RollReceive _ [] -> 
             return state
 
-        RollReceive (h:hs) -> do
+        RollReceive caller (h:hs) -> do
             stepBack <- rollChannel h state
-            handleSideEffects (Action caller $ RollSend hs) stepBack
+            handleBackwardEffects (RollSend caller hs) stepBack
 
-
-
--- backward side effects: things other threads should do 
-data Msg = Action PID Action  deriving (Show)
+handleForwardEffects :: (MonadState (Context Value) m, MonadError Error m) => ForwardMsg -> ThreadState History Program -> m (ThreadState History Program)
+handleForwardEffects action state = 
+    case action of
+        Spawn thread ->
+            return $ ThreadState.add thread state
 
 type ChannelName = Identifier 
-data Action 
-    = RollThread PID 
-    | RollVariable Identifier 
-    | RollSend (List QueueHistory) 
-    | RollReceive (List QueueHistory) 
-    | Uninitialize PID
-    | Spawn (Thread History Program) deriving (Show)
+
+
+data BackwardMsg 
+    = Uninitialize { caller :: PID, toUninitialize :: PID }  
+    | RollThread { caller :: PID, toRoll :: PID } 
+    | RollSend { caller :: PID, history :: List QueueHistory } 
+    | RollReceive { caller :: PID, history :: List QueueHistory } 
+    deriving (Show)
+
+newtype ForwardMsg
+    = Spawn (Thread History Program) 
+    deriving (Show)
+
+
 
 
 debugLog name value = 
@@ -366,10 +353,10 @@ backward state =
                 Done ->
                     -- we re-add the current thread so it can be cleaned up 
                     -- properly (via the messages) 
-                    foldM (flip handleSideEffects) (debugLog "starting processing of msgs with" $ Running current rest) $ debugLog "current thread is done" messages
+                    foldM (flip handleBackwardEffects) (Running current rest)  messages
 
                 Step newCurrent -> 
-                    foldM (flip handleSideEffects) (Running newCurrent rest) messages
+                    foldM (flip handleBackwardEffects) (Running newCurrent rest) messages
 
                 Blocked _ -> 
                     error "blocked on backward action"
@@ -416,10 +403,10 @@ forward state =
 
                 case progress of
                     Done -> 
-                        foldM (flip handleSideEffects) (ThreadState.addInactive current $ Stuck rest) messages
+                        foldM (flip handleForwardEffects) (ThreadState.addInactive current $ Stuck rest) messages
 
                     Step newCurrent -> 
-                        foldM (flip handleSideEffects) (Running newCurrent rest) messages
+                        foldM (flip handleForwardEffects) (Running newCurrent rest) messages
 
                     Blocked _ -> 
                         error "blocked on forward action"
@@ -433,7 +420,7 @@ forward state =
                         Except.throwError $ SchedulingError $ ThreadScheduleError [] DeadLock
 
 
-advance :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd Msg)
+advance :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd ForwardMsg) 
 advance thread@(Thread pid histories program) = 
     case program of
         [] -> 
@@ -444,18 +431,18 @@ advance thread@(Thread pid histories program) =
             return ( Step $ Thread pid (h:histories) newProgram, cmd )
 
 
-rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd Msg)
+rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd BackwardMsg)
 rollback thread@(Thread pid histories program) = 
     case histories of
         [] -> 
-            return ( Done , Cmd.create (Action (List.init pid) (Uninitialize pid)))
+            return ( Done , Cmd.create Uninitialize { caller = List.init pid, toUninitialize = pid })
 
 
         (h:hs) -> do
             ( newProgram, cmd ) <- backwardP pid h program 
             return ( Step $ Thread pid hs newProgram, cmd )
 
-advanceP :: (MonadState (Context Value) m, MonadError Error m) => PID -> Program -> List Program -> m ( History, List Program, Cmd.Cmd Msg)
+advanceP :: (MonadState (Context Value) m, MonadError Error m) => PID -> Program -> List Program -> m ( History, List Program, Cmd.Cmd ForwardMsg)
 advanceP pid program rest = 
     let continue history rest = return ( history, rest, Cmd.none ) 
     in
@@ -526,7 +513,7 @@ advanceP pid program rest =
                     return 
                         ( SpawnedThread threadName
                         , rest
-                        , Cmd.create $ Action pid (Spawn thread )
+                        , Cmd.create $ Spawn thread
                         ) 
 
                 Apply functionName arguments -> do
@@ -545,7 +532,7 @@ advanceP pid program rest =
                     continue (Sent channelName variable) rest
 
 
-backwardP :: (MonadState (Context Value) m, MonadError Error m) => PID -> History -> List Program -> m ( List Program, Cmd.Cmd Msg ) 
+backwardP :: (MonadState (Context Value) m, MonadError Error m) => PID -> History -> List Program -> m ( List Program, Cmd.Cmd BackwardMsg ) 
 backwardP pid history program = do
     context <- State.get
     let continue newProgram = return ( newProgram, Cmd.none )
@@ -593,7 +580,7 @@ backwardP pid history program = do
                         toRollFirst <- withChannel channelName (return . Queue.followingReceive pid)
                         return 
                             ( restOfProgram
-                            , Cmd.create (Action pid (RollSend  toRollFirst ))
+                            , Cmd.create (RollSend pid toRollFirst)
                             )
 
                 ( Received{ channelName, binding, payload }, continuation : restOfProgram ) -> do
@@ -613,13 +600,13 @@ backwardP pid history program = do
                         toRollFirst <- withChannel channelName (return . Queue.followingReceive pid)
                         return 
                             ( restOfProgram
-                            , Cmd.create (Action pid (RollReceive toRollFirst ))
+                            , Cmd.create (RollReceive pid toRollFirst)
                             )
 
                 ( SpawnedThread toRoll, restOfProgram ) -> 
                     return 
                         ( restOfProgram
-                        , Cmd.create (Action pid (RollThread toRoll))
+                        , Cmd.create (RollThread pid toRoll)
                         )
 
                 ( _, restOfProgram) ->
