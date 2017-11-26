@@ -231,8 +231,6 @@ rollThread pid state =
                         newerCurrent <- foldM (flip handleBackwardEffects) (Running newCurrent rest) messages
                         rollThread pid newerCurrent
 
-                    Blocked _ -> 
-                        error "backwards move cannot block"
             Stuck _ -> 
                 -- scheduleThread will have errored
                 undefined
@@ -259,8 +257,6 @@ rollChannel history state =
                         Step newCurrent -> 
                             foldM (flip handleBackwardEffects) (Running newCurrent rest) messages
 
-                        Blocked _ -> 
-                            error "backwards move cannot block"
                             
     
                 Stuck rest -> 
@@ -358,8 +354,6 @@ backward state =
                 Step newCurrent -> 
                     foldM (flip handleBackwardEffects) (Running newCurrent rest) messages
 
-                Blocked _ -> 
-                    error "blocked on backward action"
 
         Stuck rest ->
             case ThreadState.rescheduleBackward state  of 
@@ -408,8 +402,6 @@ forward state =
                     Step newCurrent -> 
                         foldM (flip handleForwardEffects) (Running newCurrent rest) messages
 
-                    Blocked _ -> 
-                        error "blocked on forward action"
 
             Stuck rest ->
                 case ThreadState.reschedule state  of 

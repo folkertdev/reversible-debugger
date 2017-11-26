@@ -153,7 +153,6 @@ Based on [a monad for deterministic parallelism](https://simonmar.github.io/bib/
 data Progress work 
     = Done 
     | Step work 
-    | Blocked work
     deriving (Show, Eq)
 
 
