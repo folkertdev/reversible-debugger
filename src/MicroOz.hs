@@ -7,7 +7,7 @@ import qualified Data.Maybe as Maybe
 import qualified Queue 
 import Data.Thread as Thread
 import Data.Context as Context 
-import Data.ThreadState as ThreadState (Progress(..), ThreadState(..), OtherThreads(..), add, reschedule, rescheduleBackward, scheduleThread, mapActive, mapOther, addInactive, addBlocked)
+import Data.ThreadState as ThreadState (Progress(..), ThreadState(..), OtherThreads(..), add, reschedule, rescheduleBackward, scheduleThread, mapActive, mapOther, addInactive, addBlocked, addUninitialized, removeUninitialized)
 import Types
 import Control.Monad.State as State
 import Control.Monad.Except as Except
@@ -54,57 +54,6 @@ data History
     | AssertedOn BoolExp
     deriving (Eq, Show)
 
-{-
-
-import qualified ReversibleLanguage (ReversibleLanguage(..))
-import Control.Monad.Trans.State as State 
-import Control.Applicative (liftA2)
-import Interpreter
-import Types
-import Queue
-import qualified Data.Map as Map
-
-
-instance ReversibleLanguage.ReversibleLanguage Program where 
-
-
-         
-    forwardThread = advance
-    backwardThread = rollback
-
-    spawn = SpawnThread
-
-    createdVariable history =
-        case history of
-            CreatedVariable name -> Just name
-            _ -> Nothing  
-
-    spawned history = 
-        case history of
-            SpawnedThread name -> 
-                Just name
-
-            _ -> 
-                Nothing
-
-    sent history =
-        case history of 
-            Sent channelName _ -> 
-                Just channelName
-
-            _ -> 
-                Nothing
-
-    received history = 
-        case history of 
-            Received channelName _ -> 
-                Just channelName
-
-            _ -> 
-                Nothing
-
--}
-
 
 {-| The µOz Syntax -}            
 data Program 
@@ -149,14 +98,6 @@ data IntValue
     | IntIdentifier Identifier
     deriving (Show, Eq)
 
-{-
-init :: Program -> (Context (Value Program), Thread Program) 
-init program = 
-    ( Context (Map.singleton [0] 0) 0 Map.empty Map.empty
-    , Thread [0] [] [ program ]
-    )
--}
-
 
 renameVariableInBoolExp old new exp = 
     case exp of 
@@ -164,8 +105,6 @@ renameVariableInBoolExp old new exp =
         AtomBool (BoolIdentifier ident) -> AtomBool $ BoolIdentifier $ if ident == old then new else ident
         Operator op left right ->
             Operator op (renameIntValue old new left) (renameIntValue old new right)
-    
-
 
 
 renameIntValue old new value =
@@ -178,6 +117,7 @@ renameIntValue old new value =
                         IntIdentifier new
                     else
                         value
+
 
 renameVariableInIntExp old new intExp = 
         case intExp of
@@ -320,7 +260,7 @@ rollChannel history state =
 
                     case progress of
                         Done -> 
-                            foldM (flip handleSideEffects) (ThreadState.addInactive current $ Stuck rest) messages
+                            foldM (flip handleSideEffects) (ThreadState.addUninitialized current $ Stuck rest) messages
 
                         Step newCurrent -> 
                             foldM (flip handleSideEffects) (Running newCurrent rest) messages
@@ -353,10 +293,25 @@ handleSideEffects (Action caller action) state =
             -- reschedule the parent
             newerState <- embedThreadScheduleError (scheduleThread caller newState) 
 
-            return $ flip ThreadState.mapActive newerState $ \(Thread pid history program)  -> 
+            -- remove child from uninitialized if it's in there
+            let newererState = ThreadState.removeUninitialized threadToRoll newerState
+
+            return $ flip ThreadState.mapActive newererState $ \(Thread pid history program)  -> 
                 Thread pid history (SpawnThread (head threadProgram) : program )
 
-    
+        Uninitialize pid ->  
+            let newState = embedThreadScheduleError (scheduleThread pid state) 
+
+                remove state = 
+                    case state of 
+                        Running current other -> 
+                            ThreadState.addUninitialized current (Stuck other)
+
+                        Stuck other -> 
+                            Stuck other 
+            in
+                fmap remove newState
+                
 
         RollVariable _ -> undefined
         
@@ -386,7 +341,13 @@ handleSideEffects (Action caller action) state =
 data Msg = Action PID Action  deriving (Show)
 
 type ChannelName = Identifier 
-data Action = RollThread PID | RollVariable Identifier | RollSend (List QueueHistory) | RollReceive (List QueueHistory) | Spawn (Thread History Program) deriving (Show)
+data Action 
+    = RollThread PID 
+    | RollVariable Identifier 
+    | RollSend (List QueueHistory) 
+    | RollReceive (List QueueHistory) 
+    | Uninitialize PID
+    | Spawn (Thread History Program) deriving (Show)
 
 
 debugLog name value = 
@@ -414,15 +375,12 @@ backward state =
                     error "blocked on backward action"
 
         Stuck rest ->
-            undefined
-            {-
             case ThreadState.rescheduleBackward state  of 
                 Just rescheduled -> 
                     backward rescheduled
 
                 Nothing ->  
                     Except.throwError $ SchedulingError $ ThreadScheduleError [] DeadLock
-            -}
 
 
 handleBlockedThread :: (MonadError Error m) => ThreadState h a -> Error -> m (ThreadState h a)
@@ -490,7 +448,7 @@ rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History
 rollback thread@(Thread pid histories program) = 
     case histories of
         [] -> 
-            return ( Done , Cmd.create (Action (List.init pid) (RollThread pid)))
+            return ( Done , Cmd.create (Action (List.init pid) (Uninitialize pid)))
 
 
         (h:hs) -> do

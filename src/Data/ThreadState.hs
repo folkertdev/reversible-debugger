@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, UndecidableInstances, NamedFieldPuns, FlexibleContexts #-}   
 
-module Data.ThreadState (OtherThreads, ThreadState(..), Threads, Progress(..), empty, singleton, mapOther, toOther, mapActive, add, addInactive, scheduleThread, reschedule, rescheduleBackward, addBlocked, addUninitialized)  where 
+module Data.ThreadState (OtherThreads, ThreadState(..), Threads, Progress(..), empty, singleton, mapOther, toOther, mapActive, add, addInactive, scheduleThread, reschedule, rescheduleBackward, addBlocked, addUninitialized, removeUninitialized )  where 
 
 import qualified Utils
 import Data.Map (Map)
@@ -113,6 +113,12 @@ addUninitialized newThread state =
 
         Stuck other@OtherThreads{uninitialized} ->
             Stuck (other { uninitialized = Map.insert (Thread.pid newThread) newThread uninitialized }) 
+
+
+removeUninitialized :: PID  -> ThreadState h a -> ThreadState h a
+removeUninitialized pid = 
+    mapOther $ \other@OtherThreads{ uninitialized } -> 
+        other { uninitialized = Map.delete pid uninitialized } 
 
 toOther :: ThreadState h a -> OtherThreads h a 
 toOther state = 
