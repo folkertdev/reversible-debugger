@@ -84,8 +84,9 @@ instance (Show h, Show a) => Show (OtherThreads h a) where
     show (OtherThreads active inactive blocked filtered uninitialized) = 
         "Other Threads:"
             <> "\n"
+            <> "\n"
             <> Utils.showMap "active" active
-            <> Utils.showMap "done" inactive
+            <> Utils.showMap "done  " inactive
             <> Utils.showMap "blocked" blocked
             <> Utils.showMap "filtered" filtered
             <> Utils.showMap "uninitialized" uninitialized
@@ -98,7 +99,9 @@ instance (Show h, Show a) => Show (ThreadState h a) where
     show (Running current other) = 
         "Running:"
             <> "\n"
+            <> "\n"
             <> show current
+            <> "\n"
             <> "\n"
             <> show other
 

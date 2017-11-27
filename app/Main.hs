@@ -73,8 +73,10 @@ getContext (ReplState context state) =
 
 iteration :: ReplState -> IO (Maybe ReplState)
 iteration state@(ReplState context threads) = do
-    putStrLn "what is your command?"
+    putStr "\n========= \n\n"
     print threads
+    putStr "\n"
+    putStr "command: "
     command <- getLine
     case DebuggerParser.parse command of 
         Left error -> do

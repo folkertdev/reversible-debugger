@@ -16,9 +16,12 @@ instance (Show history, Show a) => Show (Thread history a) where
     show (Thread pid history program) = 
         "Thread " ++ show pid 
             ++ "\n"
-            ++ show history
-            ++ "\n"
+            ++ "instruction stack: "
             ++ show program
+            ++ "\n"
+            ++ "\n"
+            ++ "history stack: "
+            ++ show history
 
 pid :: Thread history a -> PID 
 pid (Thread pid_ _ _) = pid_
