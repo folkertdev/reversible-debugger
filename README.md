@@ -14,10 +14,20 @@ The semantics of the µOz abstract machine implemented here are detailed in this
 
 ## Installing and running 
 
-This project uses [stack](https://docs.haskellstack.org/en/stable/README/) as the build tool and for dependency management. Once installed, the program can be run with
+This project uses [stack](https://docs.haskellstack.org/en/stable/README/) as the build tool and for dependency management. 
+Stack will install the correct version of the haskell compiler; stack is really the only thing you'll need.
+
+Once installed, the program can be run with
 
 ```sh
-stack build && stack exec reversible-debugger -- send_receive.txt
+# download the ghc compiler (if needed)
+stack setup
+
+# builds the project (downloads dependencies if needed)
+stack build 
+
+# run the debugger with an example MicroOz file
+stack exec reversible-debugger -- examples/send_receive.txt
 ```
 
 The [Examples] folder contains a couple of µOz programs that you can step through.
