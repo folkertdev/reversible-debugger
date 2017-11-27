@@ -1,12 +1,29 @@
-module Queue ( Queue(..), empty, push, pop, QueueHistory(..), QueueHistoryError(..), Msg(..), revert, hasJustSent, hasJustReceived, unpush, unpop, followingSend, followingReceive) where
+module Queue 
+    ( Queue(..)
+    , empty
+    , push
+    , pop
+    , QueueHistory(..)
+    , QueueHistoryError(..)
+    , Msg(..)
+    , revert
+    , hasJustSent
+    , hasJustReceived
+    , unpush
+    , unpop
+    , followingSend
+    , followingReceive
+    , lastNReceives
+    , lastNSends
+    ) where
 
 import Types ((|>), List)
 import Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Data.List.NonEmpty as NonEmpty 
 import Data.Semigroup ((<>))
 import Data.Maybe (fromMaybe)
+import Data.PID (PID)
 
-type PID  = [Int]
 
 data Queue a = Empty (List QueueHistory) | Queue { items :: NonEmpty a, history :: NonEmpty QueueHistory } 
     deriving (Show, Eq) 
@@ -97,6 +114,9 @@ hasJustReceived pid queue =
         Empty (Added _ : _) -> 
             False
 
+        Empty [] -> 
+            False
+
 
 hasJustSent :: PID -> Queue a -> Bool
 hasJustSent pid queue = 
@@ -115,11 +135,19 @@ hasJustSent pid queue =
 unpop :: a -> Queue a -> Queue a
 unpop value queue = 
     case queue of 
-        Empty ( Removed pid : h : hs ) -> 
-            Queue (pure value) (h :| hs)
+        Empty ( Removed pid : remaining ) -> 
+            case remaining of 
+                [] -> 
+                    error "there is a Removed, but no corresponding Added"
 
-        Empty ( Added  pid : hs ) -> 
+                (h:hs) -> 
+                    Queue (pure value) (h :| hs)
+
+        Empty ( Added  pid : _ ) -> 
             error "unpopping a stream that needs to unpush first"
+
+        Empty [] -> 
+            error "unpopping empty stream"
 
         Queue items history -> 
             case NonEmpty.uncons history of
@@ -169,3 +197,46 @@ followingSend pid queue =
         |> toHistory 
         |> reverse
         |> takeWhile (\h -> h /= Added pid)
+
+{-| The last N receive instructions (with intermittent sends) on the channel -} 
+lastNReceives :: Int -> Queue a -> List QueueHistory
+lastNReceives n queue =
+    let folder history (n, accum) = 
+            if n == 0 then 
+                ( n, accum )
+
+            else
+                case history of 
+                    Removed _ -> 
+                        ( n - 1, history : accum ) 
+                    Added _ -> 
+                        ( n, history : accum ) 
+
+    in
+        queue
+            |> toHistory
+            |> foldr folder (n, [])
+            |> snd
+            |> reverse
+
+
+{-| The last N send instructions (with intermittent receives) on the channel -} 
+lastNSends :: Int -> Queue a -> List QueueHistory
+lastNSends n queue =
+    let folder history (n, accum) = 
+            if n == 0 then 
+                ( n, accum )
+
+            else
+                case history of 
+                    Removed _ -> 
+                        ( n, history : accum ) 
+                    Added _ -> 
+                        ( n - 1, history : accum ) 
+
+    in
+        queue
+            |> toHistory
+            |> foldr folder (n, [])
+            |> snd
+            |> reverse

@@ -1,6 +1,7 @@
 module Data.Thread where 
 
 import Types
+import Data.PID as PID (PID)
 
 
 {-| An individual thread, with 

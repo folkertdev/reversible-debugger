@@ -5,7 +5,8 @@ import System.Environment (getArgs)
 
 -- import Interpreter
 import DebuggerParser (Instruction(..), parse)
-import MicroOz (Program, Value, History, init, forward, backward, rollThread)
+import MicroOz (Program, Value, History, init, forward, backward, rollThread, scheduleThreadBackward, scheduleThread, rollSends, rollReceives, handleBackwardEffects)
+import qualified MicroOz 
 import MicroOz.Parser as Parser
 import Types
 -- import ReversibleLanguage (schedule, reschedule, throw, ThreadState(..), ExecutionState, init, ReversibleLanguage)
@@ -13,12 +14,14 @@ import Types
 import Data.Thread as Thread
 import Data.ThreadState as ThreadState
 import Data.Context as Context
+import Data.PID as PID
 
 import Control.Monad
 import Control.Monad.Except as Except
-import Control.Monad.Trans.State.Lazy as State 
+import Control.Monad.State as State 
 import Control.Monad.Trans (liftIO)
 import Control.Concurrent.MVar 
+import Data.Maybe (fromMaybe, maybe)
 import qualified Data.Map as Map
 
 import qualified Text.Show.Pretty as Pretty
@@ -69,27 +72,29 @@ getContext (ReplState context state) =
     
 
 iteration :: ReplState -> IO (Maybe ReplState)
-iteration state = do
-    print "the state is"
-    print "---"
-    print state
-    print "---"
-    print "what is your command?"
+iteration state@(ReplState context threads) = do
+    putStrLn "what is your command?"
+    print threads
     command <- getLine
     case DebuggerParser.parse command of 
         Left error -> do
             print error
             return $ Just state 
 
-        Right instruction -> 
+        Right instruction -> do
+            putStr "parsed: "
+            print instruction
             interpretInstruction instruction state 
 
-run thread threads = do
-    stepped <- MicroOz.forward (Running thread threads)
-    case stepped of 
-        Stuck done -> return $ Left done
-        Running t ts -> run t ts 
+run :: (MonadState (Context Value) m, MonadError Error m) => ThreadState History Program -> m (ThreadState History Program)
+run state= 
+    case state of 
+        Stuck done -> return $ Stuck done
+        Running t ts -> 
+            run =<< MicroOz.forward state 
 
+andThen :: Monad m => (a -> m b) -> m a -> m b
+andThen = (=<<)
 
 interpretInstruction :: Instruction -> ReplState -> IO (Maybe ReplState) 
 interpretInstruction instruction (ReplState context state) =  
@@ -104,56 +109,57 @@ interpretInstruction instruction (ReplState context state) =
 
                 Right (a, s) ->
                     return . Just $ ReplState s a
-
-        mapOverThreads f = 
-            case state of 
-                Running thread threads ->
-                    f thread threads
-                
-                Stuck _ ->
-                    Except.throwError $ RuntimeException "cannot perform action on done threads"
-
     in
     case instruction of
         Forth pid ->
-            evaluate $ MicroOz.forward state 
+            MicroOz.scheduleThread pid state
+                |> andThen MicroOz.forward
+                |> evaluate
 
-        Back pid-> 
-            evaluate $ MicroOz.backward state 
+        Back pid -> 
+            MicroOz.scheduleThreadBackward pid state
+                |> andThen MicroOz.backward
+                |> evaluate
 
-        {-
-        Roll pid n -> do
-            result <- interpretInstruction (Back pid) state 
-            case result of 
-                Nothing -> 
-                    return $ Just state  
+        Roll pid n -> 
+            case runStateT (MicroOz.scheduleThreadBackward pid state >>= MicroOz.backward) context of 
+                Left (SchedulingError e) -> do
+                    print e 
+                    return $ Just (ReplState context state)
 
-                Just newState -> 
-                    interpretInstruction (Roll pid (n - 1)) newState 
+                Left e -> do
+                    print e 
+                    return $ Just (ReplState context state)
+                
+                Right (newState, newContext) -> 
+                    interpretInstruction (Roll pid (n - 1)) (ReplState newContext newState) 
+
             
         RollSend channelName n -> 
-            undefined
+            evaluate $ MicroOz.rollSends n channelName state 
+                
 
         RollReceive channelName n -> 
-            undefined
+            evaluate $ MicroOz.rollReceives n channelName state 
+
 
         RollThread pid -> 
-            undefined
+            evaluate $ MicroOz.handleBackwardEffects MicroOz.RollThread{ MicroOz.caller = PID.parent pid, MicroOz.toRoll = pid} state
 
         RollVariable identifier -> 
             undefined
 
         Run -> 
-            helper $ mapOverThreads run
+            evaluate $ run state
  
 
         ListThreads -> do
-            print state
-            return $ Just state 
+            print $ Context.threads context
+            return $ Just (ReplState context state) 
             
         Store -> do
-            print (getContext state)
-            return $ Just state 
+            print context 
+            return $ Just (ReplState context state) 
             
         Print id ->  
             undefined
@@ -163,9 +169,8 @@ interpretInstruction instruction (ReplState context state) =
 
         Help-> do 
             print "help stuff" 
-            return $ Just state 
+            return $ Just (ReplState context state) 
 
-        -}
         Quit-> 
             return Nothing 
         

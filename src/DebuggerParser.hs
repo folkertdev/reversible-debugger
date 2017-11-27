@@ -4,10 +4,11 @@ import Control.Applicative ((<*), liftA2, pure)
 import Data.List (intercalate)
 import Data.Functor (($>))
 import Data.Either
+import Data.PID as PID (PID, create)
 
 import Text.ParserCombinators.Parsec as Parsec
 
-import Types (Identifier(..), PID)
+import Types (Identifier(..))
 
 parse :: String -> Either String Instruction
 parse input = 
@@ -18,7 +19,7 @@ parse input =
 
 parser :: Parser Instruction
 parser = 
-    choice $ map try
+    choice $ map (\p -> try (p <* spaces <* eof))
         [ forth
         , back
         , roll
@@ -56,19 +57,20 @@ data Instruction
         
 forth :: Parser Instruction
 forth = do
-    string "f" <|> string "forth" 
+    try $ char 'f'
+    optional $ string "orth"
     spaces
     id <- pid
     return $ Forth id
 
 back = do
-    string "b" <|> string "back" 
+    try (string "back") <|> string "b"
     spaces
     id <- pid
     return $ Back id
 
 roll = do
-    string "r" <|> string "roll" 
+    try (string "roll") <|> string "r" 
     spaces
     id <- pid
     spaces
@@ -77,7 +79,7 @@ roll = do
     return $ Roll id n 
 
 rollSend  = do
-    string "rs" <|> string "rollsend" 
+    try (string "rollsend") <|> string "rs" 
     spaces
     id <- identifier
     spaces
@@ -86,7 +88,7 @@ rollSend  = do
     return $ RollSend id n
 
 rollReceive = do
-    string "rr" <|> string "rollreceive" 
+    try (string "rollreceive") <|> string "rr"
     spaces
     id <- identifier
     spaces
@@ -95,17 +97,15 @@ rollReceive = do
     return $ RollReceive id n
 
 rollThread = do
-    string "rt" <|> string "rollthread" 
+    try (string "rollthread") <|> string "rt"
     spaces
     id <- pid
-    spaces
-    n <- int
     spaces
     return $ RollThread id  
 
 
 rollVariable = do
-    string "rv" <|> string "rollvariable" 
+    try (string "rollvariable") <|> string "rv"
     spaces
     id <- identifier
     spaces
@@ -114,21 +114,21 @@ rollVariable = do
     return $ RollVariable id  
 
 run = do
-    string "r" <|> string "run" 
-    return $ Run 
+    string "run" <|> string "r"
+    return Run 
 
-list = ListThreads <$ (string "l" <|> string "list")
-store = Store <$ (string "s" <|> string "store")
-help = Help <$ (string "c" <|> string "help")
-quit = Quit <$ (string "q" <|> string "quit")
+list = ListThreads <$ (try (string "list") <|> string "l")
+store = Store <$ (try (string "store") <|> string "s")
+help = Help <$ (try (string "help") <|> string "c")
+quit = Quit <$ (try (string "quit") <|> string "q")
 
 print = do
-    string "p" <|> string "print" 
+    try (string "print") <|> string "p"
     id <- threadOrIdentifier
     return $ Print id
 
 history = do
-    string "h" <|> string "history" 
+    try (string "history") <|> string "h" 
     id <- threadOrIdentifier
     return $ History id
 
@@ -139,7 +139,7 @@ threadOrIdentifier =
     ( Left <$> pid) <|> (Right <$> identifier)
 
 identifier = do
-    result <- Identifier <$> liftA2 (:) letter (many (letter <|> char '_'))
+    result <- Identifier <$> liftA2 (:) letter (many (letter <|> digit <|> char '_'))
     spaces 
     return result
 
@@ -147,7 +147,7 @@ identifier = do
 
 
 
-pid = int `sepBy` spaces 
+pid = PID.create <$> int `sepBy` char '_'
     
 
 

@@ -10,6 +10,7 @@ import Data.Thread as Thread
 import Data.Context as Context 
 import Data.ThreadState as ThreadState (Progress(..), ThreadState(..), OtherThreads(..), add, reschedule, rescheduleBackward, mapActive, mapOther, addInactive, addBlocked, addUninitialized, removeUninitialized)
 import qualified Data.ThreadState
+import Data.PID as PID (PID, create, parent, child)
 import Types
 import Control.Monad.State as State
 import Control.Monad.Except as Except
@@ -28,7 +29,7 @@ throw error = State.StateT (\s -> Left error)
 init :: Program -> ( Context Value, Thread History Program ) 
 init program = 
     let 
-        thread = Thread [ 0 ] [] [ program ] 
+        thread = Thread (PID.create [ 0 ]) [] [ program ] 
     in 
         ( Context.singleton thread, thread ) 
 
@@ -217,6 +218,19 @@ scheduleThread pid state = embedThreadScheduleError $ Data.ThreadState.scheduleT
 scheduleThreadBackward :: MonadError Error m => PID -> ThreadState h a -> m (ThreadState h a)
 scheduleThreadBackward pid state = embedThreadScheduleError $ Data.ThreadState.scheduleThreadBackward pid state
 
+rollSends :: (MonadState (Context Value) m, MonadError Error m) => Int -> ChannelName -> ThreadState History Program -> m (ThreadState History Program) 
+rollSends n channelName state = do
+    histories <- Context.withChannel channelName (return . Queue.lastNSends n) 
+    handleBackwardEffects (RollSend (PID.create []) histories) state
+
+
+rollReceives :: (MonadState (Context Value) m, MonadError Error m) => Int -> ChannelName -> ThreadState History Program -> m (ThreadState History Program) 
+rollReceives n channelName state = do
+    histories <- Context.withChannel channelName (return . Queue.lastNReceives n) 
+    handleBackwardEffects (RollSend (PID.create []) histories) state
+
+data Caller = Parent PID | Self 
+
 rollThread :: (MonadState (Context Value) m, MonadError Error m) => PID -> ThreadState History Program -> m (ThreadState History Program, Program) 
 rollThread pid state = 
     scheduleThreadBackward pid state >>= \state -> 
@@ -229,7 +243,7 @@ rollThread pid state =
                 case progress of
                     Done -> do
                         -- thread is completely unrolled, try scheduling the parent
-                        rescheduledParent <- scheduleThread (List.init pid) (Stuck rest)
+                        rescheduledParent <- scheduleThreadBackward (PID.parent pid) (Stuck rest)
                         newState <- foldM (flip handleBackwardEffects) rescheduledParent messages 
                         Context.removeThread pid
                         case program of 
@@ -284,7 +298,7 @@ handleBackwardEffects action state =
             ( newState, threadProgram ) <- rollThread toRoll state
 
             -- reschedule the parent
-            newerState <- scheduleThread caller newState 
+            newerState <- scheduleThreadBackward caller newState 
 
             -- remove child from uninitialized if it's in there
             let newererState = ThreadState.removeUninitialized toRoll newerState
@@ -375,7 +389,7 @@ backward state =
                     backward rescheduled
 
                 Nothing ->  
-                    Except.throwError $ SchedulingError $ ThreadScheduleError [] DeadLock
+                    Except.throwError $ SchedulingError $ ThreadScheduleError (PID.create []) DeadLock
 
 
 handleBlockedThread :: (MonadError Error m) => ThreadState h a -> Error -> m (ThreadState h a)
@@ -423,7 +437,7 @@ forward state =
                         forward rescheduled
 
                     Nothing ->  
-                        Except.throwError $ SchedulingError $ ThreadScheduleError [] DeadLock
+                        Except.throwError $ SchedulingError $ ThreadScheduleError (PID.create []) DeadLock
 
 
 advance :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd ForwardMsg) 
@@ -441,7 +455,7 @@ rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History
 rollback thread@(Thread pid histories program) = 
     case histories of
         [] -> 
-            return ( Done , Cmd.create Uninitialize { caller = List.init pid, toUninitialize = pid })
+            return ( Done , Cmd.create Uninitialize { caller = PID.parent pid, toUninitialize = pid })
 
 
         (h:hs) -> do

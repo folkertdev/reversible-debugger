@@ -5,15 +5,25 @@ import Control.Exception (evaluate)
 import Control.Monad
 
 
-import Interpreter
 import Types
-import Parser
-
+import Data.PID as PID (PID, create)
+import DebuggerParser
+import Text.ParserCombinators.Parsec as Parsec
 
 import Control.Monad.Trans.State as State 
 
 main :: IO ()
-main = hspec $ do
+main = hspec $
+  describe "Prelude.head" $ do
+      it "parses a pid" $
+          Parsec.parse DebuggerParser.pid "" "0_0" `shouldBe` Right (PID.create [0, 0])
+
+      it "parses a roll" $
+          Parsec.parse DebuggerParser.roll "" "roll 0_0 5" `shouldBe` Right (Roll (PID.create [0,0]) 5)
+
+      it "parses a rollsend" $
+          Parsec.parse DebuggerParser.rollSend "" "rollsend var2 5" `shouldBe` Right (RollSend (Identifier "var2") 5)
+{-
   describe "Prelude.head" $ do
     it "assert parses correctly" $ do
         Parser.program "assert (5 >= 10) end" `shouldBe` Right (Assert (Operator GreaterThanEqual (IntValue 5) (IntValue 10 )))
@@ -93,3 +103,4 @@ forwardBackwardIsIdentity n program =
         b = foldl (>=>) return (replicate n backward)
     in
         runStateT (f task >>= b) context `shouldBe` Right (task, context)
+-}

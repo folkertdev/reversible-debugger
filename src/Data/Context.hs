@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, FlexibleContexts #-}   
 
-module Data.Context (Context, singleton, empty, insertVariable, insertBinding, removeVariable, lookupVariable, mapChannel, withChannel, readChannel, writeChannel, insertChannel, removeChannel, insertThread, removeThread) where 
+module Data.Context (Context(threads), singleton, empty, insertVariable, insertBinding, removeVariable, lookupVariable, mapChannel, withChannel, readChannel, writeChannel, insertChannel, removeChannel, insertThread, removeThread) where 
 
 import Queue (Queue)
 import qualified Queue
@@ -8,12 +8,14 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Types
 import Data.Thread as Thread (Thread(..))
+import Data.PID as PID (PID, create, parent, child)
 import Data.List as List
 import Data.Monoid ((<>))
 
 import Control.Monad.Except as Except
 import Control.Monad.State as State
 import qualified Utils
+
 
 
 data Context value = 
@@ -143,23 +145,23 @@ removeChannel identifier =
 
 
 insertThread :: (MonadState (Context value) m, MonadError Error m) => PID -> List h -> List a -> m (Thread h a)
-insertThread parentName history value = do
+insertThread parent history value = do
     context <- State.get
     let usedThreadNames = threads context  
-    case Map.lookup parentName usedThreadNames of
+    case Map.lookup parent usedThreadNames of
         Nothing -> 
             Except.throwError $ RuntimeException "thread name without parent"
 
         Just childCount -> do
             let 
-                childName = 
-                    parentName ++ [childCount ]
+                child = 
+                    PID.child childCount parent
 
                 updater = 
-                    Map.adjust (+ 1) parentName . Map.insert childName 0 
+                    Map.adjust (+ 1) parent . Map.insert child 0 
 
             State.put (context { threads =  updater usedThreadNames }) 
-            return $ Thread childName history value
+            return $ Thread child history value
 
 
 removeThread :: (MonadState (Context value) m, MonadError Error m) => PID -> m () 
@@ -176,10 +178,10 @@ removeThread pid =
                     Except.throwError $ RuntimeException $ "removing non-empty thread, it has # of remaining children: "  ++ show n
 
         decrementParent threads = 
-            let parentName = 
-                    List.init pid 
+            let parent = 
+                    PID.parent pid
             in
-                Map.adjust (\v -> v - 1) parentName threads
+                Map.adjust (\v -> v - 1) parent threads
     in do
         context <- State.get 
         let ts = threads context

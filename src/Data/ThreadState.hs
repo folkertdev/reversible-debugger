@@ -1,15 +1,42 @@
 {-# LANGUAGE ScopedTypeVariables, UndecidableInstances, NamedFieldPuns, FlexibleContexts #-}   
 
-module Data.ThreadState (OtherThreads, ThreadState(..), Threads, Progress(..), empty, singleton, mapOther, toOther, mapActive, add, addInactive, scheduleThread, scheduleThreadBackward, reschedule, rescheduleBackward, addBlocked, addUninitialized, removeUninitialized )  where 
+module Data.ThreadState 
+    (OtherThreads
+    , ThreadState(..)
+    , Threads
+    , Progress(..)
+    , empty
+    , singleton
+    , mapOther
+    , toOther
+    , mapActive
+    , add
+    , addInactive
+    , scheduleThread
+    , scheduleThreadBackward
+    , reschedule
+    , rescheduleBackward
+    , addBlocked
+    , addUninitialized
+    , removeUninitialized 
+    , canBeScheduledForward
+    , canBeScheduledBackward
+    )  where 
 
 import qualified Utils
+
 import Data.Map (Map)
 import qualified Data.Map as Map
+
+import Data.Set (Set)
+import qualified Data.Set as Set
+
 import Types
 import Data.Thread as Thread (Thread(..), pid)
 import Data.Maybe (fromMaybe)
 import Control.Applicative ((<|>))
 import Data.Monoid ((<>))
+import Data.PID as PID (PID)
 
 import Control.Monad.Except as Except
 
@@ -38,6 +65,19 @@ empty =
 
 singleton :: Thread h a -> ThreadState h a 
 singleton = flip add Data.ThreadState.empty 
+
+canBeScheduledForward :: ThreadState h a -> List PID
+canBeScheduledForward state = 
+    case toOther state of
+        OtherThreads{active, blocked, uninitialized} -> 
+            Set.toList $ Map.keysSet active <> Map.keysSet blocked <> Map.keysSet uninitialized 
+
+
+canBeScheduledBackward :: ThreadState h a -> List PID
+canBeScheduledBackward state = 
+    case toOther state of
+        OtherThreads{active, blocked, inactive } -> 
+            Set.toList $ Map.keysSet active <> Map.keysSet blocked <> Map.keysSet inactive 
 
 
 instance (Show h, Show a) => Show (OtherThreads h a) where

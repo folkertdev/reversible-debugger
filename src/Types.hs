@@ -14,15 +14,13 @@ import qualified Data.Map as Map
 import Control.Concurrent (forkIO, ThreadId)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, takeMVar, tryPutMVar)
 import Data.IORef
-
+import Data.PID as PID (PID, create, parent) 
 
 
 
 infixl 0 |>
 (|>) :: a -> (a -> b) -> b
 x |> f = f x
-
-type PID = List Int
 
 data Error
     = UndefinedVariable Identifier
