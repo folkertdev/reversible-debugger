@@ -24,7 +24,6 @@ import Control.Concurrent.MVar
 import Data.Maybe (fromMaybe, maybe)
 import qualified Data.Map as Map
 
-import qualified Text.Show.Pretty as Pretty
 import Debug.Trace 
 
 main :: IO ()
