@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns  #-}
+{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns, GADTs #-}
 module MicroOz where 
 
 
@@ -72,7 +72,18 @@ data Program
     deriving (Show, Eq)
 
 
+data Expr a where
+    Literal :: a -> Expr a
+    Reference :: Identifier -> Expr a
+    XBoolOperator :: BooleanOperator -> Expr Int -> Expr Int -> Expr Bool
+    XIntOperator :: IntOperator -> Expr Int -> Expr Int -> Expr Int 
+
+
+data IntOperator = Add | Subtract | Divide | Multiply deriving (Show, Eq)
+
+
 data BoolValue = BoolValue Bool | BoolIdentifier Identifier deriving (Show, Eq) 
+
 
 
 data BooleanOperator 
@@ -91,10 +102,7 @@ data BoolExp
 
 data IntExp 
     = AtomInt IntValue
-    | Add IntValue IntExp
-    | Subtract IntValue IntExp
-    | Divide IntValue IntExp
-    | Multiply IntValue IntExp
+    | IntOperator IntOperator IntValue IntExp
     deriving (Show, Eq)
 
 data IntValue 
@@ -126,10 +134,7 @@ renameIntValue old new value =
 renameVariableInIntExp old new intExp = 
         case intExp of
             AtomInt value -> AtomInt (renameIntValue old new value)
-            Add value expr -> Add (renameIntValue old new value) (renameVariableInIntExp old new expr)
-            Subtract value expr -> Subtract (renameIntValue old new value) (renameVariableInIntExp old new expr)
-            Divide value expr -> Divide (renameIntValue old new value) (renameVariableInIntExp old new expr)
-            Multiply value expr -> Multiply (renameIntValue old new value) (renameVariableInIntExp old new expr)
+            IntOperator operator value expr -> IntOperator operator (renameIntValue old new value) (renameVariableInIntExp old new expr)
 
 
 {-| Rename a variable in the whole expression
@@ -238,14 +243,16 @@ rollThread pid state =
             Running current@(Thread _ _ program) rest -> do
                 ( progress, cmd ) <- rollback current 
 
-                let messages = Cmd.unpack cmd 
+                let messages = Debug.traceShowId $ Cmd.unpack cmd 
 
-                case progress of
+
+                case Debug.traceShowId progress of
                     Done -> do
                         -- thread is completely unrolled, try scheduling the parent
-                        rescheduledParent <- scheduleThreadBackward (PID.parent pid) (Stuck rest)
-                        newState <- foldM (flip handleBackwardEffects) rescheduledParent messages 
-                        Context.removeThread pid
+                        newState <-
+                                Stuck rest
+                                    |> ThreadState.addUninitialized current 
+                                    |> (\s -> foldM (flip handleBackwardEffects) s messages)
                         case program of 
                             -- the initial program of a thread should be just 1 instruction
                             [ x ] -> 
@@ -293,18 +300,17 @@ rollChannel history state =
 handleBackwardEffects :: (MonadState (Context Value) m, MonadError Error m) => BackwardMsg -> ThreadState History Program -> m (ThreadState History Program)
 handleBackwardEffects action state = 
     case action of
-        RollThread { caller, toRoll }  -> do
-            -- roll the thread, and recover its program
-            ( newState, threadProgram ) <- rollThread toRoll state
+        RollChild { caller, toRoll } -> do
+            ( newState, threadProgram ) <- rollThread toRoll state 
 
-            -- reschedule the parent
-            newerState <- scheduleThreadBackward caller newState 
+            rescheduledParent <- scheduleThreadBackward caller newState 
+            Context.removeThread toRoll
 
-            -- remove child from uninitialized if it's in there
-            let newererState = ThreadState.removeUninitialized toRoll newerState
+            let newerState = ThreadState.removeUninitialized toRoll rescheduledParent
 
-            return $ flip ThreadState.mapActive newererState $ \(Thread pid history program)  -> 
+            return $ flip ThreadState.mapActive newerState $ \(Thread pid history program)  -> 
                 Thread pid history (SpawnThread threadProgram : program )
+            
 
         Uninitialize { toUninitialize }  ->  
             let newState = scheduleThread toUninitialize state 
@@ -319,25 +325,14 @@ handleBackwardEffects action state =
             in
                 fmap remove newState
         
-        RollSend _ [] ->  
-            return state
+        RollSend caller histories -> 
+            foldM (flip rollChannel) state histories 
 
-        RollSend caller (h:hs) -> do
-            -- aquire pid 
-            -- switch to that thread
-            -- make it take a step back
-            -- recurse (this will roll the previous thread until its channel action is rolled)
-            stepBack <- rollChannel h state
-            handleBackwardEffects (RollSend caller hs) stepBack
+        RollReceive caller histories -> 
+            foldM (flip rollChannel) state histories 
 
-        RollReceive _ [] -> 
-            return state
 
-        RollReceive caller (h:hs) -> do
-            stepBack <- rollChannel h state
-            handleBackwardEffects (RollSend caller hs) stepBack
-
-handleForwardEffects :: (MonadState (Context Value) m, MonadError Error m) => ForwardMsg -> ThreadState History Program -> m (ThreadState History Program)
+handleForwardEffects :: Monad m => ForwardMsg -> ThreadState History Program -> m (ThreadState History Program)
 handleForwardEffects action state = 
     case action of
         Spawn thread ->
@@ -349,7 +344,7 @@ type ChannelName = Identifier
 
 data BackwardMsg 
     = Uninitialize { caller :: PID, toUninitialize :: PID }  
-    | RollThread { caller :: PID, toRoll :: PID } 
+    | RollChild { caller :: PID, toRoll :: PID } 
     | RollSend { caller :: PID, history :: List QueueHistory } 
     | RollReceive { caller :: PID, history :: List QueueHistory } 
     deriving (Show)
@@ -626,7 +621,7 @@ backwardP pid history program = do
                 ( SpawnedThread toRoll, restOfProgram ) -> 
                     return 
                         ( restOfProgram
-                        , Cmd.create (RollThread pid toRoll)
+                        , Cmd.create (RollChild pid toRoll)
                         )
 
                 ( _, restOfProgram) ->
@@ -673,17 +668,19 @@ evalIntExp expression =
             AtomInt int -> 
                 evalIntValue int 
 
-            Add a b ->
-                evalOperator (+) a b
+            IntOperator operator a b ->
+                case operator of
+                    Add  ->
+                        evalOperator (+) a b
 
-            Subtract a b ->
-                evalOperator (-) a b
+                    Subtract  ->
+                        evalOperator (-) a b
 
-            Multiply a b ->
-                evalOperator (*) a b
+                    Multiply  ->
+                        evalOperator (*) a b
 
-            Divide a b ->
-                evalOperator div a b
+                    Divide  ->
+                        evalOperator div a b
 
 
 evalIntValue :: (MonadState (Context Value) m, MonadError Error m) => IntValue -> m Int 

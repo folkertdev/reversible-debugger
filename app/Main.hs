@@ -29,6 +29,9 @@ import Debug.Trace
 main :: IO ()
 main = do
     [ path ] <- getArgs 
+    interpreter path
+
+interpreter path = do
     contents <- readFile path
     case Parser.program contents of
         Left e -> 
@@ -145,7 +148,7 @@ interpretInstruction instruction (ReplState context state) =
 
 
         RollThread pid -> 
-            evaluate $ MicroOz.handleBackwardEffects MicroOz.RollThread{ MicroOz.caller = PID.parent pid, MicroOz.toRoll = pid} state
+            evaluate $ fst <$> MicroOz.rollThread pid state
 
         RollVariable identifier -> 
             undefined
