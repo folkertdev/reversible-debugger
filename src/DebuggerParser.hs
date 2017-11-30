@@ -32,6 +32,7 @@ parser =
         , store
         , DebuggerParser.print
         , history
+        , skipLets
         , help
         , quit 
         ]
@@ -53,6 +54,7 @@ data Instruction
     | History (Either PID Identifier)
     | Help 
     | Quit
+    | SkipLets
     deriving (Eq, Show)
         
 forth :: Parser Instruction
@@ -109,8 +111,6 @@ rollVariable = do
     spaces
     id <- identifier
     spaces
-    n <- int
-    spaces
     return $ RollVariable id  
 
 run = do
@@ -132,6 +132,10 @@ history = do
     id <- threadOrIdentifier
     return $ History id
 
+skipLets :: Parser Instruction
+skipLets = do
+    string "skiplets" 
+    return SkipLets 
 
 
 threadOrIdentifier :: Parser (Either PID Identifier) 

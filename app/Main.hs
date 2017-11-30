@@ -3,14 +3,14 @@ module Main where
 
 import System.Environment (getArgs)
 
--- import Interpreter
 import DebuggerParser (Instruction(..), parse)
-import MicroOz (Program, Value, History, init, forward, backward, rollThread, scheduleThreadBackward, scheduleThread, rollSends, rollReceives, handleBackwardEffects)
+import qualified Interpreter
+import Interpreter (Execution) 
 import qualified MicroOz 
+import MicroOz (Program, Value, History, init) 
 import MicroOz.Parser as Parser
 import Types
--- import ReversibleLanguage (schedule, reschedule, throw, ThreadState(..), ExecutionState, init, ReversibleLanguage)
---
+
 import Data.Thread as Thread
 import Data.ThreadState as ThreadState
 import Data.Context as Context
@@ -24,12 +24,15 @@ import Control.Concurrent.MVar
 import Data.Maybe (fromMaybe, maybe)
 import qualified Data.Map as Map
 
-import Debug.Trace 
 
 main :: IO ()
 main = do
     [ path ] <- getArgs 
     interpreter path
+
+
+data ReplState = ReplState (Context Value) (ThreadState History Program) deriving (Show)
+
 
 interpreter path = do
     contents <- readFile path
@@ -41,37 +44,11 @@ interpreter path = do
             go $ ReplState context (ThreadState.singleton thread) 
 
 
-
-
 go :: ReplState -> IO () 
 go state = do
     stepped <- iteration state 
     mapM_ go stepped
 
-{-
-
-repeatedApplication n x = foldl (>=>) return $ replicate n x
-
-skipLets :: Thread Program -> ThreadState Program -> Interpreter (Value Program) (Either (ThreadState Program) (Thread Program, ThreadState Program))
-skipLets thread threads = 
-    let predicate (Thread _ _ instructions) = 
-            case instructions of 
-                (Let _ _ _ : _) -> True
-                _ -> False
-    in do
-        oneIteration <- schedule predicate thread threads
-        case oneIteration of 
-            Left done -> return $ Right (thread, threads) 
-            Right (t, ts) -> skipLets t ts
--}
-
-data ReplState = ReplState (Context Value) (ThreadState History Program) deriving (Show)
-
-
-getContext :: ReplState -> Context Value
-getContext (ReplState context state) = 
-    context
-    
 
 iteration :: ReplState -> IO (Maybe ReplState)
 iteration state@(ReplState context threads) = do
@@ -90,73 +67,71 @@ iteration state@(ReplState context threads) = do
             print instruction
             interpretInstruction instruction state 
 
-run :: (MonadState (Context Value) m, MonadError Error m) => ThreadState History Program -> m (ThreadState History Program)
-run state= 
+run :: Execution () 
+run = do
+    state <- snd <$> State.get
     case state of 
-        Stuck done -> return $ Stuck done
-        Running t ts -> 
-            run =<< MicroOz.forward state 
+        Stuck done -> 
+            return () 
 
-andThen :: Monad m => (a -> m b) -> m a -> m b
-andThen = (=<<)
+        Running t ts -> do
+            Interpreter.forward 
+            run
+
 
 interpretInstruction :: Instruction -> ReplState -> IO (Maybe ReplState) 
 interpretInstruction instruction (ReplState context state) =  
     let 
-
-        evaluate :: StateT (Context Value) (Either Error) (ThreadState History Program) -> IO (Maybe ReplState)
+        evaluate :: StateT (Context Value, ThreadState History Program) (Either Error) a -> IO (Maybe ReplState)
         evaluate computation = 
-            case runStateT computation context of 
-                Left error -> do
-                    print error
-                    return $ Just $ ReplState context state 
-
-                Right (a, s) ->
-                    return . Just $ ReplState s a
-    in
-    case instruction of
-        Forth pid ->
-            MicroOz.scheduleThread pid state
-                |> andThen MicroOz.forward
-                |> evaluate
-
-        Back pid -> 
-            MicroOz.scheduleThreadBackward pid state
-                |> andThen MicroOz.backward
-                |> evaluate
-
-        Roll pid n -> 
-            case runStateT (MicroOz.scheduleThreadBackward pid state >>= MicroOz.backward) context of 
-                Left (SchedulingError e) -> do
+            case State.runStateT computation (context, state) of
+                Left e -> do
                     print e 
                     return $ Just (ReplState context state)
 
+                Right (_, ( newContext, newState)) -> 
+                    return . Just $ ReplState newContext newState  
+
+    in
+    case instruction of
+        Forth pid -> evaluate $ do
+            Interpreter.scheduleThread pid 
+            Interpreter.forward
+                
+
+        Back pid -> evaluate $ do 
+            Interpreter.scheduleThreadBackward pid 
+            Interpreter.backward
+
+        Roll pid n ->
+            case runStateT (Interpreter.scheduleThreadBackward pid >> Interpreter.backward) (context, state) of 
                 Left e -> do
                     print e 
                     return $ Just (ReplState context state)
                 
-                Right (newState, newContext) -> 
+                Right ((), (newContext, newState)) -> 
                     interpretInstruction (Roll pid (n - 1)) (ReplState newContext newState) 
-
             
         RollSend channelName n -> 
-            evaluate $ MicroOz.rollSends n channelName state 
+            evaluate $ Interpreter.rollSends n channelName  
                 
 
         RollReceive channelName n -> 
-            evaluate $ MicroOz.rollReceives n channelName state 
+            evaluate $ Interpreter.rollReceives n channelName  
 
 
         RollThread pid -> 
-            evaluate $ fst <$> MicroOz.rollThread pid state
+            evaluate $ Interpreter.rollThread pid 
 
         RollVariable identifier -> 
-            undefined
+            evaluate $ Interpreter.rollVariable identifier
 
         Run -> 
-            evaluate $ run state
- 
+            evaluate run 
 
+        SkipLets -> 
+            evaluate Interpreter.skipLets
+ 
         ListThreads -> do
             print $ Context.threads context
             return $ Just (ReplState context state) 

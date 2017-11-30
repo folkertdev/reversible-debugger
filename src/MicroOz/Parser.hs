@@ -60,7 +60,7 @@ ifThenElse = do
     try $ do
         string "if"
         whitespaceOrComment
-    condition <- boolExpParser
+    condition <- boolExprParser
     whitespaceOrComment
     string "then"
     whitespaceOrComment
@@ -75,7 +75,7 @@ ifThenElse = do
 assertParser = do
     try $ string "assert"
     whitespaceOrComment
-    condition <- boolExpParser
+    condition <- boolExprParser
     whitespaceOrComment
     return $ Assert condition
 
@@ -167,12 +167,12 @@ valueParser =
         trueParser = do
             string "true"
             whitespaceOrComment 
-            return VTrue
+            return (VBool $ Literal True)
 
         falseParser = do
             string "false"
             whitespaceOrComment 
-            return VFalse
+            return (VBool $ Literal False)
 
         receiveParser = do
             try $ string "{receive"
@@ -187,7 +187,7 @@ valueParser =
             return Port 
 
         intExpValue = 
-            fmap VInt intExpParser
+            fmap VInt intExprParser
 
         
 
@@ -226,13 +226,13 @@ varList =
         liftA2 (:) identifierParser (many go)
 
 
-boolExpParser :: Parser BoolExp
-boolExpParser = 
+boolExprParser :: Parser (Expr Bool)
+boolExprParser = 
     let 
-        atom :: Parser BoolExp
+        atom :: Parser (Expr Bool)
         atom = do
             spaces
-            result <- fmap AtomBool boolValueParser
+            result <- boolValueParser
             spaces
             return result
     in 
@@ -245,13 +245,13 @@ boolExpParser =
             , atom
             ] 
 
-intExpParser :: Parser IntExp
-intExpParser = 
+intExprParser :: Parser (Expr Int)
+intExprParser = 
     let 
-        atom :: Parser IntExp
+        atom :: Parser (Expr Int)
         atom = do
             spaces
-            result <- fmap AtomInt intValueParser
+            result <- intValueParser
             spaces
             return result
 
@@ -266,26 +266,26 @@ intExpParser =
 
 
 
-operator :: (IntValue -> IntExp -> IntExp) -> Char -> Parser IntExp
+operator :: IntOperator -> Char -> Parser (Expr Int)
 operator f opChar = do
     a <- intValueParser
     spaces
     char opChar
     spaces
-    b <-  intExpParser
+    b <-  intExprParser
     spaces
-    return $ f a b
+    return $ IntOperator f a b
             
 
-intValueParser :: Parser IntValue
+intValueParser :: Parser (Expr Int)
 intValueParser = do
-    result <- fmap IntIdentifier identifierParser <|> fmap (IntValue . read) (many1 digit)
+    result <- fmap Reference identifierParser <|> fmap (Literal . read) (many1 digit)
     spaces
     return result
 
 
 
-boolOperator :: BooleanOperator -> String -> Parser BoolExp
+boolOperator :: BooleanOperator -> String -> Parser (Expr Bool)
 boolOperator operatorValue operatorSymbol = do
     char '('
     spaces
@@ -297,25 +297,25 @@ boolOperator operatorValue operatorSymbol = do
     spaces
     char ')'
     spaces
-    return $ Operator operatorValue a b
+    return $ BoolOperator operatorValue a b
     
             
-boolValueParser :: Parser BoolValue 
+boolValueParser :: Parser (Expr Bool) 
 boolValueParser = 
     let true = do
             string "true"
             spaces
-            return $ BoolValue True
+            return $ Literal True
         false = do
             string "false"
             spaces
-            return $ BoolValue False
+            return $ Literal False
 
     in
         choice
             [ true
             , false
-            , fmap BoolIdentifier identifierParser
+            , fmap Reference identifierParser
             ] 
 
         

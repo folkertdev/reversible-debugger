@@ -1,6 +1,23 @@
 {-# LANGUAGE ScopedTypeVariables, FlexibleContexts #-}   
 
-module Data.Context (Context(threads), singleton, empty, insertVariable, insertBinding, removeVariable, lookupVariable, mapChannel, withChannel, readChannel, writeChannel, insertChannel, removeChannel, insertThread, removeThread) where 
+module Data.Context 
+    (Context(threads)
+    , singleton
+    , empty
+    , insertVariable
+    , insertBinding
+    , removeVariable
+    , lookupVariable
+    , lookupCreator
+    , mapChannel
+    , withChannel
+    , readChannel
+    , writeChannel
+    , insertChannel
+    , removeChannel
+    , insertThread
+    , removeThread
+    ) where 
 
 import Queue (Queue)
 import qualified Queue
@@ -20,9 +37,9 @@ import qualified Utils
 
 data Context value = 
     Context
-    { bindings :: Map Identifier value
+    { bindings :: Map Identifier (PID, value)
     , variableCount :: Int 
-    , channels :: Map Identifier (Queue Identifier)
+    , channels :: Map Identifier (PID, Queue Identifier)
     , threads :: Map PID Int
     } 
 
@@ -86,22 +103,37 @@ lookupVariable identifier = do
         Nothing ->
             Except.throwError (UndefinedVariable identifier)
 
-        Just v ->
-            return v
+        Just (pid, v) ->
+            return v 
+
+lookupCreator :: (MonadState (Context value) m, MonadError Error m) => Identifier -> m PID
+lookupCreator identifier = do
+    context <- State.get
+    case Map.lookup identifier (bindings context) of
+        Nothing ->
+            case Map.lookup identifier (channels context) of
+                Nothing ->
+                    Except.throwError (UndefinedVariable identifier)
+
+                Just (pid, _) ->
+                    return pid 
+
+        Just (pid, _) ->
+            return pid 
 
 
-insertVariable :: MonadState (Context value) m => value -> m Identifier 
-insertVariable value = 
-    insertBinding (const value)
+insertVariable :: MonadState (Context value) m => PID -> value -> m Identifier 
+insertVariable pid value = 
+    insertBinding pid (const value)
 
-insertBinding :: MonadState (Context value) m => (Identifier -> value) -> m Identifier
-insertBinding tagger = do
+insertBinding :: MonadState (Context value) m => PID -> (Identifier -> value) -> m Identifier
+insertBinding pid tagger = do
     identifier <- freshIdentifier
 
     let value = tagger identifier
 
     State.modify $ \context ->
-        let newBindings = Map.insert identifier value (bindings context)
+        let newBindings = Map.insert identifier (pid, value) (bindings context)
         in
             context { bindings = newBindings } 
 
@@ -118,12 +150,12 @@ freshIdentifier = do
     return $ Identifier $ "var" ++ show new
 
 
-insertChannel :: MonadState (Context value) m => Queue Identifier -> m Identifier 
-insertChannel value = do
+insertChannel :: MonadState (Context value) m => PID -> Queue Identifier -> m Identifier 
+insertChannel pid value = do
     identifier <- freshIdentifier  
 
     State.modify $ \context ->
-        let newBindings = Map.insert identifier value (channels context)
+        let newBindings = Map.insert identifier (pid, value) (channels context)
         in
             context { channels = newBindings } 
 
@@ -193,7 +225,7 @@ withChannel :: (MonadState (Context value) m, MonadError Error m) => Identifier 
 withChannel identifier tagger = do
     channel <- Map.lookup identifier . channels <$> State.get 
     case channel of 
-        Just queue -> 
+        Just (pid, queue) -> 
             tagger queue
 
         Nothing ->
@@ -202,7 +234,7 @@ withChannel identifier tagger = do
 mapChannel :: (MonadState (Context value) m) => Identifier -> (Queue.Queue Identifier -> Queue.Queue Identifier) -> m ()
 mapChannel identifier tagger = 
     State.modify $ \context ->
-        context { channels = Map.adjust tagger identifier (channels context) } 
+        context { channels = Map.adjust (\(pid, v) -> (pid, tagger v)) identifier (channels context) } 
 
 
 readChannel :: (MonadState (Context value) m, MonadError Error m) => PID -> Identifier -> m (Maybe Identifier)

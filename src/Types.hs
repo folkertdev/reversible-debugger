@@ -79,8 +79,5 @@ newtype Identifier
     = Identifier String 
     deriving (Eq, Show, Ord)
 
-newtype ThreadName  
-    = ThreadName String 
-    deriving (Eq, Show, Ord)
-
+type ChannelName = Identifier
 

@@ -149,6 +149,38 @@ rollN pid n =
                     Foldable.traverse_ handleBackwardEffects messages
                     rollN pid (n - 1)
 
+
+skipLets :: Execution ()  
+skipLets = skipLetsHelper []
+
+
+skipLetsHelper :: List (Thread History Program) -> Execution ()
+skipLetsHelper filtered = do
+    state <- extract <$> State.get
+
+    let predicate (Thread _ _ instructions) = 
+            case instructions of 
+                (MicroOz.Let {} : _) -> True
+                _ -> False
+
+    case ThreadState.reschedule state of
+        Nothing -> 
+            -- no thread can be scheduled, we're done
+            setThreadState $ foldr ThreadState.add state filtered
+
+        Just (Stuck rest) -> 
+            error "reschedule cannot return a stuck"
+
+        Just (Running current rest) -> 
+            if predicate current then do
+                forward
+                skipLetsHelper filtered
+
+            else do
+                setThreadState (Stuck rest)
+                skipLetsHelper (current : filtered)  
+
+
 -- HANDLE EFFECTS
 
 {- 

@@ -15,7 +15,7 @@ cabal-version:       >=1.10
 
 library 
   hs-source-dirs:      src
-  exposed-modules:     Types, Data.Thread, Data.Context, Data.ThreadState, Data.PID, Cmd, MicroOz, MicroOz.Parser, DebuggerParser
+  exposed-modules:     Types, Interpreter, Data.Thread, Data.Context, Data.ThreadState, Data.PID, Cmd, MicroOz, MicroOz.Parser, DebuggerParser
   other-modules:       Queue, Utils
   ghc-options:         -fwarn-incomplete-patterns
   build-depends:       base >= 4.7 && < 5
