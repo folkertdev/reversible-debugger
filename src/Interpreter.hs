@@ -1,373 +1,389 @@
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-{-# LANGUAGE ScopedTypeVariables, Rank2Types, NamedFieldPuns #-}
-module Interpreter 
-    (Thread(..)
-    , Context
-    , Interpreter
-    , forward
-    , backward
-    , lookupVariable
-    , freshIdentifier
-    , insertVariable
-    , readChannel
-    , writeChannel
-    , freshThreadName
-    , removeVariable
-    , rollVariable
-    , rollThread
-    , advanceThread
-    , rollReadChannel
-    , rollWriteChannel
-    , rollReceive
-    , rollSend
-    ) where
+{-# LANGUAGE ScopedTypeVariables, NamedFieldPuns, FlexibleContexts, MultiParamTypeClasses, FlexibleInstances #-}
+module Interpreter where
 
-{-| The main body of code
+import qualified Data.Map as Map
+import qualified Data.List as List
+import qualified Data.Maybe as Maybe
+import Control.Monad.State as State
+import Control.Monad.Except as Except
+import Control.Applicative (liftA2)
+import qualified Data.Foldable as Foldable
 
-The interesting stuff happens in the backward and forward functions.
+import qualified Queue 
+import Data.Thread as Thread
+import Data.Context as Context 
+import Data.PID as PID (PID, create, parent, child)
+import Data.ThreadState (Progress(..) , ThreadState(..) , OtherThreads)
+import qualified Data.ThreadState as ThreadState
 
+import Types
+import qualified Cmd
+
+import MicroOz (Program(..), History(CreatedVariable), Value, ForwardMsg(..), BackwardMsg(..), advanceP, backwardP) 
+
+
+{-| The main type keeping the context of the execution
+
+It's a `StateT` that has read and write access to a tuple of two values
+
+* `Context Value` stores variable bindings, channels and handles fresh variable name generation
+* `ThreadState History Program` contains the threads 
+
+Additionally, any computation `Either` succeed, or fail producing an `Error`.
+
+Finally, a value of type `a` is produced.
+-}
+type Execution a = StateT (Context Value, ThreadState History Program) (Either Error) a
+
+
+rollSends :: Int -> ChannelName -> Execution () 
+rollSends n channelName = do
+    histories <- liftContext $ Context.withChannel channelName (return . Queue.lastNSends n) 
+    handleBackwardEffects (RollSend (PID.create []) histories)
+
+
+rollReceives :: Int -> ChannelName -> Execution () 
+rollReceives n channelName = do
+    histories <- liftContext $ Context.withChannel channelName (return . Queue.lastNReceives n) 
+    handleBackwardEffects (RollSend (PID.create []) histories) 
+
+
+rollThread :: PID -> Execution Program
+rollThread pid = do
+    scheduleThreadBackward pid 
+    state <- extract <$> State.get
+    case state of
+        Running current@(Thread _ _ program) rest -> do
+            ( progress, cmd ) <- liftContext $ rollback current 
+
+            let messages = Cmd.unpack cmd 
+                processMessages = Foldable.traverse_ handleBackwardEffects messages
+
+
+            case progress of
+                Done -> do
+                    -- thread is completely unrolled, try scheduling the parent
+                    setThreadState $ ThreadState.addUninitialized current $ Stuck rest
+
+                    processMessages
+                    case program of 
+                        -- the initial program of a thread should be just 1 instruction
+                        [ x ] ->
+                            return x
+
+                        _ -> 
+                            error $ "invalid initial program: " ++ show program
+
+
+                Step newCurrent -> do
+                    setThreadState $ Running newCurrent rest
+                    processMessages
+                    rollThread pid 
+
+        Stuck _ -> 
+            -- scheduleThread will have errored
+            undefined
+
+                        
+rollVariable :: Identifier -> Execution () 
+rollVariable identifier = do
+    pid <- liftContext $ Context.lookupCreator identifier 
+    scheduleThread pid
+    withRunning $ \current@(Thread _ history _) rest -> do
+        let toUndo = 1 + length (takeWhile (/= CreatedVariable identifier) history)
+        rollN pid toUndo 
+
+-- ROLLING HELPERS 
+
+
+{-| Roll the (assumed) most recent action on a channel -}
+rollChannel :: Queue.QueueHistory -> Execution () 
+rollChannel history = 
+    let pid = 
+            case history of 
+                Queue.Added v -> v
+                Queue.Removed v -> v
+    in do
+        scheduleThreadBackward pid 
+        state <- extract <$> State.get
+        case state of 
+            Running current rest -> do
+                ( progress, cmd ) <- liftContext $ rollback current 
+
+                let messages = Cmd.unpack cmd 
+
+                case progress of
+                    Done -> do
+                        State.modify (change $ const $ ThreadState.addUninitialized current $ Stuck rest)
+                        Foldable.traverse_ handleBackwardEffects messages
+
+                    Step newCurrent -> do
+                        State.modify (change $ const $ Running newCurrent rest)
+                        Foldable.traverse_ handleBackwardEffects messages
+
+                        
+
+            Stuck rest -> 
+                error "deadlock? "
+
+
+{-| roll the thread with the given PID (at most) n times -}
+rollN :: PID -> Int -> Execution ()
+rollN pid n =
+    if n <= 0 then 
+          return () 
+    else do
+        scheduleThread pid
+        withRunning $ \current rest -> do
+            ( progress, cmd ) <- liftContext $ rollback current 
+
+            let messages = Cmd.unpack cmd 
+
+            case progress of
+                Done -> do
+                    setThreadState $ ThreadState.addUninitialized current $ Stuck rest
+                    Foldable.traverse_ handleBackwardEffects messages
+
+                Step newCurrent -> do
+                    setThreadState $ Running newCurrent rest
+                    Foldable.traverse_ handleBackwardEffects messages
+                    rollN pid (n - 1)
+
+-- HANDLE EFFECTS
+
+{- 
+Threads have to sometimes influence other threads, either to spawn
+when moving forward, or roll other threads (e.g. roll a child thread when 
+the parent wants to roll a spawn).
+
+These things are called `Effects`, and the functions below process them in-order
+giving a new state.
 -}
 
-import Prelude hiding (head)
-import Types
-import Data.ReversibleLanguage as ReversibleLanguage
-import qualified Queue
-import Queue (QueueHistory(..))
 
-import qualified Data.Map as Map 
-import Data.Map (Map)
-import qualified Data.Maybe as Maybe
-import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
-import Control.Monad.Trans.State as State 
-import Control.Applicative (Applicative, liftA2, pure, (<*), (<|>))
-import Control.Monad
-import Data.Foldable (Foldable, foldrM)
-import Data.Maybe (fromMaybe)
-import Data.List (isPrefixOf)
-import Debug.Trace
+handleBackwardEffects :: BackwardMsg -> Execution () 
+handleBackwardEffects action = 
+    case action of
+        RollChild { caller, toRoll } -> do
+            -- a parent wants to roll its child, then undo the spawning completely
+            threadProgram <- rollThread toRoll 
 
-withDefault :: a -> Maybe a -> a
-withDefault = 
-    fromMaybe 
+            scheduleThreadBackward caller 
+            liftContext $ Context.removeThread toRoll
 
+            let addHistory :: Thread History Program -> Thread History Program 
+                addHistory (Thread pid history program) = 
+                    Thread pid history (SpawnThread threadProgram : program )
 
-{-| Generate a guaranteed unused (fresh) new identifier -}
-freshIdentifier :: Interpreter value Identifier
-freshIdentifier = do
-    context <- State.get
-    let new = 1 + _variableCount context
-    put (context { _variableCount = new } )
-    return $ Identifier $ "var" ++ show new
+            State.modify (change $ ThreadState.mapActive addHistory . ThreadState.removeUninitialized toRoll) 
+
+        RollSend caller histories -> 
+            -- rolling a send requires rolling all subsequent actions on the channel
+            Foldable.traverse_ rollChannel histories
+
+        RollReceive caller histories -> 
+            -- rolling a receive requires rolling all subsequent actions on the channel
+            Foldable.traverse_ rollChannel histories
 
 
-freshThreadName :: PID -> Interpreter value PID
-freshThreadName parentName = do
-    context <- State.get
-    let usedThreadNames = _threads context  
-    case Map.lookup parentName usedThreadNames of
-        Nothing -> 
-            throw $ RuntimeException "thread name without parent"
-
-        Just childCount -> do
-            let 
-                childName = 
-                    parentName ++ [childCount + 1]
-
-                updater = 
-                    Map.adjust (+ 1) parentName . Map.insert childName 0 
-
-            State.put (context { _threads =  updater usedThreadNames }) 
-            return childName
+handleForwardEffects :: (MonadError Error m, Has (ThreadState History Program) c) => ForwardMsg -> StateT c m () 
+handleForwardEffects action = 
+    case action of
+        Spawn thread ->
+            -- add the thread to the state (it is in the context already)
+            State.modify $ change $ ThreadState.add thread 
 
 
-insertVariable :: Identifier -> value -> Interpreter value () 
-insertVariable identifier value = 
-    State.modify $ \context -> 
-        let 
-            newBindings = Map.insert identifier value (_bindings context)
-        in
-            context { _bindings = newBindings } 
+-- ATOMIC MOVING FUNCTIONS
 
 
-removeVariable :: Identifier -> Interpreter value ()  
-removeVariable identifier = 
-    State.modify $ \context -> 
-        let 
-            newBindings = Map.delete identifier (_bindings context)
-            
-        in
-            context { _bindings = newBindings, _variableCount = _variableCount context - 1 } 
+backward :: Execution () 
+backward = do
+    state <- extract <$> State.get
+
+    case state of 
+        Running current@(Thread pid _ _) rest -> do
+            ( progress, commands ) <- liftContext $ rollback current
+
+            let messages = Cmd.unpack commands
+
+            case progress of
+                Done -> do
+                    let uninitializeThread :: ThreadState History Program -> ThreadState History Program 
+                        uninitializeThread state = 
+                            case state of 
+                                Running current other -> 
+                                    ThreadState.addUninitialized current (Stuck other)
+
+                                Stuck other -> 
+                                    Stuck other 
+
+                    State.modify (change uninitializeThread)
+                    Foldable.traverse_ handleBackwardEffects messages
+
+                Step newCurrent -> do
+                    setThreadState $ Running newCurrent rest
+                    Foldable.traverse_ handleBackwardEffects messages
 
 
-{-| Get the value for an identifier from the global scope
+        Stuck rest ->
+            case ThreadState.rescheduleBackward state  of 
+                Just rescheduled -> do
+                    setThreadState rescheduled
+                    backward 
 
-throws an Error when the identifier is not defined
--} 
-lookupVariable :: Identifier -> Interpreter value value 
-lookupVariable identifier = do
-    map <- _bindings <$> State.get
-    case Map.lookup identifier map of
-        Nothing ->
-            throw (UndefinedVariable identifier)
+                Nothing ->  
+                    Except.throwError $ SchedulingError $ ThreadScheduleError (PID.create []) DeadLock
 
-        Just v ->
+
+handleBlockedThread :: Error -> Execution () 
+handleBlockedThread error =  
+    case error of 
+        BlockedOnReceive pid -> 
+            withRunning $ \current rest -> do
+                    newState <- 
+                        Stuck rest
+                            -- reschedule (makes sure the 'current' thread is not immediately rescheduled  
+                            |> ThreadState.reschedule
+                            -- insert the 'current' thread into the blocked other threads
+                            |> fmap (return . ThreadState.addBlocked current)
+                            -- if rescheduling failed, propagate the error 
+                            |> Maybe.fromMaybe (Except.throwError (BlockedOnReceive pid))
+                            |> liftContext
+
+                    setThreadState newState
+
+        _ ->
+            -- propagate any other errors
+            Except.throwError error 
+
+
+forward :: Execution () 
+forward = 
+    flip Except.catchError handleBlockedThread $ do
+        state <- extract <$> State.get
+        case state of 
+            Running current@(Thread pid _ _) rest -> do
+                ( progress, commands ) <- liftContext $ advance current 
+
+                let messages = Cmd.unpack commands
+
+                case progress of
+                    Done -> do
+                        setThreadState $ ThreadState.addInactive current $ Stuck rest
+                        Foldable.traverse_ handleForwardEffects messages
+
+                    Step newCurrent -> do
+                        setThreadState $ Running newCurrent rest
+                        Foldable.traverse_ handleForwardEffects messages
+
+
+            Stuck rest ->
+                case ThreadState.reschedule state  of 
+                    Just rescheduled -> do
+                        setThreadState rescheduled 
+                        forward
+
+                    Nothing ->  
+                        Except.throwError $ SchedulingError $ ThreadScheduleError (PID.create []) DeadLock
+
+
+advance :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd ForwardMsg) 
+advance thread@(Thread pid histories program) = 
+    case program of
+        [] -> 
+            return ( Done, Cmd.none )
+
+        (p:ps) -> do
+            (h, newProgram, cmd ) <- advanceP pid p ps
+            return ( Step $ Thread pid (h:histories) newProgram, cmd )
+
+
+rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd BackwardMsg)
+rollback thread@(Thread pid histories program) = 
+    case histories of
+        [] -> 
+            return ( Done , Cmd.none ) 
+
+
+        (h:hs) -> do
+            ( newProgram, cmd ) <- backwardP pid h program 
+            return ( Step $ Thread pid hs newProgram, cmd )
+
+-- HELPERS 
+
+
+setThreadState :: (Has (ThreadState History Program) c, MonadError Error m) => ThreadState History Program -> StateT c m () 
+setThreadState = State.modify . change . const 
+
+
+withRunning :: (Thread History Program -> OtherThreads History Program -> Execution ()) -> Execution ()
+withRunning tagger = do
+    state <- extract <$> State.get 
+    case state of 
+        Running current rest ->
+            tagger current rest
+
+        Stuck _ -> 
+            return ()
+
+
+-- Row Polymorphism
+
+{-| An attempt at row polymorphism in haskell, which allows us to combine functions defined on a subsection of the state
+(so either the Context, or the ThreadState) and embed them in `Execution`. 
+-}
+class Has smaller larger where
+    extract :: larger -> smaller
+
+    change :: (smaller -> smaller) -> (larger -> larger)
+
+instance Has a (a, b) where
+    extract = fst 
+
+    change f ( a, b) = (f a, b)
+
+instance Has b (a, b) where
+    extract = snd 
+
+    change f ( a, b) = (a, f b)
+
+
+liftContext :: StateT (Context Value) (Either Error) a -> Execution a
+liftContext smallerComputation = do
+    smallerState <- extract <$> State.get
+
+    (value, newSmallerState) <- lift $ State.runStateT smallerComputation smallerState
+
+    State.modify $ change $ const newSmallerState
+
+    return value
+
+
+-- THREAD SCHEDULING
+
+{-| lifts thread scheduling errors into our error type, preserving the context -} 
+embedThreadScheduleError :: MonadError Error m =>  Either ThreadScheduleError a -> m a
+embedThreadScheduleError value = 
+    case value of 
+        Left e ->
+            Except.throwError $ SchedulingError e
+
+        Right v ->
             return v
 
-withChannel :: Identifier -> (Queue.Queue Identifier -> Interpreter value a) -> Interpreter value a
-withChannel identifier tagger = do
-    channel <- Map.lookup identifier . _channels <$> State.get 
-    case channel of 
-        Just queue -> 
-            tagger queue
 
-        Nothing ->
-            throw $ UndefinedChannel identifier
-
-mapChannel :: Identifier -> (Queue.Queue Identifier -> Queue.Queue Identifier) -> Interpreter value ()
-mapChannel identifier tagger = 
-    State.modify $ \context ->
-        context { _channels = Map.adjust tagger identifier (_channels context) } 
+{-| Schedule a thread for a forwards move: the thread must be active, uninitialized or blocked -}
+scheduleThread :: (Has (ThreadState History Program) c, MonadError Error m) => PID -> StateT c m () 
+scheduleThread pid = do
+    state <- extract <$> State.get 
+    newState <- lift $ embedThreadScheduleError $ ThreadState.scheduleThread pid state
+    setThreadState newState
 
 
-readChannel :: PID -> Identifier -> Interpreter value (Maybe Identifier)
-readChannel threadName identifier = 
-    let fetch = 
-            withChannel identifier $ \queue ->
-                case Queue.pop threadName queue of
-                    Just ( first, rest ) -> do 
-                        -- put the rest of the queue back into the context
-                        mapChannel identifier (const rest)
-                        return first
-
-                    Nothing ->
-                        throw $ BlockedOnReceive threadName  
-        handler error = 
-            case error of
-                BlockedOnReceive _ -> return Nothing
-                _ -> throw error
-    in
-        fmap Just fetch `catch` handler 
-
-rollReadChannel :: PID -> Identifier -> Identifier -> Interpreter value () 
-rollReadChannel pid channelName payload = 
-    withChannel channelName $ \channel -> 
-        case Queue.tryRevertPop pid payload channel of
-            Right newQueue -> 
-                State.modify $ \context ->
-                    context { _channels = Map.adjust (const newQueue) channelName (_channels context) } 
-                 
-            Left error -> 
-                throw $ RuntimeException (show error)
-
-
-writeChannel :: PID -> Identifier -> Identifier -> Interpreter value ()  
-writeChannel threadName identifier payload = 
-    mapChannel identifier (Queue.push threadName payload)
-
-
-rollWriteChannel :: PID -> Identifier -> Interpreter value () 
-rollWriteChannel pid channelName = 
-    withChannel channelName $ \channel -> 
-        case Queue.tryRevertPush pid channel of
-            Right newQueue -> 
-                State.modify $ \context ->
-                    context { _channels = Map.adjust (const newQueue) channelName (_channels context) } 
-                 
-            Left error -> 
-                throw $ RuntimeException (show error)
-
-
-
-{-| Puts an either into an ExceptT context: Left throws an error, Right
-continues the program
--} 
-embedEither :: Monad m => Either e a  -> ExceptT e m a
-embedEither v = ExceptT (return v)
-
-head list = 
-    case list of
-        [] -> Nothing
-        (x:_) -> Just x
-
-rollReceive :: ReversibleLanguage program => Identifier -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
-rollReceive channelName thread threads =
-    withChannel channelName $ \channel -> 
-        case Queue.mostRecentAction channel of
-            Nothing -> 
-                return $ Right ( thread, threads ) 
-
-            Just (Added pid)  -> do
-                -- first roll a send, then try to roll receive
-                rolledSend <- rollSend channelName thread threads
-                case rolledSend of 
-                    Left done -> return $ Left done 
-                    Right (t, ts) -> 
-                        rollReceive channelName t ts 
-                
-
-
-            Just (Removed pid) ->
-                -- unroll until the receive is reverted
-                case scheduleThread pid thread threads of 
-                    Left error -> 
-                        throw $ ThreadScheduleError pid error
-
-                    Right (current, state) ->
-                        go (predicate pid channelName) current state
-
-go predicate thread threads = 
-    if predicate thread then
-        return $ Right (thread, threads) 
-    else do
-        oneStepBack <- backward thread threads
-        case oneStepBack of
-            Left done -> return $ Left done
-            Right (t, ts) -> 
-                go predicate t ts 
-
-
-predicate onThread onChannel thread@(Thread pid history _) = 
-    let receivedOnCorrectChannel =
-            case received =<< head history of
-                Nothing -> False 
-                Just receivedOn -> 
-                    receivedOn == onChannel
-    in 
-        onThread == pid && receivedOnCorrectChannel 
-
-                
-rollSend :: ReversibleLanguage program => Identifier -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
-rollSend channelName thread threads =
-    withChannel channelName $ \channel -> 
-        case Queue.mostRecentAction channel of
-            Nothing -> 
-                return $ Right ( thread, threads ) 
-
-            Just (Added pid)  -> 
-                -- unroll until the send is reverted
-                case scheduleThread pid thread threads of 
-                    Left error -> 
-                        throw $ ThreadScheduleError pid error
-
-                    Right (current, state) ->
-                        go (predicate pid channelName) current state
-
-            Just (Removed pid) -> do
-                -- first roll a receive, then try to roll receive
-                rolledReceive <- rollReceive channelName thread threads
-                case rolledReceive of 
-                    Left done -> return $ Left done 
-                    Right (t, ts) -> 
-                        rollSend channelName t ts 
-    
-
-
-{-| Revert the program state before the creation of the given variable -}
-rollVariable :: ReversibleLanguage program => Identifier -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
-rollVariable name thread@(Thread pid history program) state@ThreadState{active, inactive, blocked, filtered} = do 
-    let 
-        recurse = do
-            oneStepBack <- backward thread state
-            case oneStepBack of
-                Left done -> return $ Left done
-                Right (newThread, newState) -> 
-                    rollVariable name newThread newState
-    lookupVariable name -- will throw if the name does not exist
-    case history of
-        [] -> 
-            -- nothing to revert 
-            return $ Left (state { inactive = Map.insert pid thread inactive }) 
-
-        (mostRecent : restOfHistory) -> 
-            case createdVariable mostRecent of
-                Nothing -> 
-                    recurse
-
-                Just identifier ->
-                    if name == identifier then  
-                         -- roll the assignment
-                         backward thread state
-                    else
-                        recurse
-
-
-parent :: ReversibleLanguage program => Thread program -> ThreadState program -> Interpreter (Value program) (Maybe (Thread program, ThreadState program))
-parent child@(Thread pid _ _) state@ThreadState{active, inactive, blocked, filtered} = 
-    let 
-        -- we only actually return the parent when it is valid
-        validThreads = mconcat [ active, inactive, blocked, blocked ]
-        parentID = Prelude.init pid
-    in
-        return $ 
-            case Map.lookup parentID validThreads of
-                Nothing -> 
-                    Nothing
-                Just parent -> 
-                    Just 
-                        ( parent
-                        , ThreadState 
-                              (Map.insert pid child (Map.delete parentID active))
-                              (Map.delete parentID inactive) 
-                              (Map.delete parentID blocked)
-                              (Map.delete parentID filtered)
-                        )
- 
-
-
-{-| Revert a whole thread -} 
-rollThread  :: ReversibleLanguage program => PID -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program) 
-rollThread pid thread@(Thread parentId history program) state@ThreadState{ active, inactive, blocked, filtered } = do
-    let recurse task = do 
-            oneStepBack <- backward thread state
-            case oneStepBack of
-                Left done -> return $ Left done
-                Right (newThread, newState) -> 
-                    rollThread pid (traceShowId newThread) newState
-
-    exists <- Map.member pid . _threads <$> State.get
-    if traceShowId $ not exists then
-        throw $ UndefinedThread pid
-    else if not (parentId `isPrefixOf` pid) then do
-        -- rolling thread is not an ancestor of the thread we want to roll
-        -- so try to schedule the parent
-        result <- parent thread state 
-        case result of
-            Nothing -> 
-                error "cannot find the parent thread, so cannot roll"
-            Just ( parentThread, newState ) -> 
-                rollThread  pid parentThread newState 
-    else
-        case history of
-            [] -> 
-                -- nothing to revert 
-                return $ Left (state { inactive = Map.insert pid thread inactive }) 
-
-            (mostRecent : restOfHistory) ->
-                case spawned mostRecent of
-                    Nothing -> 
-                        recurse thread 
-
-                    Just spawnedName -> 
-                        if spawnedName == pid then
-                            -- undo the spawning, the rest is undone
-                            backward thread state
-
-                        else
-                            recurse thread
-
-advanceThread :: ReversibleLanguage program => PID -> Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program)
-advanceThread pid current state =  
-    case scheduleThread pid current state of 
-        Left error -> 
-            throw $ ThreadScheduleError pid error
-
-        Right (current, state) -> 
-            forward current state
-
-
-
-        
-                
-        
-    
-
+{-| Schedule a thread for a backwards move: the thread must be active, inactive or blocked -}
+scheduleThreadBackward :: (Has (ThreadState History Program) c, MonadError Error m) => PID -> StateT c m () 
+scheduleThreadBackward pid = do 
+    state <- extract <$> State.get 
+    newState <- lift $ embedThreadScheduleError $ ThreadState.scheduleThreadBackward pid state
+    setThreadState newState
