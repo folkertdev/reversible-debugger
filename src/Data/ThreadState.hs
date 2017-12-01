@@ -5,7 +5,7 @@ module Data.ThreadState
     , ThreadState(..)
     , Threads
     , Progress(..)
-    , empty
+    , Data.ThreadState.empty
     , singleton
     , mapOther
     , toOther
@@ -21,6 +21,7 @@ module Data.ThreadState
     , removeUninitialized 
     , canBeScheduledForward
     , canBeScheduledBackward
+    , getThread
     )  where 
 
 import qualified Utils
@@ -34,7 +35,7 @@ import qualified Data.Set as Set
 import Types
 import Data.Thread as Thread (Thread(..), pid)
 import Data.Maybe (fromMaybe)
-import Control.Applicative ((<|>))
+import Control.Applicative (Alternative, (<|>), empty)
 import Data.Monoid ((<>))
 import Data.PID as PID (PID)
 
@@ -180,6 +181,18 @@ mapOther tagger state =
 
         Stuck other -> 
             Stuck (tagger other) 
+
+
+getThread :: PID -> ThreadState h a -> Maybe (Thread h a)
+getThread pid state = 
+    case toOther state of
+        OtherThreads { active, inactive , blocked , filtered , uninitialized  } ->
+            let asum :: Alternative f => List (f a) -> f a
+                asum = foldl (<|>) Control.Applicative.empty 
+
+                threads = [ active, inactive, blocked, filtered, uninitialized ]
+            in
+                asum $ map (Map.lookup pid) threads
 
 
 

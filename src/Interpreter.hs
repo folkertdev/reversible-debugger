@@ -48,43 +48,61 @@ rollReceives n channelName = do
     handleBackwardEffects (RollSend (PID.create []) histories) 
 
 
+
 rollThread :: PID -> Execution Program
-rollThread pid = do
-    scheduleThreadBackward pid 
-    state <- extract <$> State.get
-    case state of
-        Running current@(Thread _ _ program) rest -> do
-            ( progress, cmd ) <- liftContext $ rollback current 
-
-            let messages = Cmd.unpack cmd 
-                processMessages = Foldable.traverse_ handleBackwardEffects messages
-
-
-            case progress of
-                Done -> do
-                    -- thread is completely unrolled, try scheduling the parent
-                    setThreadState $ ThreadState.addUninitialized current $ Stuck rest
-
-                    processMessages
-                    case program of 
-                        -- the initial program of a thread should be just 1 instruction
-                        [ x ] ->
-                            return x
+rollThread pid = 
+    let
+        proceedOnThreadIsUninitialized :: Error -> Execution Program
+        proceedOnThreadIsUninitialized error = 
+                    case error of
+                        SchedulingError (ThreadScheduleError pid ThreadIsUninitialized) -> do
+                            match <- State.gets (ThreadState.getThread pid . extract)
+                            maybe undefined finalize match
 
                         _ -> 
-                            error $ "invalid initial program: " ++ show program
+                            Except.throwError error
+
+        finalize :: Thread History Program -> Execution Program 
+        finalize (Thread _ _ instructions) = 
+            case instructions of
+                [ program ] -> 
+                    return program 
+
+                _ -> 
+                    error $ "invalid initial program: " ++ show instructions
+
+        recurseTillDone = do
+            scheduleThreadBackward pid 
+            state <- extract <$> State.get
+            case state of
+                Running current@(Thread _ _ program) rest -> do
+                    ( progress, cmd ) <- liftContext $ rollback current 
+
+                    let messages = Cmd.unpack cmd 
+                        processMessages = Foldable.traverse_ handleBackwardEffects messages
 
 
-                Step newCurrent -> do
-                    setThreadState $ Running newCurrent rest
-                    processMessages
-                    rollThread pid 
+                    case progress of
+                        Done -> do
+                            -- thread is completely unrolled, try scheduling the parent
+                            setThreadState $ ThreadState.addUninitialized current $ Stuck rest
+                            processMessages
+                            finalize current
 
-        Stuck _ -> 
-            -- scheduleThread will have errored
-            undefined
 
+                        Step newCurrent -> do
+                            setThreadState $ Running newCurrent rest
+                            processMessages
+                            rollThread pid 
+
+                Stuck _ -> 
+                    -- scheduleThread will have errored
+                    undefined
+
+    in
+        recurseTillDone `Except.catchError` proceedOnThreadIsUninitialized 
                         
+
 rollVariable :: Identifier -> Execution () 
 rollVariable identifier = do
     pid <- liftContext $ Context.lookupCreator identifier 
