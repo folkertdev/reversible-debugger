@@ -36,10 +36,11 @@ data ReplState = ReplState (Context Value) (ThreadState History Program) derivin
 
 interpreter path = do
     contents <- readFile path
-    case Parser.program contents of
+    case Parser.programWithTypes contents of
         Left e -> 
             error (show e)
-        Right program -> do 
+        Right (types, program) -> do 
+            print types
             let ( context, thread ) = MicroOz.init program
             go $ ReplState context (ThreadState.singleton thread) 
 

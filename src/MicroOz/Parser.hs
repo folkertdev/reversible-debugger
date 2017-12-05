@@ -1,19 +1,33 @@
-module MicroOz.Parser (program) where
+module MicroOz.Parser (program, programWithTypes) where
 
 import Control.Applicative ((<*), liftA2, pure)
 import Data.List (intercalate)
 
 import Text.ParserCombinators.Parsec as Parsec
 
+import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Types (Identifier(..))
 import MicroOz
 import Queue
+import qualified SessionType
 
 program :: String -> Either ParseError Program
 program rawString = do 
     withoutWhitespace <- Parsec.parse eatComments "" rawString
     Parsec.parse programParser "" withoutWhitespace
 
+
+programWithTypes :: String -> Either ParseError (Map.Map Identifier SessionType.LocalType, Program)
+programWithTypes rawString = do 
+    let parser = do
+            tipes <- types
+            spaces
+            program <- programParser
+            return (tipes, program)
+    
+    withoutWhitespace <- Parsec.parse eatComments "" rawString
+    Parsec.parse parser "" withoutWhitespace
 
 
 --- Parser
@@ -34,6 +48,61 @@ eatComments = do
   xs <- sepBy notComment comment
   optional comment
   return $ intercalate "" xs
+
+-- SESSION TYPES 
+
+types :: Parser (Map.Map Identifier SessionType.LocalType)
+types = do
+    globals <- optionMaybe (many1 globalType)
+    case globals of 
+        Nothing -> 
+            return Map.empty
+
+        Just globals -> do
+            locals <- fromMaybe [] <$> optionMaybe (many1 typeAlias)
+            -- no aliasing of names, we assume just one global type for now
+            let initial = Map.mapKeys Identifier $ foldMap SessionType.deriveLocals $ map snd globals
+
+                folder :: ( Identifier, (Identifier, Identifier)) -> Map.Map Identifier SessionType.LocalType -> Map.Map Identifier SessionType.LocalType
+                folder ( newName, (globalType, atLocal)) accum = 
+                    case Map.lookup atLocal accum of
+                        Nothing -> 
+                            error "alias not in a global type"
+
+                        Just value ->
+                            Map.insert newName value accum
+
+            return $ foldr folder initial locals
+            
+
+
+globalType :: Parser ( Identifier, SessionType.GlobalType )
+globalType = do
+    try $ string "global type"
+    spaces
+    name <- identifierParser
+    char '='
+    spaces
+    tipe <- SessionType.globalType
+    return ( name, tipe )
+
+typeAlias :: Parser (Identifier, (Identifier, Identifier)) 
+typeAlias = do
+    try $ string "type alias"
+    spaces
+    name <- identifierParser
+    char '='
+    spaces
+    tipe <- typeAt 
+    return ( name, tipe )
+
+typeAt = do
+    global <- identifierParser
+    string "at"
+    spaces
+    local <- identifierParser
+    return (global, local )
+     
 
 
 eol :: GenParser Char st Char
