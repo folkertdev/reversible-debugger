@@ -214,7 +214,7 @@ giving a new state.
 handleBackwardEffects :: BackwardMsg -> Execution () 
 handleBackwardEffects action = 
     case action of
-        RollChild { caller, toRoll } -> do
+        RollChild { caller, toRoll, typeName } -> do
             -- a parent wants to roll its child, then undo the spawning completely
             threadProgram <- rollThread toRoll 
 
@@ -223,7 +223,7 @@ handleBackwardEffects action =
 
             let addHistory :: Thread History Program -> Thread History Program 
                 addHistory (Thread pid history program) = 
-                    Thread pid history (SpawnThread threadProgram : program )
+                    Thread pid history (SpawnThread typeName threadProgram : program )
 
             State.modify (change $ ThreadState.mapActive addHistory . ThreadState.removeUninitialized toRoll) 
 

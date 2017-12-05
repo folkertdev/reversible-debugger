@@ -12,7 +12,7 @@ type alias Vendor = G at V
 let d = port in
 
 // A
-thread 
+thread Alice where
     let title = 42 in
         {send d title} ; 
         let price = {receive d} in 
@@ -25,7 +25,7 @@ thread
 end;
 
 // B
-thread
+thread Bob where
     let ok = 1 in
         let address = 8 in
             let price = {receive d} in
@@ -48,8 +48,7 @@ thread
     end
 end;
 
-// C
-thread
+thread Carol where
     let unit = 0 in
         let share = {receive d} in
             let remainder = {receive d} in
@@ -61,8 +60,7 @@ end;
     
 
 
-// vendor
-thread 
+thread Vendor where
     let price = 5 in 
         let date = 0 in
             let title = {receive d} in

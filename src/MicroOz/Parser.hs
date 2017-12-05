@@ -204,13 +204,24 @@ sendParser = do
             whitespaceOrComment 
             return $ Send id1 value
 
+threadHeader = do
+    try $ string "thread"
+    spaces
+    optionMaybe threadWhereHeader
+
+threadWhereHeader = do
+    name <- try $ identifierParser <* string "where"
+    spaces
+    return name
+
+
 threadParser :: Parser Program
 threadParser = do
-            try $ string "thread"
-            whitespaceOrComment  
-            work <- programParser
-            end
-            return $ SpawnThread work
+    typeName <- threadHeader
+    whitespaceOrComment  
+    work <- programParser
+    end
+    return $ SpawnThread typeName work
 
 functionApplicationParser = do
     char '{'

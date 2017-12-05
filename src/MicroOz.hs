@@ -55,7 +55,7 @@ data History
     | CreatedVariable Identifier
     | CreatedChannel Identifier
     | CalledProcedure Identifier (List Identifier)
-    | SpawnedThread PID
+    | SpawnedThread (Maybe Identifier) PID
     | BranchedOn (Expr Bool) Bool Program 
     | AssertedOn (Expr Bool) 
     deriving (Eq, Show)
@@ -66,7 +66,7 @@ data Program
     = Sequence Program Program
     | Let Identifier Value Program
     | If (Expr Bool) Program Program
-    | SpawnThread Program
+    | SpawnThread (Maybe Identifier) Program
     | Skip
     | Apply Identifier (List Identifier)
     | Send Identifier Identifier
@@ -193,8 +193,8 @@ renameVariable old new program =
         If condition trueBody falseBody -> 
             If (renameExpr old new condition) (renameVariable old new trueBody) (renameVariable old new falseBody)
 
-        SpawnThread work ->
-            SpawnThread (renameVariable old new work)
+        SpawnThread name work ->
+            SpawnThread name (renameVariable old new work)
 
         Skip -> Skip
 
@@ -249,7 +249,7 @@ renameExpr old new expression =
 {- messages are signals to the "global" state to influence other threads based on this thread's actions -} 
 
 data BackwardMsg 
-    = RollChild { caller :: PID, toRoll :: PID } 
+    = RollChild { caller :: PID, toRoll :: PID, typeName :: Maybe Identifier } 
     | RollSend { caller :: PID, history :: List QueueHistory } 
     | RollReceive { caller :: PID, history :: List QueueHistory } 
     deriving (Show)
@@ -326,10 +326,10 @@ advanceP pid program rest =
                         continue (AssertedOn condition) rest
 
 
-                SpawnThread work -> do
+                SpawnThread typeName work -> do
                     thread@(Thread threadName _ _) <- Context.insertThread pid [] [ work ] 
                     return 
-                        ( SpawnedThread threadName
+                        ( SpawnedThread typeName threadName
                         , rest
                         , Cmd.create $ Spawn thread
                         ) 
@@ -428,10 +428,10 @@ backwardP pid history program = do
                             , Cmd.create (RollReceive pid toRollFirst)
                             )
 
-                ( SpawnedThread toRoll, restOfProgram ) -> 
+                ( SpawnedThread typeName toRoll, restOfProgram ) -> 
                     return 
                         ( restOfProgram
-                        , Cmd.create (RollChild pid toRoll)
+                        , Cmd.create (RollChild pid toRoll typeName)
                         )
 
                 ( _, restOfProgram) ->
