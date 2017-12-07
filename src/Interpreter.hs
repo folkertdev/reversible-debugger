@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, NamedFieldPuns, FlexibleContexts, MultiParamTypeClasses, FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables, NamedFieldPuns, FlexibleContexts, MultiParamTypeClasses, FlexibleInstances, DuplicateRecordFields #-}
 module Interpreter where
 
 import qualified Data.Map as Map
@@ -19,7 +19,7 @@ import qualified Data.ThreadState as ThreadState
 import Types
 import qualified Cmd
 
-import MicroOz (Program(..), History(CreatedVariable), Value, ForwardMsg(..), BackwardMsg(..), advanceP, backwardP) 
+import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMsg(..), BackwardMsg(..), advanceP, backwardP) 
 
 
 {-| The main type keeping the context of the execution
@@ -63,19 +63,19 @@ rollThread pid =
                             Except.throwError error
 
         finalize :: Thread History Program -> Execution Program 
-        finalize (Thread _ _ instructions) = 
-            case instructions of
-                [ program ] -> 
-                    return program 
+        finalize Thread{program} = 
+            case program of
+                [ instruction ] -> 
+                    return instruction 
 
                 _ -> 
-                    error $ "invalid initial program: " ++ show instructions
+                    error $ "invalid initial program: " ++ show program
 
         recurseTillDone = do
             scheduleThreadBackward pid 
             state <- extract <$> State.get
             case state of
-                Running current@(Thread _ _ program) rest -> do
+                Running current@Thread{program} rest -> do
                     ( progress, cmd ) <- liftContext $ rollback current 
 
                     let messages = Cmd.unpack cmd 
@@ -107,7 +107,7 @@ rollVariable :: Identifier -> Execution ()
 rollVariable identifier = do
     pid <- liftContext $ Context.lookupCreator identifier 
     scheduleThread pid
-    withRunning $ \current@(Thread _ history _) rest -> do
+    withRunning $ \current@Thread{history} rest -> do
         let toUndo = 1 + length (takeWhile (/= CreatedVariable identifier) history)
         rollN pid toUndo 
 
@@ -168,19 +168,31 @@ rollN pid n =
                     rollN pid (n - 1)
 
 
-skipLets :: Execution ()  
-skipLets = skipLetsHelper []
-
-
-skipLetsHelper :: List (Thread History Program) -> Execution ()
-skipLetsHelper filtered = do
-    state <- extract <$> State.get
-
-    let predicate (Thread _ _ instructions) = 
-            case instructions of 
+skipLets_ :: Execution ()  
+skipLets_ = 
+    let predicate Thread{program} = 
+            case program of 
                 (MicroOz.Let {} : _) -> True
                 _ -> False
+    in
+        skipHelper predicate []
 
+
+skipLets :: Execution ()  
+skipLets = 
+    let predicate Thread{program} = 
+            case program of 
+                (MicroOz.Send {} : _) -> False
+                (MicroOz.Let  _ (Receive _) _ : _) -> False
+                _ -> True
+    in
+        skipHelper predicate []
+
+
+
+skipHelper :: (Thread History Program -> Bool) -> List (Thread History Program) -> Execution ()
+skipHelper predicate filtered = do
+    state <- extract <$> State.get
     case ThreadState.reschedule state of
         Nothing -> 
             -- no thread can be scheduled, we're done
@@ -192,11 +204,11 @@ skipLetsHelper filtered = do
         Just (Running current rest) -> 
             if predicate current then do
                 forward
-                skipLetsHelper filtered
+                skipHelper predicate filtered
 
             else do
                 setThreadState (Stuck rest)
-                skipLetsHelper (current : filtered)  
+                skipHelper predicate (current : filtered)  
 
 
 -- HANDLE EFFECTS
@@ -222,8 +234,8 @@ handleBackwardEffects action =
             liftContext $ Context.removeThread toRoll
 
             let addHistory :: Thread History Program -> Thread History Program 
-                addHistory (Thread pid history program) = 
-                    Thread pid history (SpawnThread typeName threadProgram : program )
+                addHistory thread@Thread{program} = 
+                    thread { program = SpawnThread typeName threadProgram : program }
 
             State.modify (change $ ThreadState.mapActive addHistory . ThreadState.removeUninitialized toRoll) 
 
@@ -252,7 +264,7 @@ backward = do
     state <- extract <$> State.get
 
     case state of 
-        Running current@(Thread pid _ _) rest -> do
+        Running current@Thread{ pid } rest -> do
             ( progress, commands ) <- liftContext $ rollback current
 
             let messages = Cmd.unpack commands
@@ -313,7 +325,7 @@ forward =
     flip Except.catchError handleBlockedThread $ do
         state <- extract <$> State.get
         case state of 
-            Running current@(Thread pid _ _) rest -> do
+            Running current@Thread{ pid } rest -> do
                 ( progress, commands ) <- liftContext $ advance current 
 
                 let messages = Cmd.unpack commands
@@ -339,26 +351,29 @@ forward =
 
 
 advance :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd ForwardMsg) 
-advance thread@(Thread pid histories program) = 
+advance thread@(Thread pid typeState histories program) = 
     case program of
         [] -> 
             return ( Done, Cmd.none )
 
         (p:ps) -> do
-            (h, newProgram, cmd ) <- advanceP pid p ps
-            return ( Step $ Thread pid (h:histories) newProgram, cmd )
+            (newTypeState, h, newProgram, cmd ) <- advanceP pid typeState p ps
+            return ( Step $ Thread pid newTypeState (h:histories) newProgram, cmd )
 
 
 rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd BackwardMsg)
-rollback thread@(Thread pid histories program) = 
+rollback thread@(Thread pid typeState histories program) = 
     case histories of
         [] -> 
             return ( Done , Cmd.none ) 
 
 
         (h:hs) -> do
-            ( newProgram, cmd ) <- backwardP pid h program 
-            return ( Step $ Thread pid hs newProgram, cmd )
+            ( consumed, newTypeState, newProgram, cmd ) <- backwardP pid typeState h program 
+            if consumed then
+                return ( Step $ Thread pid newTypeState hs newProgram, cmd )
+            else
+                return ( Step $ Thread pid newTypeState (h:hs) newProgram, cmd )
 
 -- HELPERS 
 

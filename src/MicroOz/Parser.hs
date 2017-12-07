@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns #-}
 module MicroOz.Parser (program, programWithTypes) where
 
 import Control.Applicative ((<*), liftA2, pure)
@@ -7,10 +8,11 @@ import Text.ParserCombinators.Parsec as Parsec
 
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-import Types (Identifier(..))
+import Types (List, Identifier(..))
 import MicroOz
 import Queue
 import qualified SessionType
+import SessionType (GlobalType(..))
 
 program :: String -> Either ParseError Program
 program rawString = do 
@@ -18,17 +20,17 @@ program rawString = do
     Parsec.parse programParser "" withoutWhitespace
 
 
-programWithTypes :: String -> Either ParseError (Map.Map Identifier SessionType.LocalType, Program)
+programWithTypes :: String -> Either ParseError (Map.Map Identifier (SessionType.LocalType String), Program)
 programWithTypes rawString = do 
-    let parser = do
-            tipes <- types
-            spaces
-            program <- programParser
-            return (tipes, program)
-    
     withoutWhitespace <- Parsec.parse eatComments "" rawString
-    Parsec.parse parser "" withoutWhitespace
 
+    let parser = do
+            globals <- globalType `sepBy` spaces 
+            spaces
+            (globalAtoms, program ) <- sessionWhere (Map.fromList globals)
+            return (SessionType.deriveLocals globalAtoms, program )
+
+    Parsec.parse parser "" withoutWhitespace
 
 --- Parser
 --
@@ -51,39 +53,17 @@ eatComments = do
 
 -- SESSION TYPES 
 
-types :: Parser (Map.Map Identifier SessionType.LocalType)
-types = do
-    globals <- optionMaybe (many1 globalType)
-    case globals of 
-        Nothing -> 
-            return Map.empty
-
-        Just globals -> do
-            locals <- fromMaybe [] <$> optionMaybe (many1 typeAlias)
-            -- no aliasing of names, we assume just one global type for now
-            let initial = Map.mapKeys Identifier $ foldMap SessionType.deriveLocals $ map snd globals
-
-                folder :: ( Identifier, (Identifier, Identifier)) -> Map.Map Identifier SessionType.LocalType -> Map.Map Identifier SessionType.LocalType
-                folder ( newName, (globalType, atLocal)) accum = 
-                    case Map.lookup atLocal accum of
-                        Nothing -> 
-                            error "alias not in a global type"
-
-                        Just value ->
-                            Map.insert newName value accum
-
-            return $ foldr folder initial locals
-            
-
 
 globalType :: Parser ( Identifier, SessionType.GlobalType )
 globalType = do
     try $ string "global type"
     spaces
     name <- identifierParser
+    arguments <- identifierParser `sepBy` spaces 
+    spaces
     char '='
     spaces
-    tipe <- SessionType.globalType
+    tipe <- SessionType.globalType arguments
     return ( name, tipe )
 
 typeAlias :: Parser (Identifier, (Identifier, Identifier)) 
@@ -102,7 +82,30 @@ typeAt = do
     spaces
     local <- identifierParser
     return (global, local )
-     
+
+
+sessionWhere :: Map.Map Identifier GlobalType -> Parser ( List SessionType.GlobalAtom, Program )
+sessionWhere globals = do
+    try $ string "session"
+    spaces
+    typeName <- identifierParser 
+    case Map.lookup typeName globals of
+        Nothing ->
+            unexpected $ "I'm trying to instantiate session type `" ++ show typeName ++ "`, but it is not defined" 
+        Just global@GlobalType{ parameters, atoms } -> 
+            let header = do
+                    arguments <- count (length parameters) identifierParser 
+                    spaces
+                    string "where"
+                    return arguments
+            in do
+                arguments <- try header
+                program <- programParser
+                end
+                return ( SessionType.instanciateGlobalType arguments global, program )
+                
+    
+-- Program Structure
 
 
 eol :: GenParser Char st Char

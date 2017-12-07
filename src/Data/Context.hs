@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, FlexibleContexts #-}   
+{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns #-}   
 
 module Data.Context 
     (Context(threads)
@@ -9,6 +9,8 @@ module Data.Context
     , removeVariable
     , lookupVariable
     , lookupCreator
+    , lookupLocalType
+    , insertParticipant
     , mapChannel
     , withChannel
     , readChannel
@@ -21,6 +23,7 @@ module Data.Context
 
 import Queue (Queue)
 import qualified Queue
+import qualified SessionType
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Types
@@ -41,10 +44,12 @@ data Context value =
     , variableCount :: Int 
     , channels :: Map Identifier (PID, Queue Identifier)
     , threads :: Map PID Int
+    , localTypes :: Map Identifier (SessionType.LocalType String)
+    , participantMap :: Map PID Identifier
     } 
 
 instance Show value => Show (Context value) where
-    show (Context bindings variableCount channels threads) = 
+    show Context { bindings, variableCount, channels, threads, localTypes, participantMap } = 
         "Context:"
             <> "\n"
             <> "variable count: "
@@ -53,14 +58,20 @@ instance Show value => Show (Context value) where
             <> Utils.showMap "bindings" bindings
             <> Utils.showMap "channels" channels
             <> Utils.showMap "threads" threads
+            <> Utils.showMap "participants" participantMap
 
-singleton :: Thread h a -> Context value
-singleton (Thread pid _ _) = 
+singleton :: Map.Map Identifier (SessionType.LocalType String) -> Thread h a -> Context value
+singleton types Thread{ pid, typeState } =
     Context 
         { bindings = Map.empty
         , variableCount = 0
         , channels = Map.empty
         , threads = Map.singleton pid 0  
+        , localTypes = types
+        , participantMap =
+            case typeState of 
+                SessionType.LocalTypeState{SessionType.participant} -> 
+                    Map.singleton pid participant 
         } 
 
 empty :: Context value 
@@ -70,6 +81,8 @@ empty =
         , variableCount = 0
         , channels = Map.empty
         , threads = Map.empty 
+        , localTypes = Map.empty
+        , participantMap = Map.empty
         } 
 
 
@@ -106,6 +119,17 @@ lookupVariable identifier = do
         Just (pid, v) ->
             return v 
 
+
+lookupLocalType :: (MonadState (Context value) m, MonadError Error m) => Identifier -> m (SessionType.LocalType String)
+lookupLocalType identifier = do
+    context <- State.get
+    case Map.lookup identifier (localTypes context) of
+        Nothing ->
+            Except.throwError (UndefinedVariable identifier)
+
+        Just t ->
+            return t
+
 lookupCreator :: (MonadState (Context value) m, MonadError Error m) => Identifier -> m PID
 lookupCreator identifier = do
     context <- State.get
@@ -138,6 +162,13 @@ insertBinding pid tagger = do
             context { bindings = newBindings } 
 
     return identifier
+
+insertParticipant :: MonadState (Context value) m => PID -> Identifier -> m ()
+insertParticipant pid participant = 
+    State.modify $ \context ->
+        let newBindings = Map.insert pid participant (participantMap context)
+        in
+            context { participantMap = newBindings } 
     
     
 
@@ -176,8 +207,8 @@ removeChannel identifier =
                     } 
 
 
-insertThread :: (MonadState (Context value) m, MonadError Error m) => PID -> List h -> List a -> m (Thread h a)
-insertThread parent history value = do
+insertThread :: (MonadState (Context value) m, MonadError Error m) => PID -> SessionType.LocalTypeState String -> List h -> List a -> m (Thread h a)
+insertThread parent localTypeState history value = do
     context <- State.get
     let usedThreadNames = threads context  
     case Map.lookup parent usedThreadNames of
@@ -193,7 +224,7 @@ insertThread parent history value = do
                     Map.adjust (+ 1) parent . Map.insert child 0 
 
             State.put (context { threads =  updater usedThreadNames }) 
-            return $ Thread child history value
+            return $ Thread child localTypeState history value
 
 
 removeThread :: (MonadState (Context value) m, MonadError Error m) => PID -> m () 
@@ -237,17 +268,17 @@ mapChannel identifier tagger =
         context { channels = Map.adjust (\(pid, v) -> (pid, tagger v)) identifier (channels context) } 
 
 
-readChannel :: (MonadState (Context value) m, MonadError Error m) => PID -> Identifier -> m (Maybe Identifier)
-readChannel threadName identifier = 
+readChannel :: (MonadState (Context value) m, MonadError Error m) => PID -> Identifier -> Identifier -> String -> ChannelName -> m (Maybe Identifier)
+readChannel threadName sender receiver valueType identifier = 
     let fetch = 
             withChannel identifier $ \queue ->
-                case Queue.pop threadName queue of
-                    Just ( first, rest ) -> do 
+                case Queue.pop threadName sender receiver valueType queue of
+                    Right ( first, rest ) -> do 
                         -- put the rest of the queue back into the context
                         mapChannel identifier (const rest)
                         return first
 
-                    Nothing ->
+                    Left _ ->
                         Except.throwError $ BlockedOnReceive threadName  
         handler error = 
             case error of
@@ -257,7 +288,7 @@ readChannel threadName identifier =
         fmap Just fetch `Except.catchError` handler 
 
 
-writeChannel :: MonadState (Context value) m => PID -> Identifier -> Identifier -> m ()  
-writeChannel threadName identifier payload = 
-    mapChannel identifier (Queue.push threadName payload)
+writeChannel :: MonadState (Context value) m => PID -> Identifier -> Identifier -> String -> ChannelName -> Identifier -> m ()  
+writeChannel threadName sender receiver valueType identifier payload = 
+    mapChannel identifier (Queue.push threadName sender receiver valueType payload)
 

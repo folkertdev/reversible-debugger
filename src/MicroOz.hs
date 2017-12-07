@@ -16,7 +16,11 @@ module MicroOz
 import Control.Monad.State as State
 import Control.Monad.Except as Except
 import Control.Applicative (liftA2)
+import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 
+import qualified SessionType
+import SessionType (LocalAtom(sender, receiver, type_), LocalTypeState(participant))
 import qualified Queue 
 import Data.Thread as Thread
 import Data.Context as Context 
@@ -24,17 +28,19 @@ import Data.PID as PID (PID, create, parent, child)
 
 import Types
 import qualified Cmd
+import Debug.Trace as Debug
 
+type Participant = Identifier
 type Queue = Queue.Queue
 type QueueHistory = Queue.QueueHistory
 
 
-init :: Program -> ( Context Value, Thread History Program ) 
-init program = 
+init :: Map.Map Identifier (SessionType.LocalType String) -> Program -> ( Context Value, Thread History Program ) 
+init types program = 
     let 
-        thread = Thread (PID.create [ 0 ]) [] [ program ] 
+        thread = Thread (PID.create [ 0 ]) SessionType.empty [] [ program ] 
     in 
-        ( Context.singleton thread, thread ) 
+        ( Context.singleton types thread, thread ) 
 
 {-| Values in the language. These may appear on the right-hand side of a variable declaration -} 
 data Value 
@@ -260,9 +266,14 @@ newtype ForwardMsg
     deriving (Show)
 
 {-| Take one step forward -} 
-advanceP :: (MonadState (Context Value) m, MonadError Error m) => PID -> Program -> List Program -> m ( History, List Program, Cmd.Cmd ForwardMsg)
-advanceP pid program rest = 
-    let continue history rest = return ( history, rest, Cmd.none ) 
+advanceP :: (MonadState (Context Value) m, MonadError Error m) 
+    => PID 
+    -> SessionType.LocalTypeState String 
+    -> Program 
+    -> List Program 
+    -> m ( SessionType.LocalTypeState String, History, List Program, Cmd.Cmd ForwardMsg)
+advanceP pid localTypeState@SessionType.LocalTypeState{participant} program rest = 
+    let continue history rest = return ( localTypeState, history, rest, Cmd.none ) 
     in
         case program of
                 Skip ->
@@ -273,16 +284,25 @@ advanceP pid program rest =
 
                 Let identifier value continuation -> 
                     case value of
-                        Receive channelName -> do 
-                            message_ <- readChannel pid channelName 
-                            case message_ of
-                                Nothing ->
-                                    -- blocked on receive
-                                    Except.throwError $ BlockedOnReceive pid
+                        Receive channelName -> 
+                            case SessionType.forwardWithReceive localTypeState of
+                                Left e -> 
+                                    error $ unwords [ show e, show pid, show program ] -- Except.throwError $ BlockedOnReceive pid
 
-                                Just message -> 
-                                    continue Received{ channelName = channelName, binding = identifier, payload = message } $
-                                        renameVariable identifier message continuation : rest
+                                Right ( expectedSender, valueType, newLocalTypeState ) -> do
+                                    message_ <- readChannel pid expectedSender participant valueType channelName 
+                                    case message_ of
+                                        Nothing ->
+                                            -- blocked on receive
+                                            Except.throwError $ BlockedOnReceive pid
+
+                                        Just message -> 
+                                            return 
+                                                ( newLocalTypeState
+                                                , Received{ channelName = channelName, binding = identifier, payload = message } 
+                                                , renameVariable identifier message continuation : rest
+                                                , Cmd.none 
+                                                )
 
                         Port -> do
                             channelName <- Context.insertChannel pid Queue.empty
@@ -327,9 +347,23 @@ advanceP pid program rest =
 
 
                 SpawnThread typeName work -> do
-                    thread@(Thread threadName _ _) <- Context.insertThread pid [] [ work ] 
+                    sessionType <- 
+                            case typeName of
+                                Nothing -> 
+                                    return SessionType.empty
+
+                                Just name -> do
+                                    localType <- Context.lookupLocalType name 
+                                    return $ SessionType.fromLocalType name localType
+
+                    thread@(Thread threadName _ _ _) <- Context.insertThread pid sessionType [] [ work ] 
+
+                    -- if there is a type name, insert this thread as a participant
+                    mapM_ (Context.insertParticipant threadName) typeName 
+
                     return 
-                        ( SpawnedThread typeName threadName
+                        ( localTypeState  
+                        , SpawnedThread typeName threadName
                         , rest
                         , Cmd.create $ Spawn thread
                         ) 
@@ -345,16 +379,32 @@ advanceP pid program rest =
                         in
                             continue (CalledProcedure functionName arguments) (withRenamedVariables : rest)
                                 
-                Send channelName variable -> do
-                    writeChannel pid channelName variable 
-                    continue (Sent channelName variable) rest
+                Send channelName variable -> 
+                    case SessionType.forwardWithSend localTypeState of 
+                        Right (expectedReceiver, valueType, newLocalTypeState) -> do
+                            writeChannel pid participant expectedReceiver valueType channelName variable 
+                            return 
+                                ( newLocalTypeState
+                                , Sent channelName variable                                                
+                                , rest 
+                                , Cmd.none 
+                                )
+
+                        Left e -> 
+                            -- Except.throwError $ BlockedOnReceive pid
+                            error "wants to send but session type won't allow it"
 
 
 {-| Take one step backward -} 
-backwardP :: (MonadState (Context Value) m, MonadError Error m) => PID -> History -> List Program -> m ( List Program, Cmd.Cmd BackwardMsg ) 
-backwardP pid history program = do
+backwardP :: (MonadState (Context Value) m, MonadError Error m) 
+          => PID 
+          -> SessionType.LocalTypeState String
+          -> History  
+          -> List Program 
+          -> m ( Bool, SessionType.LocalTypeState String, List Program, Cmd.Cmd BackwardMsg ) 
+backwardP pid localTypeState@SessionType.LocalTypeState{participant} history program = do
     context <- State.get
-    let continue newProgram = return ( newProgram, Cmd.none )
+    let continue newProgram = return ( True, localTypeState, newProgram, Cmd.none )
     case (history, program) of 
                 ( Skipped, _ ) ->
                     continue (Skip : program)
@@ -369,7 +419,7 @@ backwardP pid history program = do
 
                 ( CreatedChannel identifier, continuation : restOfProgram ) -> do
                     Context.removeChannel identifier
-                    return ( Let identifier Port continuation : restOfProgram, Cmd.none )
+                    return ( True, localTypeState, Let identifier Port continuation : restOfProgram, Cmd.none )
 
                 ( BranchedOn condition True falseBody, trueBody : restOfProgram ) ->
                     continue (If condition trueBody falseBody : restOfProgram)
@@ -383,7 +433,39 @@ backwardP pid history program = do
                 ( CalledProcedure functionName arguments, body : restOfProgram ) ->
                     continue (Apply functionName arguments : restOfProgram)
 
-                ( Sent channelName valueName, restOfProgram ) -> do
+                ( Sent channelName valueName, restOfProgram ) -> 
+                    case SessionType.backwardWithSend localTypeState of
+                        Left e -> 
+                            error $ show e
+
+                        Right ( receiver, newLocalTypeState ) -> 
+                            withChannel channelName $ \queue -> 
+                                case Queue.rollPush pid participant receiver queue of
+                                    Right (newChannel, _) -> do
+                                        mapChannel channelName (const newChannel)
+
+                                        return 
+                                            ( True
+                                            , newLocalTypeState
+                                            , Send channelName valueName : restOfProgram
+                                            , Cmd.none 
+                                            )
+                                    Left (Queue.InvalidAction _) -> do
+                                        -- generate the list of actions on the channel that need to be undone
+                                        -- including the current one: processing of the message will make us go
+                                        -- into the `then` branch above.
+                                        toRollFirst <- withChannel channelName (return . Queue.followingReceive pid)
+                                        return 
+                                            ( False
+                                            , localTypeState
+                                            , restOfProgram
+                                            , Cmd.create (RollSend pid toRollFirst)
+                                            )
+
+                                    Left e -> error $ "backward evaluation should not fail, but got" ++ show e
+
+
+                    {-
                     -- find out whether this send is the "latest" command on the channel
                     mostRecent <- withChannel channelName (return . Queue.hasJustSent pid)  
                     if mostRecent then do
@@ -404,8 +486,45 @@ backwardP pid history program = do
                             ( restOfProgram
                             , Cmd.create (RollSend pid toRollFirst)
                             )
+                        -}
 
-                ( Received{ channelName, binding, payload }, continuation : restOfProgram ) -> do
+                ( Received{ channelName, binding, payload }, continuation : restOfProgram ) -> 
+                    case SessionType.backwardWithReceive localTypeState of
+                        Left e -> 
+                            error $ show e
+
+                        Right ( sender, valueType, newLocalTypeState ) ->
+                            withChannel channelName $ \queue -> 
+                                case Queue.rollPop pid participant sender valueType payload queue of
+                                    Right newChannel -> do
+                                        -- set the channel to the new version
+                                        mapChannel channelName (const newChannel)
+
+                                        return 
+                                            ( True
+                                            , newLocalTypeState
+                                            , Let binding (Receive channelName) (renameVariable payload binding continuation) : restOfProgram 
+                                            , Cmd.none 
+                                            )
+
+                                    Left (Queue.InvalidAction _) -> do
+                                        -- generate the list of actions on the channel that need to be undone
+                                        -- including the current one: processing of the message will make us go
+                                        -- into the `then` branch above.
+                                        toRollFirst <- withChannel channelName (return . Queue.followingReceive pid)
+
+                                        return 
+                                            ( False 
+                                            , localTypeState 
+                                            , restOfProgram
+                                            , Cmd.create (RollReceive pid toRollFirst)
+                                            )
+
+                                    Left e -> 
+                                        error $ "backward evaluation should not fail, but got" ++ show e
+
+
+                    {-
                     -- find out whether this receive is the "latest" command on the channel
                     mostRecent <- withChannel channelName (return . Queue.hasJustReceived pid)  
                     if mostRecent then do
@@ -427,10 +546,13 @@ backwardP pid history program = do
                             ( restOfProgram
                             , Cmd.create (RollReceive pid toRollFirst)
                             )
+                    -}
 
                 ( SpawnedThread typeName toRoll, restOfProgram ) -> 
                     return 
-                        ( restOfProgram
+                        ( True 
+                        , localTypeState 
+                        , restOfProgram
                         , Cmd.create (RollChild pid toRoll typeName)
                         )
 

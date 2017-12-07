@@ -24,6 +24,8 @@ import Control.Concurrent.MVar
 import Data.Maybe (fromMaybe, maybe)
 import qualified Data.Map as Map
 
+import Debug.Trace as Debug
+
 
 main :: IO ()
 main = do
@@ -40,13 +42,12 @@ interpreter path = do
         Left e -> 
             error (show e)
         Right (types, program) -> do 
-            print types
-            let ( context, thread ) = MicroOz.init program
+            let ( context, thread ) = MicroOz.init types program
             go $ ReplState context (ThreadState.singleton thread) 
 
 
 go :: ReplState -> IO () 
-go state = do
+go state@(ReplState context _) = do
     stepped <- iteration state 
     mapM_ go stepped
 
@@ -69,15 +70,16 @@ iteration state@(ReplState context threads) = do
             interpretInstruction instruction state 
 
 run :: Execution () 
-run = do
-    state <- snd <$> State.get
-    case state of 
-        Stuck done -> 
-            return () 
-
-        Running t ts -> do
-            Interpreter.forward 
-            run
+run = go 10 
+  where go 0 = return () 
+        go n = do
+            (context, state) <- State.get
+            case Debug.traceShowId $ ThreadState.reschedule state of
+                Nothing -> return ()
+                Just newState -> do
+                    State.modify (\(c, _) -> (Debug.traceShowId c, newState ))
+                    Interpreter.forward
+                    go (n - 1)
 
 
 interpretInstruction :: Instruction -> ReplState -> IO (Maybe ReplState) 
@@ -101,6 +103,7 @@ interpretInstruction instruction (ReplState context state) =
                 
 
         Back pid -> evaluate $ do 
+
             Interpreter.scheduleThreadBackward pid 
             Interpreter.backward
 
