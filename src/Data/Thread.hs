@@ -14,17 +14,13 @@ import Data.PID as PID (PID)
 data Thread history a 
     = Thread 
             { pid :: PID
-            , typeState :: SessionType.LocalTypeState String
             , history :: List history
             , program :: List a 
             } deriving (Eq)
 
 instance (Show history, Show a) => Show (Thread history a) where 
-    show (Thread pid localType history program) = 
+    show (Thread pid history program) = 
         "Thread " ++ show pid 
-            ++ "\n"
-            ++ "local type state"
-            ++ show localType
             ++ "\n"
             ++ "\n"
             ++ "instruction stack: "

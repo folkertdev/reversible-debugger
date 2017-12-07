@@ -13,6 +13,7 @@ import MicroOz
 import Queue
 import qualified SessionType
 import SessionType (GlobalType(..))
+import Data.PID as PID
 
 program :: String -> Either ParseError Program
 program rawString = do 
@@ -205,7 +206,7 @@ sendParser = do
             whitespaceOrComment 
             char '}'
             whitespaceOrComment 
-            return $ Send id1 value
+            return $ Send id1 value PID.master
 
 threadHeader = do
     try $ string "thread"
@@ -263,7 +264,7 @@ valueParser =
             name <- identifierParser
             char '}'
             whitespaceOrComment 
-            return $ Receive name
+            return $ Receive name PID.master
 
         portParser = do
             string "port"

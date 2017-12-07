@@ -19,7 +19,7 @@ import qualified Data.ThreadState as ThreadState
 import Types
 import qualified Cmd
 
-import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMsg(..), BackwardMsg(..), advanceP, backwardP) 
+import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMsg(..), BackwardMsg(..), advanceP, backwardP, renameCreator) 
 
 
 {-| The main type keeping the context of the execution
@@ -183,7 +183,7 @@ skipLets =
     let predicate Thread{program} = 
             case program of 
                 (MicroOz.Send {} : _) -> False
-                (MicroOz.Let  _ (Receive _) _ : _) -> False
+                (MicroOz.Let  _ Receive {} _ : _) -> False
                 _ -> True
     in
         skipHelper predicate []
@@ -234,8 +234,8 @@ handleBackwardEffects action =
             liftContext $ Context.removeThread toRoll
 
             let addHistory :: Thread History Program -> Thread History Program 
-                addHistory thread@Thread{program} = 
-                    thread { program = SpawnThread typeName threadProgram : program }
+                addHistory thread@Thread{pid, program} = 
+                    thread { program = SpawnThread typeName (renameCreator pid threadProgram) : program }
 
             State.modify (change $ ThreadState.mapActive addHistory . ThreadState.removeUninitialized toRoll) 
 
@@ -251,9 +251,9 @@ handleBackwardEffects action =
 handleForwardEffects :: (MonadError Error m, Has (ThreadState History Program) c) => ForwardMsg -> StateT c m () 
 handleForwardEffects action = 
     case action of
-        Spawn thread ->
+        Spawn thread@Thread { pid, program } ->
             -- add the thread to the state (it is in the context already)
-            State.modify $ change $ ThreadState.add thread 
+            State.modify $ change $ ThreadState.add $ thread { program = map (MicroOz.renameCreator pid) program }
 
 
 -- ATOMIC MOVING FUNCTIONS
@@ -351,29 +351,29 @@ forward =
 
 
 advance :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd ForwardMsg) 
-advance thread@(Thread pid typeState histories program) = 
+advance thread@(Thread pid histories program) = 
     case program of
         [] -> 
             return ( Done, Cmd.none )
 
         (p:ps) -> do
-            (newTypeState, h, newProgram, cmd ) <- advanceP pid typeState p ps
-            return ( Step $ Thread pid newTypeState (h:histories) newProgram, cmd )
+            (h, newProgram, cmd ) <- advanceP pid p ps
+            return ( Step $ Thread pid (h:histories) newProgram, cmd )
 
 
 rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd BackwardMsg)
-rollback thread@(Thread pid typeState histories program) = 
+rollback thread@(Thread pid histories program) = 
     case histories of
         [] -> 
             return ( Done , Cmd.none ) 
 
 
         (h:hs) -> do
-            ( consumed, newTypeState, newProgram, cmd ) <- backwardP pid typeState h program 
+            ( consumed, newProgram, cmd ) <- backwardP pid h program 
             if consumed then
-                return ( Step $ Thread pid newTypeState hs newProgram, cmd )
+                return ( Step $ Thread pid hs newProgram, cmd )
             else
-                return ( Step $ Thread pid newTypeState (h:hs) newProgram, cmd )
+                return ( Step $ Thread pid (h:hs) newProgram, cmd )
 
 -- HELPERS 
 

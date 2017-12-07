@@ -8,11 +8,16 @@ import Data.Traversable (for)
 
 import qualified Data.Map as Map
 import Data.Map (Map)
+import Data.String
 import Types 
 
 
 
-data LocalTypeState t = LocalTypeState { participant :: Identifier, state :: ExhaustableZipper (LocalAtom t) } deriving (Show, Eq)
+data LocalTypeState t = LocalTypeState { participant :: Identifier, state :: ExhaustableZipper (LocalAtom t) } deriving ( Eq)
+
+instance Show t => Show (LocalTypeState t) where
+    show LocalTypeState{participant, state} = "LocalTypeState " ++ unIdentifier participant ++ " " ++ show state 
+
 
 data ExhaustableZipper a = Empty | Zipper (List a, a, List a) | Exhausted (List a) deriving (Show, Eq)
 
@@ -149,9 +154,12 @@ receive = Receive
 
 data LocalAtom t = Send { receiver :: Identifier, type_ :: t } | Receive { sender :: Identifier, type_ :: t  } deriving (Eq)
 
+unIdentifier (Identifier x) = x
+
+
 instance Show t => Show (LocalAtom t) where
-    show Send { receiver, type_ } = show receiver ++ "!" ++ ": <" ++ show type_ ++ "> "
-    show Receive { sender, type_ } = show sender ++ "?" ++ ": <" ++ show type_ ++ "> "
+    show Send { receiver, type_ } = unIdentifier receiver ++ "!" ++ ": <" ++ show type_ ++ "> "
+    show Receive { sender, type_ } = unIdentifier sender ++ "?" ++ ": <" ++ show type_ ++ "> "
 
 
 type LocalType t = List (LocalAtom t)

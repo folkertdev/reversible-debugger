@@ -1,4 +1,4 @@
-module Data.PID (PID, create, parent, child) where 
+module Data.PID (PID, create, parent, child, master) where 
 
 import qualified Data.List as List
 
@@ -16,3 +16,6 @@ parent (PID list) = PID (List.init list)
 
 child :: Int -> PID -> PID 
 child n (PID list) = PID (list ++ [n])
+
+master :: PID
+master = PID [0]
