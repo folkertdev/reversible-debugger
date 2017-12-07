@@ -18,8 +18,10 @@ import qualified Data.ThreadState as ThreadState
 
 import Types
 import qualified Cmd
+import Debug.Trace as Debug
 
 import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMsg(..), BackwardMsg(..), advanceP, backwardP, renameCreator) 
+import qualified MicroOz
 
 
 {-| The main type keeping the context of the execution
@@ -39,13 +41,13 @@ type Execution a = StateT (Context Value, ThreadState History Program) (Either E
 rollSends :: Int -> ChannelName -> Execution () 
 rollSends n channelName = do
     histories <- liftContext $ Context.withChannel channelName (return . Queue.lastNSends n) 
-    handleBackwardEffects (RollSend (PID.create []) histories)
+    handleBackwardEffects RollSend { caller = PID.create [], histories = histories, channelName = channelName }
 
 
 rollReceives :: Int -> ChannelName -> Execution () 
 rollReceives n channelName = do
-    histories <- liftContext $ Context.withChannel channelName (return . Queue.lastNReceives n) 
-    handleBackwardEffects (RollSend (PID.create []) histories) 
+    histories <- liftContext $ Context.withChannel channelName (return . Queue.lastNReceives n)
+    handleBackwardEffects RollReceive { caller = PID.create [], histories = histories, channelName = channelName }
 
 
 
@@ -115,34 +117,20 @@ rollVariable identifier = do
 
 
 {-| Roll the (assumed) most recent action on a channel -}
-rollChannel :: Queue.QueueHistory -> Execution () 
-rollChannel history = 
+rollChannel :: ChannelName -> Queue.QueueHistory -> Execution () 
+rollChannel ourChannel history = 
     let pid = 
-            case history of 
+            case Debug.traceShowId history of 
                 Queue.Added v -> v
                 Queue.Removed v -> v
-    in do
-        scheduleThreadBackward pid 
-        state <- extract <$> State.get
-        case state of 
-            Running current rest -> do
-                ( progress, cmd ) <- liftContext $ rollback current 
 
-                let messages = Cmd.unpack cmd 
-
-                case progress of
-                    Done -> do
-                        State.modify (change $ const $ ThreadState.addUninitialized current $ Stuck rest)
-                        Foldable.traverse_ handleBackwardEffects messages
-
-                    Step newCurrent -> do
-                        State.modify (change $ const $ Running newCurrent rest)
-                        Foldable.traverse_ handleBackwardEffects messages
-
-                        
-
-            Stuck rest -> 
-                error "deadlock? "
+        predicate h = 
+            case h of 
+                MicroOz.Received { channelName } | channelName == ourChannel -> False
+                MicroOz.Sent { channelName } | channelName == ourChannel -> False
+                _ -> True
+    in 
+        rollWhile predicate pid
 
 
 {-| roll the thread with the given PID (at most) n times -}
@@ -166,6 +154,27 @@ rollN pid n =
                     setThreadState $ Running newCurrent rest
                     Foldable.traverse_ handleBackwardEffects messages
                     rollN pid (n - 1)
+
+{-| roll while a predicate holds. 
+This function is inclusive and will also roll the first match
+-}
+rollWhile :: (History -> Bool) -> PID -> Execution ()
+rollWhile predicate pid = do
+    scheduleThreadBackward pid
+    withRunning $ \current@Thread{history} rest -> 
+        case history of 
+            [] -> return ()
+            (h:hs) -> 
+                if predicate h then do
+                    backward
+                    rollWhile predicate pid
+
+                else
+                    -- recursion unrolls till match
+                    -- so also roll the match
+                    backward
+
+
 
 
 skipLets_ :: Execution ()  
@@ -239,13 +248,13 @@ handleBackwardEffects action =
 
             State.modify (change $ ThreadState.mapActive addHistory . ThreadState.removeUninitialized toRoll) 
 
-        RollSend caller histories -> 
+        RollSend { caller, channelName,  histories } -> 
             -- rolling a send requires rolling all subsequent actions on the channel
-            Foldable.traverse_ rollChannel histories
+            Foldable.traverse_ (rollChannel channelName) histories
 
-        RollReceive caller histories -> 
+        RollReceive { caller, channelName, histories } -> 
             -- rolling a receive requires rolling all subsequent actions on the channel
-            Foldable.traverse_ rollChannel histories
+            Foldable.traverse_ (rollChannel channelName) histories
 
 
 handleForwardEffects :: (MonadError Error m, Has (ThreadState History Program) c) => ForwardMsg -> StateT c m () 
@@ -370,10 +379,11 @@ rollback thread@(Thread pid histories program) =
 
         (h:hs) -> do
             ( consumed, newProgram, cmd ) <- backwardP pid h program 
-            if consumed then
-                return ( Step $ Thread pid hs newProgram, cmd )
-            else
-                return ( Step $ Thread pid (h:hs) newProgram, cmd )
+            return ( Step $ Thread pid hs newProgram, cmd )
+--            if consumed then
+--                return ( Step $ Thread pid hs newProgram, cmd )
+--            else
+--                return ( Step $ Thread pid (h:hs) newProgram, cmd )
 
 -- HELPERS 
 

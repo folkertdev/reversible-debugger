@@ -302,8 +302,8 @@ renameExpr old new expression =
 
 data BackwardMsg 
     = RollChild { caller :: PID, toRoll :: PID, typeName :: Maybe Identifier } 
-    | RollSend { caller :: PID, history :: List QueueHistory } 
-    | RollReceive { caller :: PID, history :: List QueueHistory } 
+    | RollSend { caller :: PID, histories :: List QueueHistory, channelName :: ChannelName } 
+    | RollReceive { caller :: PID, histories :: List QueueHistory, channelName :: ChannelName } 
     deriving (Show)
 
 
@@ -444,7 +444,7 @@ backwardP :: (MonadState (Context Value) m, MonadError Error m)
 backwardP pid history program = do
     context <- State.get
     let continue newProgram = return ( True, newProgram, Cmd.none )
-    case (history, program) of 
+    case Debug.traceShowId (history, program) of 
                 ( Skipped, _ ) ->
                     continue (Skip : program)
 
@@ -499,34 +499,11 @@ backwardP pid history program = do
                                                 ( localTypeState
                                                     , ( False
                                                 , restOfProgram
-                                                , Cmd.create (RollSend pid toRollFirst)
+                                                , Cmd.create RollSend{ caller = pid, histories =  toRollFirst, channelName = channelName }
                                                 ))
 
                                         Left e -> error $ "backward evaluation should not fail, but got" ++ show e
 
-
-                    {-
-                    -- find out whether this send is the "latest" command on the channel
-                    mostRecent <- withChannel channelName (return . Queue.hasJustSent pid)  
-                    if mostRecent then do
-                        -- remove value from the queue
-                        mapChannel channelName (fst . Queue.unpush)
-
-                        -- reconstruct the send instruction
-                        return 
-                            ( Send channelName valueName : restOfProgram
-                            , Cmd.none 
-                            )
-                    else do 
-                        -- generate the list of actions on the channel that need to be undone
-                        -- including the current one: processing of the message will make us go
-                        -- into the `then` branch above.
-                        toRollFirst <- withChannel channelName (return . Queue.followingReceive pid)
-                        return 
-                            ( restOfProgram
-                            , Cmd.create (RollSend pid toRollFirst)
-                            )
-                        -}
 
                 ( Received{ channelName, binding, payload, creator }, continuation : restOfProgram ) -> 
                     Context.modifyLocalTypeStateM creator $ \localTypeState ->
@@ -559,36 +536,11 @@ backwardP pid history program = do
                                                 ( localTypeState 
                                                     , ( False 
                                                 , restOfProgram
-                                                , Cmd.create (RollReceive pid toRollFirst)
+                                                , Cmd.create RollReceive{ caller = pid, histories =  toRollFirst, channelName = channelName }
                                                 ))
 
                                         Left e -> 
                                             error $ "backward evaluation should not fail, but got" ++ show e
-
-
-                    {-
-                    -- find out whether this receive is the "latest" command on the channel
-                    mostRecent <- withChannel channelName (return . Queue.hasJustReceived pid)  
-                    if mostRecent then do
-                        -- put the received value back onto the queue
-                        mapChannel channelName $ \channel -> Queue.unpop payload channel
-
-                        -- reconstruct the receive instruction
-                        return 
-                            ( Let binding (Receive channelName) (renameVariable payload binding continuation) : restOfProgram 
-                            , Cmd.none 
-                            )
-
-                    else do 
-                        -- generate the list of actions on the channel that need to be undone
-                        -- including the current one: processing of the message will make us go
-                        -- into the `then` branch above.
-                        toRollFirst <- withChannel channelName (return . Queue.followingReceive pid)
-                        return 
-                            ( restOfProgram
-                            , Cmd.create (RollReceive pid toRollFirst)
-                            )
-                    -}
 
                 ( SpawnedThread typeName toRoll, restOfProgram ) -> 
                     return 

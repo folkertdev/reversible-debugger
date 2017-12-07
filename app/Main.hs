@@ -55,7 +55,7 @@ go state@(ReplState context _) = do
 iteration :: ReplState -> IO (Maybe ReplState)
 iteration state@(ReplState context threads) = do
     putStr "\n========= \n\n"
-    print threads
+    -- print threads
     putStr "\n"
     putStr "command: "
     command <- getLine
