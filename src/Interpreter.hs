@@ -379,11 +379,11 @@ rollback thread@(Thread pid histories program) =
 
         (h:hs) -> do
             ( consumed, newProgram, cmd ) <- backwardP pid h program 
-            return ( Step $ Thread pid hs newProgram, cmd )
---            if consumed then
---                return ( Step $ Thread pid hs newProgram, cmd )
---            else
---                return ( Step $ Thread pid (h:hs) newProgram, cmd )
+            --return ( Step $ Thread pid hs newProgram, cmd )
+            if consumed then
+                return ( Step $ Thread pid hs newProgram, cmd )
+            else
+                return ( Step $ Thread pid (h:hs) newProgram, cmd )
 
 -- HELPERS 
 

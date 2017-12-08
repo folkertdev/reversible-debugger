@@ -434,6 +434,7 @@ advanceP pid program rest =
                                 -- Except.throwError $ BlockedOnReceive pid
                                 error "wants to send but session type won't allow it"
 
+tracer f a = Debug.trace (f a) a
 
 {-| Take one step backward -} 
 backwardP :: (MonadState (Context Value) m, MonadError Error m) 
@@ -444,7 +445,8 @@ backwardP :: (MonadState (Context Value) m, MonadError Error m)
 backwardP pid history program = do
     context <- State.get
     let continue newProgram = return ( True, newProgram, Cmd.none )
-    case Debug.traceShowId (history, program) of 
+        f (h, p) =  unwords [ show pid , show h, show p ] ++ "\n\n"
+    case tracer f (history, program) of 
                 ( Skipped, _ ) ->
                     continue (Skip : program)
 
