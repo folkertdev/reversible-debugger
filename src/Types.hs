@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
 module Types where
 
 import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
@@ -16,6 +17,8 @@ import Control.Concurrent.MVar (MVar, newEmptyMVar, takeMVar, tryPutMVar)
 import Data.IORef
 import Data.PID as PID (PID, create, parent) 
 
+import GHC.Generics
+import Elm
 
 
 infixl 0 |>
@@ -34,10 +37,10 @@ data Error
     | RuntimeException String
     | ArgumentMismatch Identifier Int Int
     | SchedulingError ThreadScheduleError 
-    deriving (Eq)
+    deriving (Eq, Generic, ElmType)
 
-data ThreadScheduleError = ThreadScheduleError PID ThreadScheduleErrorCause deriving (Eq, Show)
-data ThreadScheduleErrorCause = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist | ThreadIsUninitialized | DeadLock deriving (Eq, Show)
+data ThreadScheduleError = ThreadScheduleError PID ThreadScheduleErrorCause deriving (Eq, Show, Generic, ElmType)
+data ThreadScheduleErrorCause = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist | ThreadIsUninitialized | DeadLock deriving (Eq, Show, Generic, ElmType)
 
 
 
@@ -77,7 +80,10 @@ type List = []
 
 newtype Identifier 
     = Identifier String 
-    deriving (Eq, Show, Ord)
+    deriving (Eq, Show, Ord, Generic, ElmType)
+
+instance HasElmComparable Identifier where
+    toElmComparable (Identifier i) = toElmComparable i
 
 type ChannelName = Identifier
 

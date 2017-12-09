@@ -1,4 +1,4 @@
-{-# LANGUAGE DuplicateRecordFields, NamedFieldPuns, FlexibleContexts #-}
+{-# LANGUAGE DuplicateRecordFields, NamedFieldPuns, FlexibleContexts, DeriveGeneric, DeriveAnyClass, StandaloneDeriving #-}
 module SessionType where 
 
 import Text.ParserCombinators.Parsec as Parsec
@@ -11,15 +11,17 @@ import Data.Map (Map)
 import Data.String
 import Types 
 
+import GHC.Generics
+import Elm
 
 
-data LocalTypeState t = LocalTypeState { participant :: Identifier, state :: ExhaustableZipper (LocalAtom t) } deriving ( Eq)
+data LocalTypeState t = LocalTypeState { participant :: Identifier, state :: ExhaustableZipper (LocalAtom t) } deriving (Eq, Generic, ElmType)
 
 instance Show t => Show (LocalTypeState t) where
     show LocalTypeState{participant, state} = "LocalTypeState " ++ unIdentifier participant ++ " " ++ show state 
 
-
-data ExhaustableZipper a = Empty | Zipper (List a, a, List a) | Exhausted (List a) deriving (Show, Eq)
+deriving instance (ElmType a, ElmType b, ElmType c) => ElmType (a,b,c) 
+data ExhaustableZipper a = Empty | Zipper (List a, a, List a) | Exhausted (List a) deriving (Show, Eq, Generic, ElmType)
 
 isEmpty typeState = 
     case typeState of
@@ -152,7 +154,7 @@ receive = Receive
 
 
 
-data LocalAtom t = Send { receiver :: Identifier, type_ :: t } | Receive { sender :: Identifier, type_ :: t  } deriving (Eq)
+data LocalAtom t = Send { receiver :: Identifier, type_ :: t } | Receive { sender :: Identifier, type_ :: t  } deriving (Eq, Generic, ElmType)
 
 unIdentifier (Identifier x) = x
 

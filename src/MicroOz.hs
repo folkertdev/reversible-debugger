@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns, GADTs, StandaloneDeriving, DuplicateRecordFields #-}
+{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns, GADTs, StandaloneDeriving, DuplicateRecordFields, DeriveGeneric, DeriveAnyClass, DefaultSignatures, OverloadedStrings #-}
 module MicroOz 
     (Program(..)
     , History(..)
@@ -32,6 +32,12 @@ import Types
 import qualified Cmd
 import Debug.Trace as Debug
 
+import GHC.Generics
+import Elm
+import Data.Proxy
+import qualified Data.Text as Text
+import Data.Monoid ((<>))
+
 type Participant = Identifier
 type Queue = Queue.Queue
 type QueueHistory = Queue.QueueHistory
@@ -51,7 +57,7 @@ data Value
     | Port 
     | VInt (Expr Int) 
     | VBool (Expr Bool)
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic, ElmType)
 
 
 {-| Data type representing actions that have lead to the current program state -} 
@@ -66,7 +72,7 @@ data History
     | SpawnedThread (Maybe Identifier) PID
     | BranchedOn (Expr Bool) Bool Program 
     | AssertedOn (Expr Bool) 
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, ElmType)
 
 
 {-| The µOz Syntax -}            
@@ -79,7 +85,7 @@ data Program
     | Apply Identifier (List Identifier)
     | Send { channelName :: Identifier, payload :: Identifier, creator :: PID } 
     | Assert (Expr Bool)
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic, ElmType)
 
 -- EXPR 
 
@@ -96,8 +102,51 @@ data Expr a where
 deriving instance Show a => Show (Expr a) 
 deriving instance Eq a => Eq (Expr a) 
 
+deriving instance Generic Int
+deriving instance TypeName Int
+deriving instance TypeName Bool
 
-data IntOperator = Add | Subtract | Divide | Multiply deriving (Show, Eq)
+instance (TypeName a, ElmType a) => ElmType (Expr a) where
+    toElmType _  = 
+        let name :: Text.Text 
+            name = Text.pack (typename (Proxy :: Proxy a))
+        in
+            if name == "Int" then
+                ElmDatatype ("Expr" <> name)  $
+                        MultipleConstructors 
+                            [ NamedConstructor ("Literal" <> name) (ElmPrimitiveRef EInt)
+                            , NamedConstructor ("Reference" <> name) (ElmRef "Identifier")
+                            , NamedConstructor ("IntOperator" <> name) (Values (Values (ElmRef "IntOperator") (ElmRef "ExprInt")) (ElmRef "ExprInt"))
+                            ] 
+            else if name == "Bool" then
+                ElmDatatype ("Expr" <> name)  $
+                        MultipleConstructors 
+                            [ NamedConstructor ("Literal" <> name) (ElmPrimitiveRef EInt)
+                            , NamedConstructor ("Reference" <> name) (ElmRef "Identifier")
+                            , NamedConstructor ("BoolOperator" <> name) (Values (Values (ElmRef "BooleanOperator") (ElmRef "ExprInt")) (ElmRef "ExprInt"))
+                            ] 
+            else
+                ElmDatatype ("Expr" <> name)  $
+                        MultipleConstructors 
+                            [ NamedConstructor ("Literal" <> name) (ElmPrimitiveRef EInt)
+                            , NamedConstructor ("Reference" <> name) (ElmRef "Identifier")
+                            ]
+
+class TypeName a where
+  typename :: Proxy a -> String
+
+  default typename :: (Generic a, GTypeName (Rep a)) => Proxy a -> String
+  typename _proxy = gtypename (from (undefined :: a))
+
+-- | Generic equivalent to `TypeName`.
+class GTypeName f where
+  gtypename :: f a -> String
+
+instance (Datatype c) => GTypeName (M1 i c f) where
+  gtypename m = datatypeName m
+
+
+data IntOperator = Add | Subtract | Divide | Multiply deriving (Show, Eq, Generic, ElmType)
 
 
 data BooleanOperator 
@@ -106,7 +155,7 @@ data BooleanOperator
     | GreaterThan
     | LessThanEqual
     | GreaterThanEqual 
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic, ElmType)
 
 
 

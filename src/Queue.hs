@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor, NamedFieldPuns, DuplicateRecordFields  #-}
+{-# LANGUAGE DeriveFunctor, NamedFieldPuns, DuplicateRecordFields, DeriveGeneric, DeriveAnyClass #-}
 module Queue 
     ( Queue
     , empty
@@ -18,6 +18,7 @@ module Queue
     , followingReceive
     , lastNReceives
     , lastNSends
+    , Item
     ) where
 
 import Types ((|>), List, Identifier)
@@ -30,15 +31,18 @@ import Control.Monad.Except as Except
 
 import Debug.Trace as Debug
 
+import GHC.Generics
+import Elm
+
 type ValueType = String
 
-data Item a = Item { sender :: Identifier, receiver :: Identifier, type_ :: ValueType, payload :: a } deriving (Show, Eq, Functor)
+data Item a = Item { sender :: Identifier, receiver :: Identifier, type_ :: ValueType, payload :: a } deriving (Show, Eq, Functor, Generic, ElmType)
 
-data Queue a = Queue { past :: List QueueHistory, items :: List (Item a) }  deriving (Show, Eq, Functor)
+data Queue a = Queue { past :: List QueueHistory, items :: List (Item a) }  deriving (Show, Eq, Functor, Generic, ElmType)
 
 empty = Queue [] [] 
 
-data QueueHistory = Added PID  | Removed PID deriving (Show, Eq)
+data QueueHistory = Added PID  | Removed PID deriving (Show, Eq, Generic, ElmType)
 
 push :: PID -> Identifier -> Identifier -> ValueType -> a -> Queue a -> Queue a
 push pid sender receiver valueType payload queue@Queue{past, items} = 

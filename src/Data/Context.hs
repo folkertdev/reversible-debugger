@@ -1,4 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns #-}   
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module Data.Context 
     (Context(threads)
@@ -38,7 +40,8 @@ import Control.Monad.Except as Except
 import Control.Monad.State as State
 import qualified Utils
 
-
+import GHC.Generics
+import Elm
 
 data Context value = 
     Context
@@ -49,7 +52,7 @@ data Context value =
     -- , localTypes :: Map Identifier (SessionType.LocalType String)
     , participantMap :: Map PID Identifier
     , localTypeStates :: Map Identifier (SessionType.LocalTypeState String)
-    } 
+    } deriving (Generic, ElmType)
 
 instance Show value => Show (Context value) where
     show Context { bindings, variableCount, channels, threads, participantMap, localTypeStates } = 

@@ -1,9 +1,12 @@
+{-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
 module Data.Thread where 
 
 import Types
 import qualified SessionType 
 import Data.PID as PID (PID)
 
+import GHC.Generics
+import Elm
 
 {-| An individual thread, with 
 
@@ -16,7 +19,7 @@ data Thread history a
             { pid :: PID
             , history :: List history
             , program :: List a 
-            } deriving (Eq)
+            } deriving (Eq, Generic, ElmType)
 
 instance (Show history, Show a) => Show (Thread history a) where 
     show (Thread pid history program) = 

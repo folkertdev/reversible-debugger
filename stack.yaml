@@ -2,6 +2,9 @@ flags: {}
 extra-package-dbs: []
 packages:
 - '.'
+- location:
+    git: git@github.com:NoRedInk/elm-export.git
+    commit: 9a611dd79b93209878532df1851bcffb231c7079
 extra-deps:
 - HTTP-4000.3.7
 - HUnit-1.6.0.0
@@ -43,4 +46,5 @@ extra-deps:
 - unordered-containers-0.2.8.0
 - void-0.7.2
 - containers-0.5.10.2
+
 resolver: lts-9.9

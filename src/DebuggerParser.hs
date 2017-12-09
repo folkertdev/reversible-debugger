@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveAnyClass #-}
 module DebuggerParser where 
 
 import Control.Applicative ((<*), liftA2, pure)
@@ -9,6 +12,9 @@ import Data.PID as PID (PID, create)
 import Text.ParserCombinators.Parsec as Parsec
 
 import Types (Identifier(..))
+
+import GHC.Generics
+import Elm
 
 parse :: String -> Either String Instruction
 parse input = 
@@ -36,8 +42,14 @@ parser =
         , help
         , quit 
         ]
-            
 
+data Result error a = Ok a | Err error deriving (Show, Eq, Generic, ElmType)
+
+fromEither (Left e) = Err e
+fromEither (Right v) = Ok v
+
+toEither (Err e) = Left e 
+toEither (Ok v) = Right v
 
 data Instruction 
     = Forth PID
@@ -50,12 +62,12 @@ data Instruction
     | Run 
     | ListThreads 
     | Store
-    | Print (Either PID Identifier)
-    | History (Either PID Identifier)
+    | Print (Result PID Identifier)
+    | History (Result PID Identifier)
     | Help 
     | Quit
     | SkipLets
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, ElmType)
         
 forth :: Parser Instruction
 forth = do
@@ -125,12 +137,12 @@ quit = Quit <$ (try (string "quit") <|> string "q")
 print = do
     try (string "print") <|> string "p"
     id <- threadOrIdentifier
-    return $ Print id
+    return $ Print $ fromEither id
 
 history = do
     try (string "history") <|> string "h" 
     id <- threadOrIdentifier
-    return $ History id
+    return $ History $ fromEither id
 
 skipLets :: Parser Instruction
 skipLets = do
