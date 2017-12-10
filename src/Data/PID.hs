@@ -6,8 +6,9 @@ import qualified Data.List as List
 import GHC.Generics
 import Elm
 import Data.Proxy
+import Data.Aeson
 
-newtype PID = PID [Int] deriving (Eq, Ord, Generic, ElmType) 
+newtype PID = PID [Int] deriving (Eq, Ord, Generic, ElmType, ToJSON, ToJSONKey, FromJSON, FromJSONKey) 
 
 instance Show PID where
     show (PID list) = 

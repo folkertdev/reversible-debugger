@@ -13,15 +13,16 @@ import Types
 
 import GHC.Generics
 import Elm
+import Data.Aeson
 
 
-data LocalTypeState t = LocalTypeState { participant :: Identifier, state :: ExhaustableZipper (LocalAtom t) } deriving (Eq, Generic, ElmType)
+data LocalTypeState t = LocalTypeState { participant :: Identifier, state :: ExhaustableZipper (LocalAtom t) } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
 
 instance Show t => Show (LocalTypeState t) where
     show LocalTypeState{participant, state} = "LocalTypeState " ++ unIdentifier participant ++ " " ++ show state 
 
 deriving instance (ElmType a, ElmType b, ElmType c) => ElmType (a,b,c) 
-data ExhaustableZipper a = Empty | Zipper (List a, a, List a) | Exhausted (List a) deriving (Show, Eq, Generic, ElmType)
+data ExhaustableZipper a = Empty | Zipper (List a, a, List a) | Exhausted (List a) deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 isEmpty typeState = 
     case typeState of
@@ -154,7 +155,7 @@ receive = Receive
 
 
 
-data LocalAtom t = Send { receiver :: Identifier, type_ :: t } | Receive { sender :: Identifier, type_ :: t  } deriving (Eq, Generic, ElmType)
+data LocalAtom t = Send { receiver :: Identifier, type_ :: t } | Receive { sender :: Identifier, type_ :: t  } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
 
 unIdentifier (Identifier x) = x
 

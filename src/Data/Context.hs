@@ -3,7 +3,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
 module Data.Context 
-    (Context(threads)
+    (Context(threads, localTypeStates)
     , singleton
     , empty
     , insertVariable
@@ -42,6 +42,7 @@ import qualified Utils
 
 import GHC.Generics
 import Elm
+import Data.Aeson
 
 data Context value = 
     Context
@@ -52,7 +53,7 @@ data Context value =
     -- , localTypes :: Map Identifier (SessionType.LocalType String)
     , participantMap :: Map PID Identifier
     , localTypeStates :: Map Identifier (SessionType.LocalTypeState String)
-    } deriving (Generic, ElmType)
+    } deriving (Generic, ElmType, ToJSON, FromJSON)
 
 instance Show value => Show (Context value) where
     show Context { bindings, variableCount, channels, threads, participantMap, localTypeStates } = 

@@ -8,7 +8,6 @@ module MicroOz
     , advanceP
     , backwardP
     , MicroOz.init
-    , Expr(..)
     , IntOperator(..)
     , BooleanOperator(..)
     , renameCreator
@@ -27,6 +26,7 @@ import qualified Queue
 import Data.Thread as Thread
 import Data.Context as Context 
 import Data.PID as PID (PID, create, parent, child)
+import Data.Expr
 
 import Types
 import qualified Cmd
@@ -35,6 +35,8 @@ import Debug.Trace as Debug
 import GHC.Generics
 import Elm
 import Data.Proxy
+import Data.Aeson (ToJSON, FromJSON, toJSON, fromJSON, (.=), (.:), object)
+import qualified Data.Aeson as Aeson
 import qualified Data.Text as Text
 import Data.Monoid ((<>))
 
@@ -55,9 +57,9 @@ data Value
     = Receive { channelName :: Identifier, creator :: PID } 
     | Procedure (List Identifier) Program
     | Port 
-    | VInt (Expr Int) 
-    | VBool (Expr Bool)
-    deriving (Show, Eq, Generic, ElmType)
+    | VInt IntExpr 
+    | VBool BoolExpr
+    deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 
 {-| Data type representing actions that have lead to the current program state -} 
@@ -70,105 +72,36 @@ data History
     | CreatedChannel Identifier
     | CalledProcedure Identifier (List Identifier)
     | SpawnedThread (Maybe Identifier) PID
-    | BranchedOn (Expr Bool) Bool Program 
-    | AssertedOn (Expr Bool) 
-    deriving (Eq, Show, Generic, ElmType)
+    | BranchedOn BoolExpr Bool Program 
+    | AssertedOn BoolExpr 
+    deriving (Eq, Show, Generic, ElmType, ToJSON, FromJSON)
 
 
 {-| The µOz Syntax -}            
 data Program 
     = Sequence Program Program
     | Let Identifier Value Program
-    | If (Expr Bool) Program Program
+    | If BoolExpr Program Program
     | SpawnThread (Maybe Identifier) Program
     | Skip
     | Apply Identifier (List Identifier)
     | Send { channelName :: Identifier, payload :: Identifier, creator :: PID } 
-    | Assert (Expr Bool)
-    deriving (Show, Eq, Generic, ElmType)
-
--- EXPR 
+    | Assert BoolExpr
+    deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 
-{-| Expressions as a generalized algebraic data type (GADT), allowing us
- to define expr once for any kind of type (Int and Bool for now). 
--}
-data Expr a where
-    Literal :: a -> Expr a
-    Reference :: Identifier -> Expr a
-    BoolOperator :: BooleanOperator -> Expr Int -> Expr Int -> Expr Bool
-    IntOperator :: IntOperator -> Expr Int -> Expr Int -> Expr Int 
+-- EVALUATION
 
-deriving instance Show a => Show (Expr a) 
-deriving instance Eq a => Eq (Expr a) 
-
-deriving instance Generic Int
-deriving instance TypeName Int
-deriving instance TypeName Bool
-
-instance (TypeName a, ElmType a) => ElmType (Expr a) where
-    toElmType _  = 
-        let name :: Text.Text 
-            name = Text.pack (typename (Proxy :: Proxy a))
-        in
-            if name == "Int" then
-                ElmDatatype ("Expr" <> name)  $
-                        MultipleConstructors 
-                            [ NamedConstructor ("Literal" <> name) (ElmPrimitiveRef EInt)
-                            , NamedConstructor ("Reference" <> name) (ElmRef "Identifier")
-                            , NamedConstructor ("IntOperator" <> name) (Values (Values (ElmRef "IntOperator") (ElmRef "ExprInt")) (ElmRef "ExprInt"))
-                            ] 
-            else if name == "Bool" then
-                ElmDatatype ("Expr" <> name)  $
-                        MultipleConstructors 
-                            [ NamedConstructor ("Literal" <> name) (ElmPrimitiveRef EInt)
-                            , NamedConstructor ("Reference" <> name) (ElmRef "Identifier")
-                            , NamedConstructor ("BoolOperator" <> name) (Values (Values (ElmRef "BooleanOperator") (ElmRef "ExprInt")) (ElmRef "ExprInt"))
-                            ] 
-            else
-                ElmDatatype ("Expr" <> name)  $
-                        MultipleConstructors 
-                            [ NamedConstructor ("Literal" <> name) (ElmPrimitiveRef EInt)
-                            , NamedConstructor ("Reference" <> name) (ElmRef "Identifier")
-                            ]
-
-class TypeName a where
-  typename :: Proxy a -> String
-
-  default typename :: (Generic a, GTypeName (Rep a)) => Proxy a -> String
-  typename _proxy = gtypename (from (undefined :: a))
-
--- | Generic equivalent to `TypeName`.
-class GTypeName f where
-  gtypename :: f a -> String
-
-instance (Datatype c) => GTypeName (M1 i c f) where
-  gtypename m = datatypeName m
-
-
-data IntOperator = Add | Subtract | Divide | Multiply deriving (Show, Eq, Generic, ElmType)
-
-
-data BooleanOperator 
-    = Equal 
-    | LessThan
-    | GreaterThan
-    | LessThanEqual
-    | GreaterThanEqual 
-    deriving (Show, Eq, Generic, ElmType)
-
-
-
-evalIntExpr :: (MonadState (Context Value) m, MonadError Error m) => Expr Int -> m Int
+evalIntExpr :: (MonadState (Context Value) m, MonadError Error m) => IntExpr -> m Int
 evalIntExpr expression =
     case expression of
-        Literal value -> 
+        LiteralInt value -> 
             return value 
 
         IntOperator op left right ->
             liftA2 (intOperatorToFunction op) (evalIntExpr left) (evalIntExpr right) 
 
-        Reference identifier -> do
+        ReferenceInt identifier -> do
             value <- lookupVariable identifier 
             case value of
                 VInt value -> 
@@ -178,16 +111,16 @@ evalIntExpr expression =
                     Except.throwError $ TypeError identifier "I expected a integer value but got" (show other)
 
 
-evalBoolExpr :: (MonadState (Context Value) m, MonadError Error m) => Expr Bool -> m Bool
+evalBoolExpr :: (MonadState (Context Value) m, MonadError Error m) => BoolExpr -> m Bool
 evalBoolExpr expression =
     case expression of
-        Literal value -> 
+        LiteralBool value -> 
             return value 
 
         BoolOperator op left right ->
             liftA2 (boolOperatorToFunction op) (evalIntExpr left) (evalIntExpr right) 
 
-        Reference identifier -> do
+        ReferenceBool identifier -> do
             value <- lookupVariable identifier 
             case value of
                 VBool value -> 
@@ -195,33 +128,6 @@ evalBoolExpr expression =
 
                 other -> 
                     Except.throwError $ TypeError identifier "I expected a boolean value but got" (show other)
-
-
-intOperatorToFunction :: IntOperator -> (Int -> Int -> Int) 
-intOperatorToFunction operator =
-    case operator of
-        Add -> (+)
-        Subtract -> (-)
-        Multiply -> (*)
-        Divide -> div 
-
-
-boolOperatorToFunction operator =
-            case operator of
-                Equal -> 
-                    (==)
-
-                LessThan -> 
-                    (<)
-
-                GreaterThan -> 
-                    (>)
-
-                LessThanEqual -> 
-                    (<=)
-
-                GreaterThanEqual  -> 
-                    (>=)
 
 
 -- RENAMING
@@ -292,14 +198,14 @@ renameVariable old new program =
                 Let name (renameVariableInValue old new value) (renameVariable old new continuation)
 
         If condition trueBody falseBody -> 
-            If (renameExpr old new condition) (renameVariable old new trueBody) (renameVariable old new falseBody)
+            If (renameBoolExpr old new condition) (renameVariable old new trueBody) (renameVariable old new falseBody)
 
         SpawnThread name work ->
             SpawnThread name (renameVariable old new work)
 
         Skip -> Skip
 
-        Assert condition -> Assert (renameExpr old new condition)
+        Assert condition -> Assert (renameBoolExpr old new condition)
 
         Apply f args -> 
             Apply (tagger f) (map tagger args)
@@ -312,7 +218,7 @@ renameVariableInValue :: Identifier -> Identifier -> Value -> Value
 renameVariableInValue old new value = 
     case value of
         VBool value -> 
-            VBool (renameExpr old new value)
+            VBool (renameBoolExpr old new value)
 
         Receive { channelName, creator } -> 
             Receive (if channelName == old then new else channelName) creator
@@ -326,23 +232,8 @@ renameVariableInValue old new value =
         Port -> Port
 
         VInt value -> 
-            VInt (renameExpr old new value)
+            VInt (renameIntExpr old new value)
 
-
-renameExpr :: Identifier -> Identifier -> Expr a -> Expr a
-renameExpr old new expression = 
-    case expression of
-        Literal v -> 
-            Literal v
-
-        Reference id -> 
-            Reference (if id == old then new else id)
-
-        BoolOperator op left right -> 
-            BoolOperator op (renameExpr old new left) (renameExpr old new right)
-
-        IntOperator op left right -> 
-            IntOperator op (renameExpr old new left) (renameExpr old new right)
 
 
 -- ATOMIC STEPS for a single thread

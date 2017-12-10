@@ -43,6 +43,7 @@ import Control.Monad.Except as Except
 
 import GHC.Generics
 import Elm
+import Data.Aeson
 
 type Threads history a = Map PID (Thread history a)
 
@@ -53,7 +54,7 @@ data OtherThreads history a =
         , blocked :: Threads history a
         , filtered :: Threads history a
         , uninitialized :: Threads history a
-        } deriving (Generic, ElmType)
+        } deriving (Generic, ElmType, ToJSON, FromJSON)
 
 
 empty :: ThreadState h a 
@@ -98,7 +99,7 @@ instance (Show h, Show a) => Show (OtherThreads h a) where
 data ThreadState history a 
     = Running (Thread history a) (OtherThreads history a) 
     | Stuck (OtherThreads history a)
-    deriving (Generic, ElmType)
+    deriving (Generic, ElmType, ToJSON, FromJSON)
 
 instance (Show h, Show a) => Show (ThreadState h a) where
     show (Running current other) = 

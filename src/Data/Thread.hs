@@ -7,6 +7,7 @@ import Data.PID as PID (PID)
 
 import GHC.Generics
 import Elm
+import Data.Aeson
 
 {-| An individual thread, with 
 
@@ -19,7 +20,7 @@ data Thread history a
             { pid :: PID
             , history :: List history
             , program :: List a 
-            } deriving (Eq, Generic, ElmType)
+            } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
 
 instance (Show history, Show a) => Show (Thread history a) where 
     show (Thread pid history program) = 

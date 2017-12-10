@@ -19,6 +19,7 @@ import Data.PID as PID (PID, create, parent)
 
 import GHC.Generics
 import Elm
+import Data.Aeson 
 
 
 infixl 0 |>
@@ -37,10 +38,10 @@ data Error
     | RuntimeException String
     | ArgumentMismatch Identifier Int Int
     | SchedulingError ThreadScheduleError 
-    deriving (Eq, Generic, ElmType)
+    deriving (Eq, Generic, ElmType, ToJSON)
 
-data ThreadScheduleError = ThreadScheduleError PID ThreadScheduleErrorCause deriving (Eq, Show, Generic, ElmType)
-data ThreadScheduleErrorCause = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist | ThreadIsUninitialized | DeadLock deriving (Eq, Show, Generic, ElmType)
+data ThreadScheduleError = ThreadScheduleError PID ThreadScheduleErrorCause deriving (Eq, Show, Generic, ElmType, ToJSON)
+data ThreadScheduleErrorCause = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist | ThreadIsUninitialized | DeadLock deriving (Eq, Show, Generic, ElmType, ToJSON)
 
 
 
@@ -80,7 +81,7 @@ type List = []
 
 newtype Identifier 
     = Identifier String 
-    deriving (Eq, Show, Ord, Generic, ElmType)
+    deriving (Eq, Show, Ord, Generic, ElmType, ToJSON, ToJSONKey, FromJSON, FromJSONKey)
 
 instance HasElmComparable Identifier where
     toElmComparable (Identifier i) = toElmComparable i

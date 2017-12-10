@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveAnyClass #-}
 module DebuggerParser where 
 
@@ -15,6 +14,7 @@ import Types (Identifier(..))
 
 import GHC.Generics
 import Elm
+import Data.Aeson (ToJSON, FromJSON)
 
 parse :: String -> Either String Instruction
 parse input = 
@@ -43,7 +43,7 @@ parser =
         , quit 
         ]
 
-data Result error a = Ok a | Err error deriving (Show, Eq, Generic, ElmType)
+data Result error a = Ok a | Err error deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 fromEither (Left e) = Err e
 fromEither (Right v) = Ok v
@@ -67,7 +67,7 @@ data Instruction
     | Help 
     | Quit
     | SkipLets
-    deriving (Eq, Show, Generic, ElmType)
+    deriving (Eq, Show, Generic, ElmType, ToJSON, FromJSON)
         
 forth :: Parser Instruction
 forth = do

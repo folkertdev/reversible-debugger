@@ -33,16 +33,17 @@ import Debug.Trace as Debug
 
 import GHC.Generics
 import Elm
+import Data.Aeson
 
 type ValueType = String
 
-data Item a = Item { sender :: Identifier, receiver :: Identifier, type_ :: ValueType, payload :: a } deriving (Show, Eq, Functor, Generic, ElmType)
+data Item a = Item { sender :: Identifier, receiver :: Identifier, type_ :: ValueType, payload :: a } deriving (Show, Eq, Functor, Generic, ElmType, ToJSON, FromJSON)
 
-data Queue a = Queue { past :: List QueueHistory, items :: List (Item a) }  deriving (Show, Eq, Functor, Generic, ElmType)
+data Queue a = Queue { past :: List QueueHistory, items :: List (Item a) }  deriving (Show, Eq, Functor, Generic, ElmType, ToJSON, FromJSON)
 
 empty = Queue [] [] 
 
-data QueueHistory = Added PID  | Removed PID deriving (Show, Eq, Generic, ElmType)
+data QueueHistory = Added PID  | Removed PID deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 push :: PID -> Identifier -> Identifier -> ValueType -> a -> Queue a -> Queue a
 push pid sender receiver valueType payload queue@Queue{past, items} = 

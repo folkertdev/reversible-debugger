@@ -14,6 +14,7 @@ import Queue
 import qualified SessionType
 import SessionType (GlobalType(..))
 import Data.PID as PID
+import Data.Expr (Expr(..), IntExpr(..), BoolExpr(..), exprToIntExpr, exprToBoolExpr)
 
 program :: String -> Either ParseError Program
 program rawString = do 
@@ -143,14 +144,14 @@ ifThenElse = do
     whitespaceOrComment
     falseBody <- programParser
     end
-    return $ If condition trueBody falseBody
+    return $ If (exprToBoolExpr condition) trueBody falseBody
 
 assertParser = do
     try $ string "assert"
     whitespaceOrComment
     condition <- boolExprParser
     whitespaceOrComment
-    return $ Assert condition
+    return $ Assert (exprToBoolExpr condition)
 
 
 programParser = do
@@ -251,12 +252,12 @@ valueParser =
         trueParser = do
             string "true"
             whitespaceOrComment 
-            return (VBool $ Literal True)
+            return (VBool $ LiteralBool True)
 
         falseParser = do
             string "false"
             whitespaceOrComment 
-            return (VBool $ Literal False)
+            return (VBool $ LiteralBool False)
 
         receiveParser = do
             try $ string "{receive"
@@ -271,7 +272,7 @@ valueParser =
             return Port 
 
         intExpValue = 
-            fmap VInt intExprParser
+            fmap (VInt . exprToIntExpr) intExprParser
 
         
 
@@ -358,7 +359,7 @@ operator f opChar = do
     spaces
     b <-  intExprParser
     spaces
-    return $ IntOperator f a b
+    return $ EIntOperator f a b
             
 
 intValueParser :: Parser (Expr Int)
@@ -381,7 +382,7 @@ boolOperator operatorValue operatorSymbol = do
     spaces
     char ')'
     spaces
-    return $ BoolOperator operatorValue a b
+    return $ EBoolOperator operatorValue a b
     
             
 boolValueParser :: Parser (Expr Bool) 

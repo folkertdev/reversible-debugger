@@ -1,7 +1,4 @@
-{-# LANGUAGE FlexibleContexts, UndecidableInstances #-}
-module Main where
-
-import System.Environment (getArgs)
+module Repl (run) where 
 
 import DebuggerParser (Instruction(..), parse)
 import qualified Interpreter
@@ -28,49 +25,8 @@ import qualified Data.Map as Map
 import Debug.Trace as Debug
 
 
-main :: IO ()
-main = do
-    [ path ] <- getArgs 
-    interpreter path
-
-
-
-
-interpreter path = do
-    contents <- readFile path
-    case Parser.programWithTypes contents of
-        Left e -> 
-            error (show e)
-        Right (types, program) -> do 
-            let ( context, thread ) = MicroOz.init types program
-            go $ ReplState context (ThreadState.singleton thread) 
-
-
-go :: ReplState -> IO () 
-go state@(ReplState context _) = do
-    stepped <- iteration state 
-    mapM_ go stepped
-
-
-iteration :: ReplState -> IO (Maybe ReplState)
-iteration state@(ReplState context threads) = do
-    putStr "\n========= \n\n"
-    print threads
-    putStr "\n"
-    putStr "command: "
-    command <- getLine
-    case DebuggerParser.parse command of 
-        Left error -> do
-            print error
-            return $ Just state 
-
-        Right instruction -> do
-            putStr "parsed: "
-            print instruction
-            interpretInstruction instruction state 
-
-run :: Execution () 
-run = go 10 
+runner :: Execution () 
+runner = go 30 
   where go 0 = return () 
         go n = do
             (context, state) <- State.get
@@ -82,18 +38,19 @@ run = go 10
                     go (n - 1)
 
 
-interpretInstruction :: Instruction -> ReplState -> IO (Maybe ReplState) 
+run = interpretInstruction Run 
+
+interpretInstruction :: Instruction -> ReplState -> Either String ReplState 
 interpretInstruction instruction (ReplState context state) =  
     let 
-        evaluate :: StateT (Context Value, ThreadState History Program) (Either Error) a -> IO (Maybe ReplState)
+        evaluate :: StateT (Context Value, ThreadState History Program) (Either Error) a -> Either String ReplState 
         evaluate computation = 
             case State.runStateT computation (context, state) of
                 Left e -> do
-                    print e 
-                    return $ Just (ReplState context state)
+                    Except.throwError (show e)
 
                 Right (_, ( newContext, newState)) -> 
-                    return . Just $ ReplState newContext newState  
+                    return $ ReplState newContext newState  
 
     in
     case instruction of
@@ -109,9 +66,8 @@ interpretInstruction instruction (ReplState context state) =
 
         Roll pid n ->
             case runStateT (Interpreter.scheduleThreadBackward pid >> Interpreter.backward) (context, state) of 
-                Left e -> do
-                    print e 
-                    return $ Just (ReplState context state)
+                Left e -> 
+                    Except.throwError (show e)
                 
                 Right ((), (newContext, newState)) -> 
                     interpretInstruction (Roll pid (n - 1)) (ReplState newContext newState) 
@@ -131,18 +87,16 @@ interpretInstruction instruction (ReplState context state) =
             evaluate $ Interpreter.rollVariable identifier
 
         Run -> 
-            evaluate run 
+            evaluate runner 
 
         SkipLets -> 
             evaluate Interpreter.skipLets
  
         ListThreads -> do
-            print $ Context.threads context
-            return $ Just (ReplState context state) 
+            undefined
             
         Store -> do
-            print context 
-            return $ Just (ReplState context state) 
+            undefined
             
         Print id ->  
             undefined
@@ -151,9 +105,8 @@ interpretInstruction instruction (ReplState context state) =
             undefined
 
         Help-> do 
-            print "help stuff" 
-            return $ Just (ReplState context state) 
+            undefined
 
         Quit-> 
-            return Nothing 
+            undefined
         
