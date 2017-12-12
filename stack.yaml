@@ -2,9 +2,9 @@ flags: {}
 extra-package-dbs: []
 packages:
 - '.'
-- location:
-    git: git@github.com:NoRedInk/elm-export.git
-    commit: 9a611dd79b93209878532df1851bcffb231c7079
+  # - location:
+  #     git: git@github.com:NoRedInk/elm-export.git
+  #     commit: 9a611dd79b93209878532df1851bcffb231c7079
 extra-deps:
 - containers-0.5.10.2
 resolver: lts-9.9
