@@ -1,8 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Main where
 
@@ -35,17 +34,16 @@ import DebuggerParser (Instruction)
 type Current = ReplState 
 
 type UserAPI = 
-    "initialize" :> ReqBody '[JSON] String :> Post '[JSON] Current
-        :<|> "step" :> ReqBody '[JSON] StepInfo :> Post '[JSON] String
+    "initialize" :> ReqBody '[JSON] String :> Post '[JSON] ReplState
+        :<|> "step" :> ReqBody '[JSON] (Instruction, ReplState) :> Post '[JSON] ReplState
  
-type User = String
 
-data StepInfo = StepInfo { instruction :: Instruction } deriving (Generic, FromJSON, ToJSON)
+-- data StepInfo = StepInfo { instruction :: Instruction } deriving (Generic, FromJSON, ToJSON)
 
 users1 = ["test"]
 
 server1 :: Server UserAPI
-server1 = initialize :<|> step  
+server1 = initialize :<|> uncurry step  
   where initialize :: String -> Handler Current
         initialize input = 
             case MicroOz.Parser.programWithTypes input of
@@ -53,12 +51,13 @@ server1 = initialize :<|> step
                     error (show e)
                 Right (types, program) -> 
                     let ( context, thread ) = MicroOz.init types program 
-                        in case Repl.run $ ReplState context (ThreadState.singleton thread) of 
-                            Left e -> error e
-                            Right new -> return new 
+                    in return $ ReplState context (ThreadState.singleton thread) 
 
-        step :: StepInfo -> Handler String
-        step _ = return "step" 
+        step :: Instruction -> ReplState -> Handler ReplState
+        step instruction replState =
+            case Repl.interpretInstruction instruction replState of
+                Left e -> error (show e)
+                Right newState -> return newState
 
 userAPI :: Proxy UserAPI
 userAPI = Proxy
@@ -70,7 +69,7 @@ app1 :: Application
 app1 = serve userAPI server1
 
 main :: IO ()
-main = run 8081 $ corsified app1
+main = run 8082 $ corsified app1
 
 -- | CORS middleware configured with 'appCorsResourcePolicy'.
 corsified :: Middleware

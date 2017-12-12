@@ -1,4 +1,4 @@
-module Repl (run) where 
+module Repl (run, interpretInstruction) where 
 
 import DebuggerParser (Instruction(..), parse)
 import qualified Interpreter
