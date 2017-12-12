@@ -36,6 +36,8 @@ type Current = ReplState
 type UserAPI = 
     "initialize" :> ReqBody '[JSON] String :> Post '[JSON] ReplState
         :<|> "step" :> ReqBody '[JSON] (Instruction, ReplState) :> Post '[JSON] ReplState
+        :<|> Raw
+        
  
 
 -- data StepInfo = StepInfo { instruction :: Instruction } deriving (Generic, FromJSON, ToJSON)
@@ -43,7 +45,7 @@ type UserAPI =
 users1 = ["test"]
 
 server1 :: Server UserAPI
-server1 = initialize :<|> uncurry step  
+server1 = initialize :<|> uncurry step :<|> serveDirectoryFileServer "frontend/" 
   where initialize :: String -> Handler Current
         initialize input = 
             case MicroOz.Parser.programWithTypes input of
