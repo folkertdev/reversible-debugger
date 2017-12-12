@@ -5,16 +5,10 @@ import Control.Monad.Trans.Except(ExceptT(..), throwE, runExceptT, catchE)
 import Control.Monad.Trans (liftIO)
 import Control.Monad (liftM, liftM2)
 import Control.Applicative (liftA2, ZipList(..)) 
-import Control.Monad.Free
 
 import Data.Traversable (sequence)
 
-
-import Control.Concurrent.Chan
 import qualified Data.Map as Map
-import Control.Concurrent (forkIO, ThreadId)
-import Control.Concurrent.MVar (MVar, newEmptyMVar, takeMVar, tryPutMVar)
-import Data.IORef
 import Data.PID as PID (PID, create, parent) 
 
 import GHC.Generics

@@ -11,7 +11,7 @@ import qualified Data.Map as Map
 import Servant
 
 import GHC.Generics
-import Network.HTTP.Media ((//), (/:))
+-- import Network.HTTP.Media ((//), (/:))
 import Network.Wai
 import Network.Wai.Handler.Warp
 import Network.Wai.Middleware.AddHeaders (addHeaders)
