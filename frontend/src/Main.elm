@@ -233,11 +233,15 @@ subscriptions model =
 -- HTTP
 
 
+baseURL =
+    "/"
+
+
 getRandomGif : String -> Cmd Msg
 getRandomGif topic =
     let
         url =
-            "http://localhost:8082/initialize"
+            baseURL ++ "initialize"
     in
     Http.send InitialState (Http.post url (Http.jsonBody (Encode.string ThreeBuyer.threeBuyer)) Types.decodeReplState)
 
@@ -251,7 +255,7 @@ step : Types.Instruction -> Types.ReplState -> Cmd Msg
 step instruction replState =
     let
         url =
-            "http://localhost:8082/step"
+            baseURL ++ "step"
 
         body =
             Encode.list

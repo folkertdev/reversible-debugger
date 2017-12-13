@@ -17,6 +17,7 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Middleware.AddHeaders (addHeaders)
 import Network.Wai.Middleware.Cors       (CorsResourcePolicy(..), cors, simpleCors)
 
+import System.Environment
 
 import Data.ReplState
 import Data.Context as Context (Context, localTypeStates)
@@ -71,7 +72,11 @@ app1 :: Application
 app1 = serve userAPI server1
 
 main :: IO ()
-main = run 8082 $ corsified app1
+main = do 
+    port <- getEnv "PORT"
+    let settings = setPort (read port) $ setHost "*" defaultSettings
+    putStrLn $ "running on port " ++ port
+    runSettings settings $ corsified app1
 
 -- | CORS middleware configured with 'appCorsResourcePolicy'.
 corsified :: Middleware

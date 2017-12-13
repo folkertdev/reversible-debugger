@@ -30,8 +30,10 @@ import Debug.Trace as Debug
 
 main :: IO ()
 main = do
-    [ path ] <- getArgs 
-    interpreter path
+    args <- getArgs
+    case args of
+        [ path ] -> interpreter path
+        _ -> putStrLn "app/Main.hs: expected one argument <path>, but got something else"
 
 
 
