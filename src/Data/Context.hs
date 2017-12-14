@@ -53,6 +53,7 @@ data Context value =
     -- , localTypes :: Map Identifier (SessionType.LocalType String)
     , participantMap :: Map PID Identifier
     , localTypeStates :: Map Identifier (SessionType.LocalTypeState String)
+    , globalType :: SessionType.GlobalType
     } deriving (Generic, ElmType, ToJSON, FromJSON)
 
 instance Show value => Show (Context value) where
@@ -68,8 +69,8 @@ instance Show value => Show (Context value) where
             -- <> Utils.showMap "participants" participantMap
             <> Utils.showMap "local types" localTypeStates
 
-singleton :: Map.Map Identifier (SessionType.LocalType String) -> Thread h a -> Context value
-singleton types Thread{ pid } =
+singleton :: SessionType.GlobalType -> Map.Map Identifier (SessionType.LocalType String) -> Thread h a -> Context value
+singleton globalType types Thread{ pid } =
     Context 
         { bindings = Map.empty
         , variableCount = 0
@@ -77,6 +78,7 @@ singleton types Thread{ pid } =
         , threads = Map.singleton pid 0  
         , localTypeStates = Map.mapWithKey SessionType.fromLocalType types
         , participantMap = Map.empty
+        , globalType = globalType
         } 
 
 empty :: Context value 
@@ -88,6 +90,7 @@ empty =
         , threads = Map.empty 
         , localTypeStates = Map.empty
         , participantMap = Map.empty
+        , globalType = SessionType.GlobalType [] [] 
         } 
 
 
@@ -138,7 +141,9 @@ lookupParticipant pid = do
     context <- State.get
     case Map.lookup pid (participantMap context) of
         Nothing ->
-            Except.throwError undefined 
+            Except.throwError $ UndefinedParticipant pid 
+ 
+
 
         Just v -> 
             return v 

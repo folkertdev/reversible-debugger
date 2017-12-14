@@ -43,9 +43,10 @@ interpreter path = do
     case Parser.programWithTypes contents of
         Left e -> 
             error (show e)
-        Right (types, program) -> do 
-            let ( context, thread ) = MicroOz.init types program
-            go $ ReplState context (ThreadState.singleton thread) 
+
+        Right (globalType, types, program) -> 
+            let ( context, thread ) = MicroOz.init globalType types program 
+            in go $ ReplState context (ThreadState.singleton thread) 
 
 
 go :: ReplState -> IO () 

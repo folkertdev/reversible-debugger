@@ -24,6 +24,7 @@ data Error
     = UndefinedVariable Identifier
     | UndefinedThread PID
     | UndefinedChannel Identifier
+    | UndefinedParticipant PID
 -- | TypeError Identifier String Value
     | TypeError Identifier String String
 -- | AssertionError BoolExp
@@ -50,6 +51,9 @@ instance Show Error where
 
             UndefinedChannel (Identifier name) ->
                 "Channel `" ++ name ++ "` is undefined"
+
+            UndefinedParticipant pid -> 
+                "Participant `" ++ show pid ++ "` is undefined"
 
             TypeError (Identifier name) expected actual -> 
                 "Type mismatch: I expect value `" ++ name ++ "` to be of type " ++ expected ++ ", but it is " ++ show actual 

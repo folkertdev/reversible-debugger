@@ -22,15 +22,17 @@ program rawString = do
     Parsec.parse programParser "" withoutWhitespace
 
 
-programWithTypes :: String -> Either ParseError (Map.Map Identifier (SessionType.LocalType String), Program)
+programWithTypes :: String -> Either ParseError (SessionType.GlobalType, Map.Map Identifier (SessionType.LocalType String), Program)
 programWithTypes rawString = do 
     withoutWhitespace <- Parsec.parse eatComments "" rawString
 
     let parser = do
-            globals <- globalType `sepBy` spaces 
+            -- preparing for multiple global types per file
+            global@(name, type_) <- globalType -- `sepBy` spaces 
+            let globals = [ global ]
             spaces
             (globalAtoms, program ) <- sessionWhere (Map.fromList globals)
-            return (SessionType.deriveLocals globalAtoms, program )
+            return (type_, SessionType.deriveLocals globalAtoms, program )
 
     Parsec.parse parser "" withoutWhitespace
 

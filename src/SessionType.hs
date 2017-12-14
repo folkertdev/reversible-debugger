@@ -167,13 +167,13 @@ instance Show t => Show (LocalAtom t) where
 
 type LocalType t = List (LocalAtom t)
 
-data GlobalAtom = Transaction { sender :: Identifier, receiver :: Identifier, tipe :: String } deriving (Show, Eq)
+data GlobalAtom = Transaction { sender :: Identifier, receiver :: Identifier, tipe :: String } deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 prettyPrintGlobalAtom :: GlobalAtom -> String
 prettyPrintGlobalAtom Transaction{ sender , receiver, tipe } = 
     show sender ++ " -> " ++ show receiver ++ " : <" ++ tipe ++ ">."
 
-data GlobalType = GlobalType { parameters :: List Identifier, atoms :: List GlobalAtom } deriving (Eq, Show)
+data GlobalType = GlobalType { parameters :: List Identifier, atoms :: List GlobalAtom } deriving (Eq, Show, Generic, ElmType, ToJSON, FromJSON)
 
 instanciateGlobalType :: List Identifier -> GlobalType -> List GlobalAtom
 instanciateGlobalType arguments GlobalType{ parameters, atoms } = 

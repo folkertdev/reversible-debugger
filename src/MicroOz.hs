@@ -45,12 +45,12 @@ type Queue = Queue.Queue
 type QueueHistory = Queue.QueueHistory
 
 
-init :: Map.Map Identifier (SessionType.LocalType String) -> Program -> ( Context Value, Thread History Program ) 
-init types program = 
+init :: SessionType.GlobalType -> Map.Map Identifier (SessionType.LocalType String) -> Program -> ( Context Value, Thread History Program ) 
+init globalType types program = 
     let 
         thread = Thread (PID.create [ 0 ]) [] [ program ] 
     in 
-        ( Context.singleton types thread, thread ) 
+        ( Context.singleton globalType types thread, thread ) 
 
 {-| Values in the language. These may appear on the right-hand side of a variable declaration -} 
 data Value 

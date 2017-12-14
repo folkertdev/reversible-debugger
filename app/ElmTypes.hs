@@ -35,7 +35,9 @@ types =
     [ "import Json.Decode exposing (..)"
     , "import Dict exposing (Dict)" 
     , "import Json.Decode.Pipeline exposing (..)"
-    , toBoth (Proxy :: Proxy (LocalAtom String))
+    , toBoth (Proxy :: Proxy (Context Value))
+    , toBoth (Proxy :: Proxy (GlobalType))
+    , toBoth (Proxy :: Proxy (GlobalAtom ))
     {-
     , toBoth (Proxy :: Proxy (Result Int String))
     , toBoth (Proxy :: Proxy Instruction)

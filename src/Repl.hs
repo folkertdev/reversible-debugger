@@ -1,4 +1,4 @@
-module Repl (run, interpretInstruction) where 
+module Repl (interpretInstruction) where 
 
 import DebuggerParser (Instruction(..), parse)
 import qualified Interpreter
@@ -17,28 +17,9 @@ import Data.ReplState as ReplState
 import Control.Monad
 import Control.Monad.Except as Except
 import Control.Monad.State as State 
-import Control.Monad.Trans (liftIO)
-import Control.Concurrent.MVar 
 import Data.Maybe (fromMaybe, maybe)
 import qualified Data.Map as Map
 
-import Debug.Trace as Debug
-
-
-runner :: Execution () 
-runner = go 30 
-  where go 0 = return () 
-        go n = do
-            (context, state) <- State.get
-            case Debug.traceShowId $ ThreadState.reschedule state of
-                Nothing -> return ()
-                Just newState -> do
-                    State.modify (\(c, _) -> (Debug.traceShowId c, newState ))
-                    Interpreter.forward
-                    go (n - 1)
-
-
-run = interpretInstruction Run 
 
 interpretInstruction :: Instruction -> ReplState -> Either String ReplState 
 interpretInstruction instruction (ReplState context state) =  
@@ -46,7 +27,7 @@ interpretInstruction instruction (ReplState context state) =
         evaluate :: StateT (Context Value, ThreadState History Program) (Either Error) a -> Either String ReplState 
         evaluate computation = 
             case State.runStateT computation (context, state) of
-                Left e -> do
+                Left e -> 
                     Except.throwError (show e)
 
                 Right (_, ( newContext, newState)) -> 
@@ -87,15 +68,15 @@ interpretInstruction instruction (ReplState context state) =
             evaluate $ Interpreter.rollVariable identifier
 
         Run -> 
-            evaluate runner 
+            undefined -- evaluate runner 
 
         SkipLets -> 
             evaluate Interpreter.skipLets
  
-        ListThreads -> do
+        ListThreads ->
             undefined
             
-        Store -> do
+        Store -> 
             undefined
             
         Print id ->  
@@ -104,7 +85,7 @@ interpretInstruction instruction (ReplState context state) =
         History id -> 
             undefined
 
-        Help-> do 
+        Help-> 
             undefined
 
         Quit-> 

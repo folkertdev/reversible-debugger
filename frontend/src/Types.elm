@@ -1,11 +1,10 @@
 module Types exposing (..)
 
-import Json.Decode exposing (..)
-import Json.Decode as Decode
-import Json.Encode exposing (encode)
-import Exts.Json.Encode
 import Dict exposing (Dict)
+import Exts.Json.Encode
+import Json.Decode as Decode exposing (..)
 import Json.Decode.Pipeline exposing (..)
+import Json.Encode exposing (encode)
 import Result
 
 
@@ -15,8 +14,8 @@ tupleDict decodeValue =
         tuple2 value =
             Decode.map2 (,) (index 0 string) (index 1 value)
     in
-        Decode.list (tuple2 decodeValue)
-            |> Decode.map Dict.fromList
+    Decode.list (tuple2 decodeValue)
+        |> Decode.map Dict.fromList
 
 
 dict =
@@ -410,6 +409,7 @@ type alias Context =
     , threads : Dict (List Int) Int
     , participantMap : Dict (List Int) Identifier
     , localTypeStates : Dict String LocalTypeState
+    , globalType : GlobalType
     }
 
 
@@ -422,17 +422,64 @@ decodeContext =
         |> required "threads" (map Dict.fromList (list (map2 (,) (index 0 (list int)) (index 1 int))))
         |> required "participantMap" (map Dict.fromList (list (map2 (,) (index 0 (list int)) (index 1 decodeIdentifier))))
         |> required "localTypeStates" (tupleDict decodeLocalTypeState)
+        |> required "globalType" decodeGlobalType
 
 
 encodeContext : Context -> Json.Encode.Value
 encodeContext x =
     Json.Encode.object
-        [ ( "bindings", (Exts.Json.Encode.dict Json.Encode.string (Exts.Json.Encode.tuple2 encodePID encodeValue)) x.bindings )
+        [ ( "bindings", Exts.Json.Encode.dict Json.Encode.string (Exts.Json.Encode.tuple2 encodePID encodeValue) x.bindings )
         , ( "variableCount", Json.Encode.int x.variableCount )
-        , ( "channels", (Exts.Json.Encode.dict Json.Encode.string (Exts.Json.Encode.tuple2 encodePID encodeQueue)) x.channels )
-        , ( "threads", (Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) Json.Encode.int) x.threads )
-        , ( "participantMap", (Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeIdentifier) x.participantMap )
-        , ( "localTypeStates", (Exts.Json.Encode.dict Json.Encode.string encodeLocalTypeState) x.localTypeStates )
+        , ( "channels", Exts.Json.Encode.dict Json.Encode.string (Exts.Json.Encode.tuple2 encodePID encodeQueue) x.channels )
+        , ( "threads", Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) Json.Encode.int x.threads )
+        , ( "participantMap", Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeIdentifier x.participantMap )
+        , ( "localTypeStates", Exts.Json.Encode.dict Json.Encode.string encodeLocalTypeState x.localTypeStates )
+        , ( "globalType", encodeGlobalType x.globalType )
+        ]
+
+
+type alias GlobalType =
+    { parameters : List Identifier
+    , atoms : List GlobalAtom
+    }
+
+
+decodeGlobalType : Decoder GlobalType
+decodeGlobalType =
+    decode GlobalType
+        |> required "parameters" (list decodeIdentifier)
+        |> required "atoms" (list decodeGlobalAtom)
+
+
+encodeGlobalType : GlobalType -> Json.Encode.Value
+encodeGlobalType x =
+    Json.Encode.object
+        [ ( "parameters", (Json.Encode.list << List.map encodeIdentifier) x.parameters )
+        , ( "atoms", (Json.Encode.list << List.map encodeGlobalAtom) x.atoms )
+        ]
+
+
+type alias GlobalAtom =
+    { sender : Identifier
+    , receiver : Identifier
+    , tipe : String
+    }
+
+
+decodeGlobalAtom : Decoder GlobalAtom
+decodeGlobalAtom =
+    decode GlobalAtom
+        |> required "sender" decodeIdentifier
+        |> required "receiver" decodeIdentifier
+        |> required "tipe" string
+
+
+encodeGlobalAtom : GlobalAtom -> Json.Encode.Value
+encodeGlobalAtom x =
+    Json.Encode.object
+        [ ( "sender", encodeIdentifier x.sender )
+        , ( "receiver", encodeIdentifier x.receiver )
+        , ( "tipe", Json.Encode.string x.tipe )
         ]
 
 
@@ -458,11 +505,11 @@ decodeOtherThreads =
 encodeOtherThreads : OtherThreads -> Json.Encode.Value
 encodeOtherThreads x =
     Json.Encode.object
-        [ ( "active", (Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeThread) x.active )
-        , ( "inactive", (Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeThread) x.inactive )
-        , ( "blocked", (Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeThread) x.blocked )
-        , ( "filtered", (Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeThread) x.filtered )
-        , ( "uninitialized", (Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeThread) x.uninitialized )
+        [ ( "active", Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeThread x.active )
+        , ( "inactive", Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeThread x.inactive )
+        , ( "blocked", Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeThread x.blocked )
+        , ( "filtered", Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeThread x.filtered )
+        , ( "uninitialized", Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeThread x.uninitialized )
         ]
 
 
@@ -535,6 +582,11 @@ type Identifier
     = Identifier String
 
 
+unIdentifier : Identifier -> String
+unIdentifier (Identifier i) =
+    i
+
+
 decodeIdentifier : Decoder Identifier
 decodeIdentifier =
     string
@@ -554,7 +606,7 @@ type PID
 
 decodePID : Decoder PID
 decodePID =
-    (list int)
+    list int
         |> map PID
 
 
@@ -1116,7 +1168,7 @@ encodeLocalTypeState : LocalTypeState -> Json.Encode.Value
 encodeLocalTypeState x =
     Json.Encode.object
         [ ( "participant", encodeIdentifier x.participant )
-        , ( "state", (encodeExhaustableZipper (encodeLocalAtom Json.Encode.string)) x.state )
+        , ( "state", encodeExhaustableZipper (encodeLocalAtom Json.Encode.string) x.state )
         ]
 
 
@@ -1136,7 +1188,7 @@ decodeExhaustableZipper decodeValue =
                         decode Empty
 
                     "Zipper" ->
-                        Json.Decode.map (\( a, b, c ) -> Zipper ( a, b, c )) (tuple3 (list decodeValue) (decodeValue) (list decodeValue))
+                        Decode.map (\( a, b, c ) -> Zipper ( a, b, c )) (tuple3 (list decodeValue) decodeValue (list decodeValue))
 
                     "Exhausted" ->
                         decode Exhausted
@@ -1161,10 +1213,10 @@ encodeExhaustableZipper encodeValue x =
                 encodeList decodeV =
                     Json.Encode.list << List.map decodeV
             in
-                Json.Encode.object
-                    [ ( "tag", Json.Encode.string "Zipper" )
-                    , ( "contents", encodeTuple3 ( encodeList encodeValue a, encodeValue b, encodeList encodeValue c ) )
-                    ]
+            Json.Encode.object
+                [ ( "tag", Json.Encode.string "Zipper" )
+                , ( "contents", encodeTuple3 ( encodeList encodeValue a, encodeValue b, encodeList encodeValue c ) )
+                ]
 
         Exhausted y0 ->
             Json.Encode.object

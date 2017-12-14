@@ -2,21 +2,37 @@ module Main exposing (..)
 
 --
 
+import Api
 import Color exposing (..)
+import Diagram
 import Dict exposing (Dict)
 import Element exposing (Element, column, el, row, text)
 import Element.Attributes exposing (..)
 import Element.Events exposing (..)
+import Examples
 import FontAwesome
 import Html exposing (Html)
 import Http
-import Json.Decode as Decode
-import Json.Encode as Encode
 import Style
 import Style.Color as Color
 import Style.Font as Font
-import ThreeBuyer
-import Types exposing (Context, Instruction(..), PID(..), ReplState, ThreadState(..))
+import Svg exposing (Svg)
+import Svg.Attributes as Svg
+import Types
+    exposing
+        ( Context
+        , ExhaustableZipper(..)
+        , GlobalAtom
+        , GlobalType
+        , Identifier(..)
+        , Instruction(..)
+        , LocalAtom(..)
+        , LocalTypeState
+        , PID(..)
+        , ReplState
+        , ThreadState(..)
+        , unIdentifier
+        )
 
 
 icon awesome size =
@@ -47,7 +63,7 @@ type alias Model =
 init : String -> ( Model, Cmd Msg )
 init topic =
     ( Model Nothing
-    , getRandomGif "skip"
+    , Http.send InitialState (Api.initialize Examples.asynchAnd)
     )
 
 
@@ -56,8 +72,7 @@ init topic =
 
 
 type Msg
-    = MorePlease
-    | InitialState (Result Http.Error Current)
+    = InitialState (Result Http.Error Current)
     | Step Instruction
     | Stepped (Result Http.Error Current)
 
@@ -65,9 +80,6 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        MorePlease ->
-            ( model, getRandomGif "skip" )
-
         InitialState (Ok newUrl) ->
             ( Model (Just newUrl), Cmd.none )
 
@@ -78,7 +90,7 @@ update msg model =
             case model.replState of
                 Just replState ->
                     ( model
-                    , step instruction replState
+                    , Api.step Stepped instruction replState
                     )
 
                 Nothing ->
@@ -108,7 +120,8 @@ view model =
                     [ column ThreadStateBlock
                         [ width (percent 70) ]
                         [ Element.button None [ onClick (Step SkipLets) ] (text "Normalize!")
-                        , row None [] (viewThreadState threadState)
+                        , row None [] (viewThreadState context threadState)
+                        , row None [] [ Element.html (Svg.svg [ Svg.width "500", Svg.height "600" ] [ drawTypeState context ]) ]
                         ]
                     , column ContextBlock
                         [ width (percent 30) ]
@@ -116,8 +129,8 @@ view model =
                     ]
 
 
-viewThreadState : ThreadState -> List (Element Style variation Msg)
-viewThreadState state =
+viewThreadState : Context -> ThreadState -> List (Element Style variation Msg)
+viewThreadState context state =
     let
         threads =
             case state of
@@ -146,7 +159,7 @@ viewThreadState state =
     in
     annotatedThreads
         |> Dict.values
-        |> List.map (uncurry (viewThread (Dict.size annotatedThreads)))
+        |> List.map (uncurry (viewThread context (Dict.size annotatedThreads)))
 
 
 type ThreadActivity
@@ -156,33 +169,57 @@ type ThreadActivity
     | Uninitialized
 
 
-viewThread : Int -> ThreadActivity -> Types.Thread -> Element Style variation Msg
-viewThread n activity thread =
+viewThread : Context -> Int -> ThreadActivity -> Types.Thread -> Element Style variation Msg
+viewThread context n activity thread =
     let
         (PID pid) =
             thread.pid
 
         { program, history } =
             thread
+
+        localTypeState =
+            lookupTypeState thread.pid context
+
+        header =
+            case localTypeState of
+                Nothing ->
+                    "Not a protocol member"
+
+                Just { participant } ->
+                    "Participating as `" ++ unIdentifier participant ++ "`"
     in
     Element.paragraph (ThreadBlock activity)
         [ minWidth (px 50), width (percent (1 / toFloat n * 100)) ]
-        [ Element.paragraph None
-            [ width (percent 100) ]
+        [ Element.row None
+            [ width (percent 100), spread ]
             [ Element.button Button [ onClick (Step (Back thread.pid)), alignLeft ] (el None [] (icon FontAwesome.arrow_left 20))
+            , el None [] (Element.text header)
             , Element.button Button [ onClick (Step (Forth thread.pid)), alignRight ] (el None [] (icon FontAwesome.arrow_right 20))
             ]
-        , text <| toString pid ++ " => " ++ toString program
+        , Element.row None
+            [ spread ]
+            [ lookupTypeState thread.pid context
+                |> Maybe.map viewLocalTypeState
+                |> Maybe.withDefault Element.empty
+            ]
         ]
 
 
 viewContext : Context -> List (Element Style variation Msg)
 viewContext context =
-    [ Element.bold "Variables"
+    [ Element.bold <| "Variable Count: " ++ toString context.variableCount
+    , Element.bold "Variables"
     , viewBindings context.bindings
     , Element.bold "Channels"
     , viewChannels context.channels
     ]
+
+
+lookupTypeState : PID -> Context -> Maybe Types.LocalTypeState
+lookupTypeState (PID pid) { participantMap, localTypeStates } =
+    Dict.get pid participantMap
+        |> Maybe.andThen (\(Types.Identifier i) -> Dict.get i localTypeStates)
 
 
 
@@ -213,11 +250,39 @@ viewBinding viewValue key value =
 
 
 viewChannels : Dict String a -> Element Style variation msg
-viewChannels bindings =
-    bindings
+viewChannels channles =
+    channles
         |> Dict.toList
         |> List.map (uncurry (viewBinding (\v -> text (toString v))))
         |> Element.textLayout None []
+
+
+viewLocalTypeState : LocalTypeState -> Element Style variation msg
+viewLocalTypeState { participant, state } =
+    viewExhaustableZipper state
+
+
+viewExhaustableZipper : ExhaustableZipper (LocalAtom String) -> Element Style variation msg
+viewExhaustableZipper zipper =
+    case zipper of
+        Empty ->
+            text "Empty"
+
+        Exhausted _ ->
+            text "Exhausted"
+
+        Zipper ( p, c, n ) ->
+            text (viewLocalAtom c)
+
+
+viewLocalAtom : LocalAtom String -> String
+viewLocalAtom atom =
+    case atom of
+        LocalAtomSend { receiver, type_ } ->
+            "Send to " ++ unIdentifier receiver ++ " of type " ++ type_
+
+        LocalAtomReceive { sender, type_ } ->
+            "Receive from " ++ unIdentifier sender ++ " of type " ++ type_
 
 
 
@@ -231,42 +296,6 @@ subscriptions model =
 
 
 -- HTTP
-
-
-baseURL =
-    "/"
-
-
-getRandomGif : String -> Cmd Msg
-getRandomGif topic =
-    let
-        url =
-            baseURL ++ "initialize"
-    in
-    Http.send InitialState (Http.post url (Http.jsonBody (Encode.string ThreeBuyer.threeBuyer)) Types.decodeReplState)
-
-
-forth : Types.PID -> Types.Instruction
-forth =
-    Types.Forth
-
-
-step : Types.Instruction -> Types.ReplState -> Cmd Msg
-step instruction replState =
-    let
-        url =
-            baseURL ++ "step"
-
-        body =
-            Encode.list
-                [ Types.encodeInstruction instruction
-                , Types.encodeReplState replState
-                ]
-    in
-    Http.send Stepped (Http.post url (Http.jsonBody body) Types.decodeReplState)
-
-
-
 -- We need a type that represents out style identifiers.
 -- These act like css classes
 
@@ -318,3 +347,12 @@ palette =
 
 -- Element.layout renders the elements as html.
 -- Every layout requires a stylesheet.
+
+
+drawTypeState : { a | localTypeStates : Dict String LocalTypeState, globalType : GlobalType } -> Svg msg
+drawTypeState { localTypeStates, globalType } =
+    let
+        { parameters, atoms } =
+            globalType
+    in
+    Diagram.drawSegments (List.map unIdentifier parameters) globalType { width = 500, height = 500, headerHeight = 20 }

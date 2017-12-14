@@ -5,55 +5,40 @@
 
 module Main where
 
-import Data.Aeson as Aeson (FromJSON, ToJSON)
-import Data.Text
+import System.Environment
 import qualified Data.Map as Map
-import Servant
 
-import GHC.Generics
--- import Network.HTTP.Media ((//), (/:))
+import Servant
 import Network.Wai
 import Network.Wai.Handler.Warp
-import Network.Wai.Middleware.AddHeaders (addHeaders)
-import Network.Wai.Middleware.Cors       (CorsResourcePolicy(..), cors, simpleCors)
+import Network.Wai.Middleware.Cors (CorsResourcePolicy(..), cors, simpleCors)
 
-import System.Environment
-
+import qualified MicroOz
+import qualified MicroOz.Parser
+import qualified Data.ThreadState as ThreadState
 import Data.ReplState
 import Data.Context as Context (Context, localTypeStates)
-import qualified Data.ThreadState as ThreadState
-import MicroOz (Value)
-import qualified MicroOz 
-import qualified MicroOz.Parser
 import Types (Identifier(..))
-import SessionType 
 
 import qualified Repl 
-
 import DebuggerParser (Instruction)
 
-type Current = ReplState 
-
+{-| the API described as a type -}
 type UserAPI = 
     "initialize" :> ReqBody '[JSON] String :> Post '[JSON] ReplState
         :<|> "step" :> ReqBody '[JSON] (Instruction, ReplState) :> Post '[JSON] ReplState
         :<|> Raw
         
  
-
--- data StepInfo = StepInfo { instruction :: Instruction } deriving (Generic, FromJSON, ToJSON)
-
-users1 = ["test"]
-
-server1 :: Server UserAPI
-server1 = initialize :<|> uncurry step :<|> serveDirectoryFileServer "frontend/" 
-  where initialize :: String -> Handler Current
+server :: Server UserAPI
+server = initialize :<|> uncurry step :<|> serveDirectoryFileServer "frontend/" 
+  where initialize :: String -> Handler ReplState
         initialize input = 
             case MicroOz.Parser.programWithTypes input of
                 Left e -> 
                     error (show e)
-                Right (types, program) -> 
-                    let ( context, thread ) = MicroOz.init types program 
+                Right (globalType, types, program) -> 
+                    let ( context, thread ) = MicroOz.init globalType types program 
                     in return $ ReplState context (ThreadState.singleton thread) 
 
         step :: Instruction -> ReplState -> Handler ReplState
@@ -68,17 +53,22 @@ userAPI = Proxy
 -- 'serve' comes from servant and hands you a WAI Application,
 -- which you can think of as an "abstract" web application,
 -- not yet a webserver.
-app1 :: Application
-app1 = serve userAPI server1
+app :: Application
+app = serve userAPI server
 
 main :: IO ()
 main = do 
+    -- read the port from an environment variable (important for heroku)
     port <- getEnv "PORT"
+
+    -- sethost "*" allows incoming requests from all hosts: also important for heroku
     let settings = setPort (read port) $ setHost "*" defaultSettings
+
     putStrLn $ "running on port " ++ port
-    runSettings settings $ corsified app1
+    runSettings settings $ corsified app
 
 -- | CORS middleware configured with 'appCorsResourcePolicy'.
+-- | allows elm requests CORS requests (OPTIONS)
 corsified :: Middleware
 corsified = cors (const $ Just appCorsResourcePolicy)
 
