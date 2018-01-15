@@ -27,7 +27,7 @@ import Data.Thread as Thread
 import Data.Context as Context 
 import Data.PID as PID (PID, create, parent, child)
 import Data.Expr
-import Data.Actor as Actor (Participant, Actor, named, unnamed, push, pop)
+import Data.Actor as Actor (Participant, Actor, named, unnamed, push, pop, toList)
 
 import Types
 import qualified Cmd
@@ -280,6 +280,16 @@ newtype ForwardMsg
     = Spawn (Thread History Program) 
     deriving (Show)
 
+currentParticipant :: (MonadState (Context Value) m, MonadError Error m) => Actor -> m Participant
+currentParticipant actor = 
+    case Actor.toList actor of
+        [] -> 
+            Except.throwError $ RuntimeException "actor has no participant"
+
+        (x:_) -> 
+            return x
+
+
 {-| Take one step forward -} 
 advanceP :: (MonadState (Context Value) m, MonadError Error m) 
     => PID 
@@ -315,7 +325,7 @@ advanceP pid currentActor program rest =
                                         error $ unwords [ show e, show pid, show program ] -- Except.throwError $ BlockedOnReceive pid
 
                                     Right ( expectedSender, valueType, newLocalTypeState ) -> do
-                                        participant <- Context.lookupParticipant creator
+                                        participant <- currentParticipant currentActor 
                                         message_ <- readChannel pid expectedSender participant valueType channelName 
                                         case message_ of
                                             Nothing ->
@@ -400,7 +410,7 @@ advanceP pid currentActor program rest =
                     Context.modifyLocalTypeStateM creator $ \localTypeState -> 
                         case SessionType.forwardWithSend localTypeState of 
                             Right (expectedReceiver, valueType, newLocalTypeState) -> do
-                                participant <- Context.lookupParticipant creator
+                                participant <- currentParticipant currentActor 
                                 writeChannel pid participant expectedReceiver valueType channelName payload 
                                 return 
                                     ( newLocalTypeState
