@@ -4,6 +4,7 @@ module Data.Thread where
 import Types
 import qualified SessionType 
 import Data.PID as PID (PID)
+import Data.Actor (Actor)
 
 import GHC.Generics
 import Elm
@@ -18,12 +19,13 @@ import Data.Aeson
 data Thread history a 
     = Thread 
             { pid :: PID
+            , actor :: Actor
             , history :: List history
             , program :: List a 
             } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
 
 instance (Show history, Show a) => Show (Thread history a) where 
-    show (Thread pid history program) = 
+    show (Thread pid actor history program) = 
         "Thread " ++ show pid 
             ++ "\n"
             ++ "\n"

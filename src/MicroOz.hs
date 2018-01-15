@@ -27,6 +27,7 @@ import Data.Thread as Thread
 import Data.Context as Context 
 import Data.PID as PID (PID, create, parent, child)
 import Data.Expr
+import Data.Actor as Actor (Participant, Actor, named, unnamed, push, pop)
 
 import Types
 import qualified Cmd
@@ -40,7 +41,6 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Text as Text
 import Data.Monoid ((<>))
 
-type Participant = Identifier
 type Queue = Queue.Queue
 type QueueHistory = Queue.QueueHistory
 
@@ -48,7 +48,7 @@ type QueueHistory = Queue.QueueHistory
 init :: SessionType.GlobalType -> Map.Map Identifier (SessionType.LocalType String) -> Program -> ( Context Value, Thread History Program ) 
 init globalType types program = 
     let 
-        thread = Thread (PID.create [ 0 ]) [] [ program ] 
+        thread = Thread (PID.create [ 0 ]) Actor.unnamed [] [ program ] 
     in 
         ( Context.singleton globalType types thread, thread ) 
 
@@ -72,24 +72,26 @@ data History
     | CreatedVariable Identifier
     | CreatedChannel Identifier
     | CalledProcedure Identifier (List Identifier)
-    | SpawnedThread (Maybe Identifier) PID
+    | SpawnedThread Actor PID
     | BranchedOn BoolExpr Bool Program 
     | AssertedOn BoolExpr 
-    | ChangedActor Actor
+    | ChangedActor (StackAction Identifier)
     deriving (Eq, Show, Generic, ElmType, ToJSON, FromJSON)
 
+data StackAction a = Pop a | Push a
+    deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 {-| The µOz Syntax -}            
 data Program 
     = Sequence Program Program
     | Let Identifier Value Program
     | If BoolExpr Program Program
-    | SpawnThread (Maybe Identifier) Program
+    | SpawnThread Actor Program
     | Skip
     | Apply Identifier (List Identifier)
     | Send { channelName :: Identifier, payload :: Identifier, creator :: PID } 
     | Assert BoolExpr
-    | ChangeActor Actor
+    | ChangeActor (StackAction Participant) 
     deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 
@@ -249,13 +251,26 @@ renameVariableInValue old new value =
             VInt (renameIntExpr old new value)
 
 
+-- HELPERS
+
+
+delayed :: Program -> Program
+delayed program = 
+    Let (Identifier "_") (Procedure [ Identifier "__" ] program) $ 
+        Apply (Identifier "_") [ Identifier "unit" ]
+
+asActor :: Identifier -> Program -> Program
+asActor participant program = 
+    foldl (flip Sequence) Skip [ ChangeActor (Push participant), program, ChangeActor (Pop participant) ]
+
+
 
 -- ATOMIC STEPS for a single thread
 
 {- messages are signals to the "global" state to influence other threads based on this thread's actions -} 
 
 data BackwardMsg 
-    = RollChild { caller :: PID, toRoll :: PID, typeName :: Maybe Identifier } 
+    = RollChild { caller :: PID, toRoll :: PID, actor :: Actor } 
     | RollSend { caller :: PID, histories :: List QueueHistory, channelName :: ChannelName } 
     | RollReceive { caller :: PID, histories :: List QueueHistory, channelName :: ChannelName } 
     deriving (Show)
@@ -282,8 +297,14 @@ advanceP pid currentActor program rest =
                 Sequence a b ->
                     continue Composed (a:b:rest)
 
-                ChangeActor newActor -> 
-                    return ( ChangedActor currentActor, currentActor, rest, Cmd.none ) 
+                ChangeActor action -> 
+                    let 
+                        newActor = 
+                            case action of 
+                                Pop participant -> Actor.pop currentActor
+                                Push participant -> Actor.push participant currentActor
+                    in
+                        return ( ChangedActor action, newActor, rest, Cmd.none ) 
 
                 Let identifier value continuation -> 
                     case value of
@@ -351,14 +372,14 @@ advanceP pid currentActor program rest =
                         continue (AssertedOn condition) rest
 
 
-                SpawnThread typeName work -> do
-                    thread@(Thread threadName _ _) <- Context.insertThread pid [] [ work ] 
+                SpawnThread actor work -> do
+                    thread@(Thread threadName _ _ _) <- Context.insertThread pid actor [] [ work ] 
 
-                    -- if there is a type name, insert this thread as a participant
-                    mapM_ (Context.insertParticipant threadName) typeName 
+                    -- if there is a type name, insert this thread as a actor
+                    Context.insertParticipant threadName actor 
 
                     return 
-                        ( SpawnedThread typeName threadName
+                        ( SpawnedThread actor threadName
                         , currentActor
                         , rest
                         , Cmd.create $ Spawn thread
@@ -394,6 +415,8 @@ advanceP pid currentActor program rest =
                                 -- Except.throwError $ BlockedOnReceive pid
                                 error "wants to send but session type won't allow it"
 
+
+
 tracer f a = Debug.trace (f a) a
 
 
@@ -415,8 +438,14 @@ backwardP pid currentActor history program = do
                 ( Composed, first:second:restOfProgram ) ->
                     continue (Sequence first second : restOfProgram)
 
-                ( ChangedActor oldActor, restOfProgram ) -> 
-                    return ( True, oldActor, ChangeActor currentActor : restOfProgram, Cmd.none )
+                ( ChangedActor action, restOfProgram ) -> 
+                    let
+                        oldActor = 
+                            case action of 
+                                Pop participant -> Actor.push participant currentActor
+                                Push participant -> Actor.pop currentActor
+                    in
+                    return ( True, oldActor, ChangeActor action : restOfProgram, Cmd.none )
 
                 ( CreatedVariable identifier, continuation : restOfProgram ) -> do
                     value <- Context.lookupVariable identifier 
@@ -513,12 +542,12 @@ backwardP pid currentActor history program = do
                                         Left e -> 
                                             error $ "backward evaluation should not fail, but got" ++ show e
 
-                ( SpawnedThread typeName toRoll, restOfProgram ) -> 
+                ( SpawnedThread participant toRoll, restOfProgram ) -> 
                     return 
                         ( True 
                         , currentActor
                         , restOfProgram
-                        , Cmd.create (RollChild pid toRoll typeName)
+                        , Cmd.create (RollChild pid toRoll participant)
                         )
 
                 ( _, restOfProgram) ->

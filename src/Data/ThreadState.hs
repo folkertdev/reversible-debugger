@@ -250,7 +250,7 @@ scheduleThreadBackward pid threads =
                                 Right $ Running newActive rest
     in
         case threads of 
-            Running (Thread currentPID _ _) _ | currentPID == pid -> 
+            Running (Thread currentPID _ _ _) _ | currentPID == pid -> 
                     Right threads
 
             _ -> 
@@ -290,7 +290,7 @@ scheduleThread pid threads =
                                 Right $ Running newActive rest
     in
         case threads of 
-            Running (Thread currentPID _ _) _ | currentPID == pid -> 
+            Running (Thread currentPID _ _ _) _ | currentPID == pid -> 
                     Right threads
 
             _ -> 

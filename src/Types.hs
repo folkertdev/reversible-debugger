@@ -20,6 +20,12 @@ infixl 0 |>
 (|>) :: a -> (a -> b) -> b
 x |> f = f x
 
+withDefault :: a -> Maybe a -> a
+withDefault def may = 
+    case may of 
+        Nothing -> def
+        Just v -> v
+
 data Error
     = UndefinedVariable Identifier
     | UndefinedThread PID
@@ -86,5 +92,4 @@ instance HasElmComparable Identifier where
 
 type ChannelName = Identifier
 
-type Actor = Identifier
 

@@ -33,6 +33,7 @@ import qualified Data.Map as Map
 import Types
 import Data.Thread as Thread (Thread(..))
 import Data.PID as PID (PID, create, parent, child)
+import Data.Actor as Actor (Actor, toList, named, push)
 import Data.List as List
 import Data.Monoid ((<>))
 
@@ -51,7 +52,7 @@ data Context value =
     , channels :: Map Identifier (PID, Queue Identifier)
     , threads :: Map PID Int
     -- , localTypes :: Map Identifier (SessionType.LocalType String)
-    , participantMap :: Map PID Identifier
+    , participantMap :: Map PID Actor
     , localTypeStates :: Map Identifier (SessionType.LocalTypeState String)
     , globalType :: SessionType.GlobalType
     } deriving (Generic, ElmType, ToJSON, FromJSON)
@@ -139,13 +140,11 @@ lookupLocalTypeState =
 lookupParticipant :: (MonadState (Context value) m, MonadError Error m) => PID -> m Identifier 
 lookupParticipant pid = do
     context <- State.get
-    case Map.lookup pid (participantMap context) of
-        Nothing ->
+    case concatMap Actor.toList $ Map.lookup pid (participantMap context) of
+        [] ->
             Except.throwError $ UndefinedParticipant pid 
  
-
-
-        Just v -> 
+        (v:_) -> 
             return v 
 
 
@@ -202,10 +201,10 @@ insertBinding pid tagger = do
 
     return identifier
 
-insertParticipant :: MonadState (Context value) m => PID -> Identifier -> m ()
-insertParticipant pid participant = 
+insertParticipant :: MonadState (Context value) m => PID -> Actor -> m ()
+insertParticipant pid actor = 
     State.modify $ \context ->
-        let newBindings = Map.insert pid participant (participantMap context)
+        let newBindings = Map.insert pid actor (participantMap context)
         in
             context { participantMap = newBindings } 
     
@@ -246,8 +245,8 @@ removeChannel identifier =
                     } 
 
 
-insertThread :: (MonadState (Context value) m, MonadError Error m) => PID -> List h -> List a -> m (Thread h a)
-insertThread parent history value = do
+insertThread :: (MonadState (Context value) m, MonadError Error m) => PID -> Actor -> List h -> List a -> m (Thread h a)
+insertThread parent actor history value = do
     context <- State.get
     let usedThreadNames = threads context  
     case Map.lookup parent usedThreadNames of
@@ -263,7 +262,7 @@ insertThread parent history value = do
                     Map.adjust (+ 1) parent . Map.insert child 0 
 
             State.put (context { threads =  updater usedThreadNames }) 
-            return $ Thread child history value
+            return $ Thread child actor history value
 
 
 removeThread :: (MonadState (Context value) m, MonadError Error m) => PID -> m () 

@@ -235,7 +235,7 @@ giving a new state.
 handleBackwardEffects :: BackwardMsg -> Execution () 
 handleBackwardEffects action = 
     case action of
-        RollChild { caller, toRoll, typeName } -> do
+        RollChild { caller, toRoll, actor } -> do
             -- a parent wants to roll its child, then undo the spawning completely
             threadProgram <- rollThread toRoll 
 
@@ -244,7 +244,7 @@ handleBackwardEffects action =
 
             let addHistory :: Thread History Program -> Thread History Program 
                 addHistory thread@Thread{pid, program} = 
-                    thread { program = SpawnThread typeName (renameCreator pid threadProgram) : program }
+                    thread { program = SpawnThread actor (renameCreator pid threadProgram) : program }
 
             State.modify (change $ ThreadState.mapActive addHistory . ThreadState.removeUninitialized toRoll) 
 
@@ -360,30 +360,30 @@ forward =
 
 
 advance :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd ForwardMsg) 
-advance thread@(Thread pid histories program) = 
+advance thread@(Thread pid currentActor histories program) = 
     case program of
         [] -> 
             return ( Done, Cmd.none )
 
         (p:ps) -> do
-            (h, newProgram, cmd ) <- advanceP pid p ps
-            return ( Step $ Thread pid (h:histories) newProgram, cmd )
+            (h, newActor, newProgram, cmd ) <- advanceP pid currentActor p ps
+            return ( Step $ Thread pid newActor (h:histories) newProgram, cmd )
 
 
 rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd BackwardMsg)
-rollback thread@(Thread pid histories program) = 
+rollback thread@(Thread pid currentActor histories program) = 
     case histories of
         [] -> 
             return ( Done , Cmd.none ) 
 
 
         (h:hs) -> do
-            ( consumed, newProgram, cmd ) <- backwardP pid h program 
+            ( consumed, newActor, newProgram, cmd ) <- backwardP pid currentActor h program 
             --return ( Step $ Thread pid hs newProgram, cmd )
             if consumed then
-                return ( Step $ Thread pid hs newProgram, cmd )
+                return ( Step $ Thread pid newActor hs newProgram, cmd )
             else
-                return ( Step $ Thread pid (h:hs) newProgram, cmd )
+                return ( Step $ Thread pid newActor (h:hs) newProgram, cmd )
 
 -- HELPERS 
 

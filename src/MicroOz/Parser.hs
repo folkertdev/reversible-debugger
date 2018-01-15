@@ -14,6 +14,7 @@ import Queue
 import qualified SessionType
 import SessionType (GlobalType(..))
 import Data.PID as PID
+import Data.Actor as Actor (named, unnamed)
 import Data.Expr (Expr(..), IntExpr(..), BoolExpr(..), exprToIntExpr, exprToBoolExpr)
 
 program :: String -> Either ParseError Program
@@ -228,7 +229,7 @@ threadParser = do
     whitespaceOrComment  
     work <- programParser
     end
-    return $ SpawnThread typeName work
+    return $ SpawnThread (maybe Actor.unnamed Actor.named typeName) work
 
 functionApplicationParser = do
     char '{'

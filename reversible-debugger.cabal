@@ -23,6 +23,7 @@ library
                      , Data.ThreadState
                      , Data.ReplState
                      , Data.PID
+                     , Data.Actor
                      , Cmd
                      , Repl
                      , MicroOz
