@@ -75,6 +75,7 @@ data History
     | SpawnedThread (Maybe Identifier) PID
     | BranchedOn BoolExpr Bool Program 
     | AssertedOn BoolExpr 
+    | ChangedActor Actor
     deriving (Eq, Show, Generic, ElmType, ToJSON, FromJSON)
 
 
@@ -88,6 +89,7 @@ data Program
     | Apply Identifier (List Identifier)
     | Send { channelName :: Identifier, payload :: Identifier, creator :: PID } 
     | Assert BoolExpr
+    | ChangeActor Actor
     deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 
@@ -159,6 +161,9 @@ renameCreator new program =
         Send { channelName, payload } -> 
             Send channelName payload new
 
+        ChangeActor actor ->
+            ChangeActor actor 
+
 
 renameCreatorInValue :: PID -> Value -> Value 
 renameCreatorInValue new value = 
@@ -217,6 +222,8 @@ renameVariable old new program =
         Send { channelName, payload, creator } -> 
             Send (tagger channelName) (tagger payload) creator
 
+        ChangeActor actor ->
+            ChangeActor actor 
 
 renameVariableInValue :: Identifier -> Identifier -> Value -> Value 
 renameVariableInValue old new value = 
@@ -261,11 +268,12 @@ newtype ForwardMsg
 {-| Take one step forward -} 
 advanceP :: (MonadState (Context Value) m, MonadError Error m) 
     => PID 
+    -> Actor
     -> Program 
     -> List Program 
-    -> m ( History, List Program, Cmd.Cmd ForwardMsg)
-advanceP pid program rest = 
-    let continue history rest = return ( history, rest, Cmd.none ) 
+    -> m ( History, Actor, List Program, Cmd.Cmd ForwardMsg)
+advanceP pid currentActor program rest = 
+    let continue history rest = return ( history, currentActor, rest, Cmd.none ) 
     in
         case program of
                 Skip ->
@@ -273,6 +281,9 @@ advanceP pid program rest =
 
                 Sequence a b ->
                     continue Composed (a:b:rest)
+
+                ChangeActor newActor -> 
+                    return ( ChangedActor currentActor, currentActor, rest, Cmd.none ) 
 
                 Let identifier value continuation -> 
                     case value of
@@ -292,10 +303,10 @@ advanceP pid program rest =
 
                                             Just message -> 
                                                 return ( newLocalTypeState, 
-
                                                     ( Received{ channelName = channelName, binding = identifier, payload = message, creator = creator } 
-                                                    , renameVariable identifier message continuation : rest
-                                                    , Cmd.none 
+                                                        , currentActor 
+                                                        , renameVariable identifier message continuation : rest
+                                                        , Cmd.none 
                                                     ) )
 
                         Port -> do
@@ -348,6 +359,7 @@ advanceP pid program rest =
 
                     return 
                         ( SpawnedThread typeName threadName
+                        , currentActor
                         , rest
                         , Cmd.create $ Spawn thread
                         ) 
@@ -372,8 +384,9 @@ advanceP pid program rest =
                                 return 
                                     ( newLocalTypeState
                                         , ( Sent channelName payload creator
-                                    , rest 
-                                    , Cmd.none 
+                                        , currentActor 
+                                        , rest 
+                                        , Cmd.none 
                                           )
                                     )
 
@@ -383,15 +396,17 @@ advanceP pid program rest =
 
 tracer f a = Debug.trace (f a) a
 
+
 {-| Take one step backward -} 
 backwardP :: (MonadState (Context Value) m, MonadError Error m) 
           => PID 
+          -> Actor
           -> History  
           -> List Program 
-          -> m ( Bool, List Program, Cmd.Cmd BackwardMsg ) 
-backwardP pid history program = do
+          -> m ( Bool, Actor, List Program, Cmd.Cmd BackwardMsg ) 
+backwardP pid currentActor history program = do
     context <- State.get
-    let continue newProgram = return ( True, newProgram, Cmd.none )
+    let continue newProgram = return ( True, currentActor, newProgram, Cmd.none )
         f (h, p) =  unwords [ show pid , show h, show p ] ++ "\n\n"
     case tracer f (history, program) of 
                 ( Skipped, _ ) ->
@@ -400,6 +415,9 @@ backwardP pid history program = do
                 ( Composed, first:second:restOfProgram ) ->
                     continue (Sequence first second : restOfProgram)
 
+                ( ChangedActor oldActor, restOfProgram ) -> 
+                    return ( True, oldActor, ChangeActor currentActor : restOfProgram, Cmd.none )
+
                 ( CreatedVariable identifier, continuation : restOfProgram ) -> do
                     value <- Context.lookupVariable identifier 
                     State.modify $ removeVariable identifier 
@@ -407,7 +425,7 @@ backwardP pid history program = do
 
                 ( CreatedChannel identifier, continuation : restOfProgram ) -> do
                     Context.removeChannel identifier
-                    return ( True, Let identifier Port continuation : restOfProgram, Cmd.none )
+                    continue (Let identifier Port continuation : restOfProgram)
 
                 ( BranchedOn condition True falseBody, trueBody : restOfProgram ) ->
                     continue (If condition trueBody falseBody : restOfProgram)
@@ -436,6 +454,7 @@ backwardP pid history program = do
 
                                             return  ( newLocalTypeState,
                                                 ( True
+                                                , currentActor 
                                                 , Send channelName payload creator : restOfProgram
                                                 , Cmd.none 
                                                 ))
@@ -447,6 +466,7 @@ backwardP pid history program = do
                                             return 
                                                 ( localTypeState
                                                     , ( False
+                                                , currentActor
                                                 , restOfProgram
                                                 , Cmd.create RollSend{ caller = pid, histories =  toRollFirst, channelName = channelName }
                                                 ))
@@ -471,6 +491,7 @@ backwardP pid history program = do
                                             return 
                                                 ( newLocalTypeState
                                                     , ( True
+                                                , currentActor
                                                 , Let binding (Receive channelName creator) (renameVariable payload binding continuation) : restOfProgram 
                                                 , Cmd.none 
                                                 ))
@@ -484,6 +505,7 @@ backwardP pid history program = do
                                             return 
                                                 ( localTypeState 
                                                     , ( False 
+                                                    , currentActor 
                                                 , restOfProgram
                                                 , Cmd.create RollReceive{ caller = pid, histories =  toRollFirst, channelName = channelName }
                                                 ))
@@ -494,6 +516,7 @@ backwardP pid history program = do
                 ( SpawnedThread typeName toRoll, restOfProgram ) -> 
                     return 
                         ( True 
+                        , currentActor
                         , restOfProgram
                         , Cmd.create (RollChild pid toRoll typeName)
                         )

@@ -86,3 +86,5 @@ instance HasElmComparable Identifier where
 
 type ChannelName = Identifier
 
+type Actor = Identifier
+
