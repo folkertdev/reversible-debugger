@@ -68,7 +68,7 @@ data History
     = Skipped
     | Composed 
     | Sent { channelName :: Identifier, payload :: Identifier, creator :: PID }
-    | Received { channelName :: Identifier, binding :: Identifier, payload :: Identifier, creator :: PID }
+    | Received { channelName :: Identifier, binding :: Identifier, variableName :: Identifier , creator :: PID }
     | CreatedVariable Identifier
     | CreatedChannel Identifier
     | CalledProcedure Identifier (List Identifier)
@@ -259,8 +259,8 @@ delayed program =
     Let (Identifier "_") (Procedure [ Identifier "__" ] program) $ 
         Apply (Identifier "_") [ Identifier "unit" ]
 
-asActor :: Identifier -> Program -> Program
-asActor participant program = 
+asParticipant :: Participant -> Program -> Program
+asParticipant participant program = 
     foldl (flip Sequence) Skip [ ChangeActor (Push participant), program, ChangeActor (Pop participant) ]
 
 
@@ -326,17 +326,18 @@ advanceP pid currentActor program rest =
 
                                     Right ( expectedSender, valueType, newLocalTypeState ) -> do
                                         participant <- currentParticipant currentActor 
-                                        message_ <- readChannel pid expectedSender participant valueType channelName 
-                                        case message_ of
+                                        message <- readChannel pid expectedSender participant valueType channelName 
+                                        case message of
                                             Nothing ->
                                                 -- blocked on receive
                                                 Except.throwError $ BlockedOnReceive pid
 
-                                            Just message -> 
+                                            Just value -> do
+                                                variableName <- Context.insertVariable pid value 
                                                 return ( newLocalTypeState, 
-                                                    ( Received{ channelName = channelName, binding = identifier, payload = message, creator = creator } 
+                                                    ( Received{ channelName = channelName, binding = identifier, variableName = variableName, creator = creator } 
                                                         , currentActor 
-                                                        , renameVariable identifier message continuation : rest
+                                                        , renameVariable identifier variableName continuation : rest
                                                         , Cmd.none 
                                                     ) )
 
@@ -411,7 +412,8 @@ advanceP pid currentActor program rest =
                         case SessionType.forwardWithSend localTypeState of 
                             Right (expectedReceiver, valueType, newLocalTypeState) -> do
                                 participant <- currentParticipant currentActor 
-                                writeChannel pid participant expectedReceiver valueType channelName payload 
+                                value <- procedureAsParticipant participant <$> lookupVariable payload 
+                                writeChannel pid participant expectedReceiver valueType channelName value 
                                 return 
                                     ( newLocalTypeState
                                         , ( Sent channelName payload creator
@@ -424,6 +426,20 @@ advanceP pid currentActor program rest =
                             Left e -> 
                                 -- Except.throwError $ BlockedOnReceive pid
                                 error "wants to send but session type won't allow it"
+
+
+{-| Wrap a function into a block that 
+changes the participant. Functions sent over a channel 
+are evaluated as the participant that sent them.
+-}
+procedureAsParticipant :: Participant -> Value -> Value 
+procedureAsParticipant participant value = 
+    case value of 
+        Procedure arguments body -> 
+            Procedure arguments (asParticipant participant body)
+
+        _ -> 
+            value
 
 
 
@@ -513,7 +529,9 @@ backwardP pid currentActor history program = do
                                         Left e -> error $ "backward evaluation should not fail, but got" ++ show e
 
 
-                ( Received{ channelName, binding, payload, creator }, continuation : restOfProgram ) -> 
+                ( Received{ channelName, binding, variableName, creator }, continuation : restOfProgram ) -> do
+                    value <- Context.lookupVariable variableName 
+                    State.modify $ removeVariable variableName 
                     Context.modifyLocalTypeStateM creator $ \localTypeState ->
                         case SessionType.backwardWithReceive localTypeState of
                             Left e -> 
@@ -522,7 +540,8 @@ backwardP pid currentActor history program = do
                             Right ( sender, valueType, newLocalTypeState ) ->
                                 withChannel channelName $ \queue -> do
                                     participant <- Context.lookupParticipant pid
-                                    case Queue.rollPop pid participant sender valueType payload queue of
+
+                                    case Queue.rollPop pid participant sender valueType value queue of
                                         Right newChannel -> do
                                             -- set the channel to the new version
                                             mapChannel channelName (const newChannel)
@@ -531,7 +550,7 @@ backwardP pid currentActor history program = do
                                                 ( newLocalTypeState
                                                     , ( True
                                                 , currentActor
-                                                , Let binding (Receive channelName creator) (renameVariable payload binding continuation) : restOfProgram 
+                                                , Let binding (Receive channelName creator) (renameVariable variableName binding continuation) : restOfProgram 
                                                 , Cmd.none 
                                                 ))
 

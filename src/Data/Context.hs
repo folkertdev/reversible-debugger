@@ -49,7 +49,7 @@ data Context value =
     Context
     { bindings :: Map Identifier (PID, value)
     , variableCount :: Int 
-    , channels :: Map Identifier (PID, Queue Identifier)
+    , channels :: Map Identifier (PID, Queue value)
     , threads :: Map PID Int
     -- , localTypes :: Map Identifier (SessionType.LocalType String)
     , participantMap :: Map PID Actor
@@ -219,7 +219,7 @@ freshIdentifier = do
     return $ Identifier $ "var" ++ show new
 
 
-insertChannel :: MonadState (Context value) m => PID -> Queue Identifier -> m Identifier 
+insertChannel :: MonadState (Context value) m => PID -> Queue value -> m Identifier 
 insertChannel pid value = do
     identifier <- freshIdentifier  
 
@@ -290,7 +290,7 @@ removeThread pid =
         State.put context{ threads = newTs }
         
 
-withChannel :: (MonadState (Context value) m, MonadError Error m) => Identifier -> (Queue.Queue Identifier -> m a) -> m a 
+withChannel :: (MonadState (Context value) m, MonadError Error m) => Identifier -> (Queue.Queue value -> m a) -> m a 
 withChannel identifier tagger = do
     channel <- Map.lookup identifier . channels <$> State.get 
     case channel of 
@@ -300,13 +300,13 @@ withChannel identifier tagger = do
         Nothing ->
             Except.throwError $ UndefinedChannel identifier
 
-mapChannel :: (MonadState (Context value) m) => Identifier -> (Queue.Queue Identifier -> Queue.Queue Identifier) -> m ()
+mapChannel :: (MonadState (Context value) m) => Identifier -> (Queue.Queue value -> Queue.Queue value) -> m ()
 mapChannel identifier tagger = 
     State.modify $ \context ->
         context { channels = Map.adjust (\(pid, v) -> (pid, tagger v)) identifier (channels context) } 
 
 
-readChannel :: (MonadState (Context value) m, MonadError Error m) => PID -> Identifier -> Identifier -> String -> ChannelName -> m (Maybe Identifier)
+readChannel :: (MonadState (Context value) m, MonadError Error m) => PID -> Identifier -> Identifier -> String -> ChannelName -> m (Maybe value)
 readChannel threadName sender receiver valueType identifier = 
     let fetch = 
             withChannel identifier $ \queue ->
@@ -326,7 +326,7 @@ readChannel threadName sender receiver valueType identifier =
         fmap Just fetch `Except.catchError` handler 
 
 
-writeChannel :: MonadState (Context value) m => PID -> Identifier -> Identifier -> String -> ChannelName -> Identifier -> m ()  
+writeChannel :: MonadState (Context value) m => PID -> Identifier -> Identifier -> String -> ChannelName -> value -> m ()  
 writeChannel threadName sender receiver valueType identifier payload = 
     mapChannel identifier (Queue.push threadName sender receiver valueType payload)
 
