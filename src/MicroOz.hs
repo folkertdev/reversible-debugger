@@ -59,6 +59,7 @@ data Value
     | Port 
     | VInt IntExpr 
     | VBool BoolExpr
+    | VUnit 
     deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 
@@ -165,6 +166,9 @@ renameCreatorInValue new value =
         VBool value -> 
             VBool value 
 
+        VUnit ->
+            VUnit
+
         Receive { channelName } -> 
             Receive channelName new
 
@@ -219,6 +223,9 @@ renameVariableInValue old new value =
     case value of
         VBool value -> 
             VBool (renameBoolExpr old new value)
+
+        VUnit ->
+            VUnit
 
         Receive { channelName, creator } -> 
             Receive (if channelName == old then new else channelName) creator
