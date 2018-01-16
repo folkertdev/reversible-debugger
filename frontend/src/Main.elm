@@ -40,10 +40,6 @@ icon awesome size =
     Element.html (awesome Color.white size)
 
 
-type alias Current =
-    Types.ReplState
-
-
 main =
     Html.program
         { init = init "cats"
@@ -57,13 +53,18 @@ main =
 -- MODEL
 
 
+type Example
+    = ThreeBuyer
+    | AsynchAnd
+
+
 type alias Model =
-    { replState : Maybe Current }
+    { replState : Maybe Types.ReplState, example : Example }
 
 
 init : String -> ( Model, Cmd Msg )
 init topic =
-    ( Model Nothing
+    ( { replState = Nothing, example = ThreeBuyer }
     , Http.send InitialState (Api.initialize Examples.threeBuyer)
     )
 
@@ -73,16 +74,17 @@ init topic =
 
 
 type Msg
-    = InitialState (Result Http.Error Current)
+    = InitialState (Result Http.Error Types.ReplState)
     | Step Instruction
-    | Stepped (Result Http.Error Current)
+    | Stepped (Result Http.Error Types.ReplState)
+    | SwitchExample Example
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         InitialState (Ok newUrl) ->
-            ( Model (Just newUrl), Cmd.none )
+            ( { model | replState = Just newUrl }, Cmd.none )
 
         InitialState (Err e) ->
             let
@@ -102,7 +104,7 @@ update msg model =
                     ( model, Cmd.none )
 
         Stepped (Ok newUrl) ->
-            ( Model (Just newUrl), Cmd.none )
+            ( { model | replState = Just newUrl }, Cmd.none )
 
         Stepped (Err e) ->
             let
@@ -110,6 +112,21 @@ update msg model =
                     Debug.log "decoding error" e
             in
             ( model, Cmd.none )
+
+        SwitchExample example ->
+            if model.example == example then
+                ( model, Cmd.none )
+            else
+                let
+                    exampleString =
+                        case example of
+                            ThreeBuyer ->
+                                Examples.threeBuyer
+
+                            AsynchAnd ->
+                                Examples.asynchAnd
+                in
+                ( { model | example = example }, Http.send InitialState (Api.initialize exampleString) )
 
 
 
@@ -211,7 +228,6 @@ viewThread context n activity thread =
             [ lookupTypeState thread.actor context
                 |> Maybe.map viewLocalTypeState
                 |> Maybe.withDefault Element.empty
-            , Element.text (toString thread.program)
             ]
         ]
 

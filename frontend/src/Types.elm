@@ -40,20 +40,20 @@ tuple3 a b c =
         |> required "contents" (index 2 c)
 
 
-sent channelName payload creator =
-    Sent { channelName = channelName, payload = payload, creator = creator }
+sent channelName payload =
+    Sent { channelName = channelName, payload = payload }
 
 
-received channelName binding variableName creator =
-    Received { channelName = channelName, binding = binding, variableName = variableName, creator = creator }
+received channelName binding variableName =
+    Received { channelName = channelName, binding = binding, variableName = variableName }
 
 
-receive channelName creator =
-    Receive { channelName = channelName, creator = creator }
+receive channelName =
+    Receive { channelName = channelName }
 
 
-send channelName payload creator =
-    Send { channelName = channelName, payload = payload, creator = creator }
+send channelName payload =
+    Send { channelName = channelName, payload = payload }
 
 
 decodeResult : Decoder error -> Decoder value -> Decoder (Result error value)
@@ -682,13 +682,11 @@ type History
     | Sent
         { channelName : Identifier
         , payload : Identifier
-        , creator : PID
         }
     | Received
         { channelName : Identifier
         , binding : Identifier
         , variableName : Identifier
-        , creator : PID
         }
     | CreatedVariable Identifier
     | CreatedChannel Identifier
@@ -715,14 +713,12 @@ decodeHistory =
                         decode sent
                             |> required "channelName" decodeIdentifier
                             |> required "payload" decodeIdentifier
-                            |> required "creator" decodePID
 
                     "Received" ->
                         decode received
                             |> required "channelName" decodeIdentifier
                             |> required "binding" decodeIdentifier
                             |> required "variableName" decodeIdentifier
-                            |> required "creator" decodePID
 
                     "CreatedVariable" ->
                         decode CreatedVariable
@@ -781,7 +777,6 @@ encodeHistory x =
                 [ ( "tag", Json.Encode.string "Sent" )
                 , ( "channelName", encodeIdentifier x.channelName )
                 , ( "payload", encodeIdentifier x.payload )
-                , ( "creator", encodePID x.creator )
                 ]
 
         Received x ->
@@ -790,7 +785,6 @@ encodeHistory x =
                 , ( "channelName", encodeIdentifier x.channelName )
                 , ( "binding", encodeIdentifier x.binding )
                 , ( "variableName", encodeIdentifier x.variableName )
-                , ( "creator", encodePID x.creator )
                 ]
 
         CreatedVariable y0 ->
@@ -839,7 +833,6 @@ encodeHistory x =
 type Value
     = Receive
         { channelName : Identifier
-        , creator : PID
         }
     | Procedure (List Identifier) Program
     | Port
@@ -857,7 +850,6 @@ decodeValue =
                     "Receive" ->
                         decode receive
                             |> required "channelName" decodeIdentifier
-                            |> required "creator" decodePID
 
                     "Procedure" ->
                         decode Procedure
@@ -890,7 +882,6 @@ encodeValue x =
             Json.Encode.object
                 [ ( "tag", Json.Encode.string "Receive" )
                 , ( "channelName", encodeIdentifier x.channelName )
-                , ( "creator", encodePID x.creator )
                 ]
 
         Procedure y0 y1 ->
@@ -1034,7 +1025,6 @@ type Program
     | Send
         { channelName : Identifier
         , payload : Identifier
-        , creator : PID
         }
     | Assert BoolExpr
     | ChangeActor (StackAction Identifier)
@@ -1080,7 +1070,6 @@ decodeProgram =
                         decode send
                             |> required "channelName" decodeIdentifier
                             |> required "payload" decodeIdentifier
-                            |> required "creator" decodePID
 
                     "Assert" ->
                         decode Assert
@@ -1139,7 +1128,6 @@ encodeProgram x =
                 [ ( "tag", Json.Encode.string "Send" )
                 , ( "channelName", encodeIdentifier x.channelName )
                 , ( "payload", encodeIdentifier x.payload )
-                , ( "creator", encodePID x.creator )
                 ]
 
         Assert y0 ->
