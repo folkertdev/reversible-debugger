@@ -210,7 +210,7 @@ sendParser = do
             whitespaceOrComment 
             char '}'
             whitespaceOrComment 
-            return $ Send id1 value PID.master
+            return $ Send id1 value 
 
 threadHeader = do
     try $ string "thread"
@@ -268,7 +268,7 @@ valueParser =
             name <- identifierParser
             char '}'
             whitespaceOrComment 
-            return $ Receive name PID.master
+            return $ Receive name 
 
         portParser = do
             string "port"

@@ -44,8 +44,8 @@ sent channelName payload creator =
     Sent { channelName = channelName, payload = payload, creator = creator }
 
 
-received channelName binding payload creator =
-    Received { channelName = channelName, binding = binding, payload = payload, creator = creator }
+received channelName binding variableName creator =
+    Received { channelName = channelName, binding = binding, variableName = variableName, creator = creator }
 
 
 receive channelName creator =
@@ -92,6 +92,46 @@ encodeResult encodeError encodeValue x =
             Json.Encode.object
                 [ ( "tag", Json.Encode.string "Err" )
                 , ( "contents", encodeError y0 )
+                ]
+
+
+type StackAction a
+    = Push a
+    | Pop a
+
+
+decodeStackAction : Decoder value -> Decoder (StackAction value)
+decodeStackAction valueDecoder =
+    field "tag" string
+        |> andThen
+            (\x ->
+                case x of
+                    "Push" ->
+                        decode Push
+                            |> required "contents" valueDecoder
+
+                    "Pop" ->
+                        decode Pop
+                            |> required "contents" valueDecoder
+
+                    _ ->
+                        fail <| "Constructor not matched, got " ++ x
+            )
+
+
+encodeStackAction : Encoder value -> StackAction value -> Json.Encode.Value
+encodeStackAction encodeValue x =
+    case x of
+        Push y0 ->
+            Json.Encode.object
+                [ ( "tag", Json.Encode.string "Push" )
+                , ( "contents", encodeValue y0 )
+                ]
+
+        Pop y0 ->
+            Json.Encode.object
+                [ ( "tag", Json.Encode.string "Pop" )
+                , ( "contents", encodeValue y0 )
                 ]
 
 
@@ -407,7 +447,7 @@ type alias Context =
     , variableCount : Int
     , channels : Dict String ( PID, Queue )
     , threads : Dict (List Int) Int
-    , participantMap : Dict (List Int) Identifier
+    , participantMap : Dict (List Int) Actor
     , localTypeStates : Dict String LocalTypeState
     , globalType : GlobalType
     }
@@ -420,7 +460,7 @@ decodeContext =
         |> required "variableCount" int
         |> required "channels" (dict (map2 (,) (index 0 decodePID) (index 1 decodeQueue)))
         |> required "threads" (map Dict.fromList (list (map2 (,) (index 0 (list int)) (index 1 int))))
-        |> required "participantMap" (map Dict.fromList (list (map2 (,) (index 0 (list int)) (index 1 decodeIdentifier))))
+        |> required "participantMap" (map Dict.fromList (list (map2 (,) (index 0 (list int)) (index 1 decodeActor))))
         |> required "localTypeStates" (tupleDict decodeLocalTypeState)
         |> required "globalType" decodeGlobalType
 
@@ -432,7 +472,7 @@ encodeContext x =
         , ( "variableCount", Json.Encode.int x.variableCount )
         , ( "channels", Exts.Json.Encode.dict Json.Encode.string (Exts.Json.Encode.tuple2 encodePID encodeQueue) x.channels )
         , ( "threads", Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) Json.Encode.int x.threads )
-        , ( "participantMap", Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeIdentifier x.participantMap )
+        , ( "participantMap", Exts.Json.Encode.dict (Json.Encode.list << List.map Json.Encode.int) encodeActor x.participantMap )
         , ( "localTypeStates", Exts.Json.Encode.dict Json.Encode.string encodeLocalTypeState x.localTypeStates )
         , ( "globalType", encodeGlobalType x.globalType )
         ]
@@ -556,6 +596,7 @@ encodeThreadState x =
 
 type alias Thread =
     { pid : PID
+    , actor : Actor
     , history : List History
     , program : List Program
     }
@@ -565,6 +606,7 @@ decodeThread : Decoder Thread
 decodeThread =
     decode Thread
         |> required "pid" decodePID
+        |> required "actor" decodeActor
         |> required "history" (list decodeHistory)
         |> required "program" (list decodeProgram)
 
@@ -573,6 +615,7 @@ encodeThread : Thread -> Json.Encode.Value
 encodeThread x =
     Json.Encode.object
         [ ( "pid", encodePID x.pid )
+        , ( "actor", encodeActor x.actor )
         , ( "history", (Json.Encode.list << List.map encodeHistory) x.history )
         , ( "program", (Json.Encode.list << List.map encodeProgram) x.program )
         ]
@@ -617,6 +660,22 @@ encodePID x =
             (Json.Encode.list << List.map Json.Encode.int) y0
 
 
+type alias Participant =
+    Identifier
+
+
+type alias Actor =
+    List Participant
+
+
+decodeActor =
+    list decodeIdentifier
+
+
+encodeActor participants =
+    (Json.Encode.list << List.map encodeIdentifier) participants
+
+
 type History
     = Skipped
     | Composed
@@ -628,15 +687,16 @@ type History
     | Received
         { channelName : Identifier
         , binding : Identifier
-        , payload : Identifier
+        , variableName : Identifier
         , creator : PID
         }
     | CreatedVariable Identifier
     | CreatedChannel Identifier
     | CalledProcedure Identifier (List Identifier)
-    | SpawnedThread (Maybe Identifier) PID
+    | SpawnedThread Actor PID
     | BranchedOn BoolExpr Bool Program
     | AssertedOn BoolExpr
+    | ChangedActor (StackAction Identifier)
 
 
 decodeHistory : Decoder History
@@ -661,7 +721,7 @@ decodeHistory =
                         decode received
                             |> required "channelName" decodeIdentifier
                             |> required "binding" decodeIdentifier
-                            |> required "payload" decodeIdentifier
+                            |> required "variableName" decodeIdentifier
                             |> required "creator" decodePID
 
                     "CreatedVariable" ->
@@ -679,7 +739,7 @@ decodeHistory =
 
                     "SpawnedThread" ->
                         decode SpawnedThread
-                            |> required "contents" (index 0 (nullable decodeIdentifier))
+                            |> required "contents" (index 0 decodeActor)
                             |> required "contents" (index 1 decodePID)
 
                     "BranchedOn" ->
@@ -691,6 +751,10 @@ decodeHistory =
                     "AssertedOn" ->
                         decode AssertedOn
                             |> required "contents" decodeBoolExpr
+
+                    "ChangedActor" ->
+                        decode ChangedActor
+                            |> required "contents" (decodeStackAction decodeIdentifier)
 
                     _ ->
                         fail <| "History: Constructor not matched, got " ++ x
@@ -725,7 +789,7 @@ encodeHistory x =
                 [ ( "tag", Json.Encode.string "Received" )
                 , ( "channelName", encodeIdentifier x.channelName )
                 , ( "binding", encodeIdentifier x.binding )
-                , ( "payload", encodeIdentifier x.payload )
+                , ( "variableName", encodeIdentifier x.variableName )
                 , ( "creator", encodePID x.creator )
                 ]
 
@@ -750,7 +814,7 @@ encodeHistory x =
         SpawnedThread y0 y1 ->
             Json.Encode.object
                 [ ( "tag", Json.Encode.string "SpawnedThread" )
-                , ( "contents", Json.Encode.list [ (Maybe.withDefault Json.Encode.null << Maybe.map encodeIdentifier) y0, encodePID y1 ] )
+                , ( "contents", Json.Encode.list [ encodeActor y0, encodePID y1 ] )
                 ]
 
         BranchedOn y0 y1 y2 ->
@@ -765,6 +829,12 @@ encodeHistory x =
                 , ( "contents", encodeBoolExpr y0 )
                 ]
 
+        ChangedActor y0 ->
+            Json.Encode.object
+                [ ( "tag", Json.Encode.string "ChangedActor" )
+                , ( "contents", encodeStackAction encodeIdentifier y0 )
+                ]
+
 
 type Value
     = Receive
@@ -775,6 +845,7 @@ type Value
     | Port
     | VInt IntExpr
     | VBool BoolExpr
+    | VUnit
 
 
 decodeValue : Decoder Value
@@ -803,6 +874,9 @@ decodeValue =
                     "VBool" ->
                         decode VBool
                             |> required "contents" decodeBoolExpr
+
+                    "VUnit" ->
+                        decode VUnit
 
                     _ ->
                         fail <| "Value: Constructor not matched, got " ++ x
@@ -841,6 +915,13 @@ encodeValue x =
             Json.Encode.object
                 [ ( "tag", Json.Encode.string "VBool" )
                 , ( "contents", encodeBoolExpr y0 )
+                ]
+
+        VUnit ->
+            Json.Encode.object
+                [ ( "tag", Json.Encode.string "VUnit" )
+
+                -- , ( "contents", encodeBoolExpr y0 )
                 ]
 
 
@@ -947,7 +1028,7 @@ type Program
     = Sequence Program Program
     | Let Identifier Value Program
     | If BoolExpr Program Program
-    | SpawnThread (Maybe Identifier) Program
+    | SpawnThread Actor Program
     | Skip
     | Apply Identifier (List Identifier)
     | Send
@@ -956,6 +1037,7 @@ type Program
         , creator : PID
         }
     | Assert BoolExpr
+    | ChangeActor (StackAction Identifier)
 
 
 decodeProgram : Decoder Program
@@ -983,7 +1065,7 @@ decodeProgram =
 
                     "SpawnThread" ->
                         decode SpawnThread
-                            |> required "contents" (index 0 (nullable decodeIdentifier))
+                            |> required "contents" (index 0 decodeActor)
                             |> required "contents" (index 1 decodeProgram)
 
                     "Skip" ->
@@ -1003,6 +1085,10 @@ decodeProgram =
                     "Assert" ->
                         decode Assert
                             |> required "contents" decodeBoolExpr
+
+                    "ChangeActor" ->
+                        decode ChangeActor
+                            |> required "contents" (decodeStackAction decodeIdentifier)
 
                     _ ->
                         fail <| "Program: Constructor not matched, got " ++ x
@@ -1033,7 +1119,7 @@ encodeProgram x =
         SpawnThread y0 y1 ->
             Json.Encode.object
                 [ ( "tag", Json.Encode.string "SpawnThread" )
-                , ( "contents", Json.Encode.list [ (Maybe.withDefault Json.Encode.null << Maybe.map encodeIdentifier) y0, encodeProgram y1 ] )
+                , ( "contents", Json.Encode.list [ encodeActor y0, encodeProgram y1 ] )
                 ]
 
         Skip ->
@@ -1062,6 +1148,12 @@ encodeProgram x =
                 , ( "contents", encodeBoolExpr y0 )
                 ]
 
+        ChangeActor y0 ->
+            Json.Encode.object
+                [ ( "tag", Json.Encode.string "ChangeActor" )
+                , ( "contents", encodeStackAction encodeIdentifier y0 )
+                ]
+
 
 type alias Queue =
     { past : List QueueHistory
@@ -1088,7 +1180,7 @@ type alias Item =
     { sender : Identifier
     , receiver : Identifier
     , type_ : String
-    , payload : Identifier
+    , payload : Value
     }
 
 
@@ -1098,7 +1190,7 @@ decodeItem =
         |> required "sender" decodeIdentifier
         |> required "receiver" decodeIdentifier
         |> required "type_" string
-        |> required "payload" decodeIdentifier
+        |> required "payload" decodeValue
 
 
 encodeItem : Item -> Json.Encode.Value
@@ -1107,7 +1199,7 @@ encodeItem x =
         [ ( "sender", encodeIdentifier x.sender )
         , ( "receiver", encodeIdentifier x.receiver )
         , ( "type_", Json.Encode.string x.type_ )
-        , ( "payload", encodeIdentifier x.payload )
+        , ( "payload", encodeValue x.payload )
         ]
 
 

@@ -20,7 +20,8 @@ import Svg exposing (Svg)
 import Svg.Attributes as Svg
 import Types
     exposing
-        ( Context
+        ( Actor
+        , Context
         , ExhaustableZipper(..)
         , GlobalAtom
         , GlobalType
@@ -63,7 +64,7 @@ type alias Model =
 init : String -> ( Model, Cmd Msg )
 init topic =
     ( Model Nothing
-    , Http.send InitialState (Api.initialize Examples.asynchAnd)
+    , Http.send InitialState (Api.initialize Examples.threeBuyer)
     )
 
 
@@ -84,6 +85,10 @@ update msg model =
             ( Model (Just newUrl), Cmd.none )
 
         InitialState (Err e) ->
+            let
+                _ =
+                    Debug.log "initial error" e
+            in
             ( model, Cmd.none )
 
         Step instruction ->
@@ -100,6 +105,10 @@ update msg model =
             ( Model (Just newUrl), Cmd.none )
 
         Stepped (Err e) ->
+            let
+                _ =
+                    Debug.log "decoding error" e
+            in
             ( model, Cmd.none )
 
 
@@ -179,7 +188,7 @@ viewThread context n activity thread =
             thread
 
         localTypeState =
-            lookupTypeState thread.pid context
+            lookupTypeState thread.actor context
 
         header =
             case localTypeState of
@@ -199,9 +208,10 @@ viewThread context n activity thread =
             ]
         , Element.row None
             [ spread ]
-            [ lookupTypeState thread.pid context
+            [ lookupTypeState thread.actor context
                 |> Maybe.map viewLocalTypeState
                 |> Maybe.withDefault Element.empty
+            , Element.text (toString thread.program)
             ]
         ]
 
@@ -213,12 +223,14 @@ viewContext context =
     , viewBindings context.bindings
     , Element.bold "Channels"
     , viewChannels context.channels
+    , Element.bold "LocalTypeState"
+    , Element.text (toString context.localTypeStates)
     ]
 
 
-lookupTypeState : PID -> Context -> Maybe Types.LocalTypeState
-lookupTypeState (PID pid) { participantMap, localTypeStates } =
-    Dict.get pid participantMap
+lookupTypeState : Actor -> Context -> Maybe Types.LocalTypeState
+lookupTypeState actor { participantMap, localTypeStates } =
+    List.head actor
         |> Maybe.andThen (\(Types.Identifier i) -> Dict.get i localTypeStates)
 
 

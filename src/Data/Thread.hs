@@ -26,7 +26,7 @@ data Thread history a
 
 instance (Show history, Show a) => Show (Thread history a) where 
     show (Thread pid actor history program) = 
-        "Thread " ++ show pid 
+        "Thread " ++ show pid ++ " - " ++ show actor 
             ++ "\n"
             ++ "\n"
             ++ "instruction stack: "

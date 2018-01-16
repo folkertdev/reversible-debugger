@@ -3,6 +3,8 @@ module MicroOz
     (Program(..)
     , History(..)
     , Value(..)
+    , Execution
+    , StackAction(..)
     , ForwardMsg(..)
     , BackwardMsg(..)
     , advanceP
@@ -10,7 +12,6 @@ module MicroOz
     , MicroOz.init
     , IntOperator(..)
     , BooleanOperator(..)
-    , renameCreator
     ) where
 
 
@@ -20,10 +21,14 @@ import Control.Applicative (liftA2)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 
+import qualified Utils.Maybe as Maybe
+import qualified Utils.Result as Result
+
 import qualified SessionType
 import SessionType (LocalAtom(sender, receiver, type_), LocalTypeState(participant))
 import qualified Queue 
 import Data.Thread as Thread
+import Data.ThreadState (ThreadState) 
 import Data.Context as Context 
 import Data.PID as PID (PID, create, parent, child)
 import Data.Expr
@@ -41,6 +46,19 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Text as Text
 import Data.Monoid ((<>))
 
+{-| The main type keeping the context of the execution
+
+It's a `StateT` that has read and write access to a tuple of two values
+
+* `Context Value` stores variable bindings, channels and handles fresh variable name generation
+* `ThreadState History Program` contains the threads 
+
+Additionally, any computation `Either` succeed, or fail producing an `Error`.
+
+Finally, a value of type `a` is produced.
+-}
+type Execution a = StateT (Context Value) (Either Error) a
+
 type Queue = Queue.Queue
 type QueueHistory = Queue.QueueHistory
 
@@ -54,7 +72,7 @@ init globalType types program =
 
 {-| Values in the language. These may appear on the right-hand side of a variable declaration -} 
 data Value 
-    = Receive { channelName :: Identifier, creator :: PID } 
+    = Receive { channelName :: Identifier } 
     | Procedure (List Identifier) Program
     | Port 
     | VInt IntExpr 
@@ -67,8 +85,8 @@ data Value
 data History 
     = Skipped
     | Composed 
-    | Sent { channelName :: Identifier, payload :: Identifier, creator :: PID }
-    | Received { channelName :: Identifier, binding :: Identifier, variableName :: Identifier , creator :: PID }
+    | Sent { channelName :: Identifier, payload :: Identifier }
+    | Received { channelName :: Identifier, binding :: Identifier, variableName :: Identifier }
     | CreatedVariable Identifier
     | CreatedChannel Identifier
     | CalledProcedure Identifier (List Identifier)
@@ -89,7 +107,7 @@ data Program
     | SpawnThread Actor Program
     | Skip
     | Apply Identifier (List Identifier)
-    | Send { channelName :: Identifier, payload :: Identifier, creator :: PID } 
+    | Send { channelName :: Identifier, payload :: Identifier } 
     | Assert BoolExpr
     | ChangeActor (StackAction Participant) 
     deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
@@ -137,57 +155,6 @@ evalBoolExpr expression =
 
 -- RENAMING
 
-renameCreator :: PID -> Program -> Program
-renameCreator new program = 
-    case program of
-        Sequence a b -> 
-            Sequence (renameCreator new a) (renameCreator new b)
-
-        Let name value continuation -> 
-            Let name (renameCreatorInValue new value) (renameCreator new continuation)
-
-        If condition trueBody falseBody -> 
-            If condition (renameCreator new trueBody) (renameCreator new falseBody)
-
-        SpawnThread name work ->
-            SpawnThread name (renameCreator new work)
-
-        Skip -> Skip
-
-        Assert condition -> 
-            Assert condition
-
-        Apply f args -> 
-            Apply f args 
-
-        Send { channelName, payload } -> 
-            Send channelName payload new
-
-        ChangeActor actor ->
-            ChangeActor actor 
-
-
-renameCreatorInValue :: PID -> Value -> Value 
-renameCreatorInValue new value = 
-    case value of
-        VBool value -> 
-            VBool value 
-
-        VUnit ->
-            VUnit
-
-        Receive { channelName } -> 
-            Receive channelName new
-
-        Procedure arguments body -> 
-            Procedure arguments $ renameCreator new body
-
-        Port -> Port
-
-        VInt value -> 
-            VInt value 
-
-
 {-| Rename a variable in the whole expression
 
 Renaming is used in evaluating a function, where the paramater names in the body 
@@ -221,8 +188,8 @@ renameVariable old new program =
         Apply f args -> 
             Apply (tagger f) (map tagger args)
 
-        Send { channelName, payload, creator } -> 
-            Send (tagger channelName) (tagger payload) creator
+        Send { channelName, payload } -> 
+            Send (tagger channelName) (tagger payload) 
 
         ChangeActor actor ->
             ChangeActor actor 
@@ -236,8 +203,8 @@ renameVariableInValue old new value =
         VUnit ->
             VUnit
 
-        Receive { channelName, creator } -> 
-            Receive (if channelName == old then new else channelName) creator
+        Receive { channelName } -> 
+            Receive (if channelName == old then new else channelName) 
 
         Procedure arguments body -> 
             if old `elem` arguments then
@@ -261,7 +228,7 @@ delayed program =
 
 asParticipant :: Participant -> Program -> Program
 asParticipant participant program = 
-    foldl (flip Sequence) Skip [ ChangeActor (Push participant), program, ChangeActor (Pop participant) ]
+    foldl (Sequence) Skip [ ChangeActor (Push participant), program, ChangeActor (Pop participant) ]
 
 
 
@@ -280,152 +247,160 @@ newtype ForwardMsg
     = Spawn (Thread History Program) 
     deriving (Show)
 
-currentParticipant :: (MonadState (Context Value) m, MonadError Error m) => Actor -> m Participant
-currentParticipant actor = 
-    case Actor.toList actor of
-        [] -> 
-            Except.throwError $ RuntimeException "actor has no participant"
 
-        (x:_) -> 
-            return x
+receive :: 
+        PID 
+        -> Actor
+        -> (Identifier, Value, Program) 
+        -> List Program
+        -> ChannelName 
+        -> LocalTypeState String 
+        -> Execution (LocalTypeState String, (History, Actor, [Program], Cmd.Cmd ForwardMsg))
+receive pid currentActor (identifier, value, continuation) rest channelName localTypeState = 
+    SessionType.forwardWithReceive localTypeState
+        |> Result.mapError formatError
+        |> Result.map handleMessage
+        |> Result.unwrap
+
+  where 
+    formatError e = 
+        error $ "The session type won't allow moving forward with a send" ++ show e
+
+    handleMessage :: (Identifier, String, LocalTypeState String)
+      -> Execution (LocalTypeState String, (History, Actor, [Program], Cmd.Cmd a0)) 
+    handleMessage  ( expectedSender, valueType, newLocalTypeState ) = do
+        participant <- currentParticipant currentActor 
+        message <- readChannel pid expectedSender participant valueType channelName 
+
+        let assign channelName value = do
+                variableName <- Context.insertVariable pid value 
+                return 
+                    ( Received{ channelName = channelName, binding = identifier, variableName = variableName } 
+                        , currentActor 
+                        , renameVariable identifier variableName continuation : rest
+                        , Cmd.none 
+                    ) 
+        message
+            |> Maybe.map (\value -> (,) newLocalTypeState <$> assign channelName value)
+            |> Maybe.withDefault (Except.throwError $ BlockedOnReceive pid)
 
 
 {-| Take one step forward -} 
-advanceP :: (MonadState (Context Value) m, MonadError Error m) 
-    => PID 
+advanceP :: 
+    PID 
     -> Actor
     -> Program 
     -> List Program 
-    -> m ( History, Actor, List Program, Cmd.Cmd ForwardMsg)
+    -> Execution ( History, Actor, List Program, Cmd.Cmd ForwardMsg)
 advanceP pid currentActor program rest = 
     let continue history rest = return ( history, currentActor, rest, Cmd.none ) 
     in
         case program of
-                Skip ->
-                    continue Skipped rest 
+            Skip ->
+                continue Skipped rest 
 
-                Sequence a b ->
-                    continue Composed (a:b:rest)
+            Sequence a b ->
+                continue Composed (a:b:rest)
 
-                ChangeActor action -> 
-                    let 
-                        newActor = 
-                            case action of 
-                                Pop participant -> Actor.pop currentActor
-                                Push participant -> Actor.push participant currentActor
+            ChangeActor action -> 
+                let 
+                    newActor = 
+                        case action of 
+                            Pop participant -> Actor.pop currentActor
+                            Push participant -> Actor.push participant currentActor
+                in
+                    return ( ChangedActor action, newActor, rest, Cmd.none ) 
+
+            Let identifier value continuation -> do
+                case value of
+                    Receive { channelName } ->
+                        receive pid currentActor (identifier, value, continuation) rest channelName
+                            |> Context.modifyLocalTypeStateM currentActor 
+
+                    Port -> do
+                        channelName <- Context.insertChannel pid Queue.empty
+                        continue (CreatedChannel channelName) $
+                            renameVariable identifier channelName continuation : rest
+
+                    Procedure arguments body -> do
+                        functionName <- Context.insertBinding pid $ \functionName -> 
+                            -- rename the function name itself in the body, for recursive functions
+                            let renamedBody = 
+                                    if identifier `notElem` arguments then
+                                        renameVariable identifier functionName body
+                                    else
+                                        body
+
+                            in
+                                Procedure arguments renamedBody 
+
+                        continue (CreatedVariable functionName) $
+                            renameVariable identifier functionName continuation : rest
+                        
+
+                    _ -> do
+                        variableName <- Context.insertVariable pid value 
+                        continue (CreatedVariable variableName) $
+                            renameVariable identifier variableName continuation : rest
+
+
+            If condition trueBody falseBody -> do
+                verdict <- evalBoolExpr condition 
+                if verdict then
+                    continue (BranchedOn condition True falseBody) (trueBody : rest)
+                else
+                    continue (BranchedOn condition False trueBody) (falseBody : rest)
+
+            Assert condition -> do
+                verdict <- evalBoolExpr condition 
+                if not verdict then
+                   Except.throwError $ AssertionError (show condition)
+                else
+                    continue (AssertedOn condition) rest
+
+
+            SpawnThread actor work -> do
+                thread@(Thread threadName _ _ _) <- Context.insertThread pid actor [] [ work ] 
+
+                return 
+                    ( SpawnedThread actor threadName
+                    , currentActor
+                    , rest
+                    , Cmd.create $ Spawn thread
+                    ) 
+
+            Apply functionName arguments -> do
+                ( parameters, body ) <- lookupProcedure functionName 
+                if length arguments /= length parameters then
+                    Except.throwError $ ArgumentMismatch functionName (length parameters) (length arguments) 
+                else 
+                    let
+                        withRenamedVariables = 
+                                foldr (uncurry renameVariable) body (zip parameters arguments)
                     in
-                        return ( ChangedActor action, newActor, rest, Cmd.none ) 
-
-                Let identifier value continuation -> 
-                    case value of
-                        Receive { channelName, creator } -> 
-                            Context.modifyLocalTypeStateM creator $ \localTypeState -> 
-                                case SessionType.forwardWithReceive localTypeState of
-                                    Left e -> 
-                                        error $ unwords [ show e, show pid, show program ] -- Except.throwError $ BlockedOnReceive pid
-
-                                    Right ( expectedSender, valueType, newLocalTypeState ) -> do
-                                        participant <- currentParticipant currentActor 
-                                        message <- readChannel pid expectedSender participant valueType channelName 
-                                        case message of
-                                            Nothing ->
-                                                -- blocked on receive
-                                                Except.throwError $ BlockedOnReceive pid
-
-                                            Just value -> do
-                                                variableName <- Context.insertVariable pid value 
-                                                return ( newLocalTypeState, 
-                                                    ( Received{ channelName = channelName, binding = identifier, variableName = variableName, creator = creator } 
-                                                        , currentActor 
-                                                        , renameVariable identifier variableName continuation : rest
-                                                        , Cmd.none 
-                                                    ) )
-
-                        Port -> do
-                            channelName <- Context.insertChannel pid Queue.empty
-                            continue (CreatedChannel channelName) $
-                                renameVariable identifier channelName continuation : rest
-
-                        Procedure arguments body -> do
-                            functionName <- Context.insertBinding pid $ \functionName -> 
-                                -- rename the function name itself in the body, for recursive functions
-                                let renamedBody = 
-                                        if identifier `notElem` arguments then
-                                            renameVariable identifier functionName body
-                                        else
-                                            body
-
-                                in
-                                    Procedure arguments renamedBody 
-
-                            continue (CreatedVariable functionName) $
-                                renameVariable identifier functionName continuation : rest
+                        continue (CalledProcedure functionName arguments) (withRenamedVariables : rest)
                             
+            Send { channelName, payload } -> 
+                Context.modifyLocalTypeStateM currentActor $ \localTypeState -> 
+                    case SessionType.forwardWithSend localTypeState of 
+                        Right (expectedReceiver, valueType, newLocalTypeState) -> do
+                            participant <- currentParticipant currentActor 
+                            value <- procedureAsParticipant participant <$> lookupVariable payload 
+                            writeChannel pid participant expectedReceiver valueType channelName value 
+                            return 
+                                ( newLocalTypeState
+                                    , ( Sent channelName payload 
+                                    , currentActor 
+                                    , rest 
+                                    , Cmd.none 
+                                      )
+                                )
 
-                        _ -> do
-                            variableName <- Context.insertVariable pid value 
-                            continue (CreatedVariable variableName) $
-                                renameVariable identifier variableName continuation : rest
+                        Left e -> 
+                            -- Except.throwError $ BlockedOnReceive pid
+                            error "wants to send but session type won't allow it"
 
 
-                If condition trueBody falseBody -> do
-                    verdict <- evalBoolExpr condition 
-                    if verdict then
-                        continue (BranchedOn condition True falseBody) (trueBody : rest)
-                    else
-                        continue (BranchedOn condition False trueBody) (falseBody : rest)
-
-                Assert condition -> do
-                    verdict <- evalBoolExpr condition 
-                    if not verdict then
-                       Except.throwError $ AssertionError (show condition)
-                    else
-                        continue (AssertedOn condition) rest
-
-
-                SpawnThread actor work -> do
-                    thread@(Thread threadName _ _ _) <- Context.insertThread pid actor [] [ work ] 
-
-                    -- if there is a type name, insert this thread as a actor
-                    Context.insertParticipant threadName actor 
-
-                    return 
-                        ( SpawnedThread actor threadName
-                        , currentActor
-                        , rest
-                        , Cmd.create $ Spawn thread
-                        ) 
-
-                Apply functionName arguments -> do
-                    ( parameters, body ) <- lookupProcedure functionName 
-                    if length arguments /= length parameters then
-                        Except.throwError $ ArgumentMismatch functionName (length parameters) (length arguments) 
-                    else 
-                        let
-                            withRenamedVariables = 
-                                    foldr (uncurry renameVariable) body (zip parameters arguments)
-                        in
-                            continue (CalledProcedure functionName arguments) (withRenamedVariables : rest)
-                                
-                Send { channelName, payload, creator } -> 
-                    Context.modifyLocalTypeStateM creator $ \localTypeState -> 
-                        case SessionType.forwardWithSend localTypeState of 
-                            Right (expectedReceiver, valueType, newLocalTypeState) -> do
-                                participant <- currentParticipant currentActor 
-                                value <- procedureAsParticipant participant <$> lookupVariable payload 
-                                writeChannel pid participant expectedReceiver valueType channelName value 
-                                return 
-                                    ( newLocalTypeState
-                                        , ( Sent channelName payload creator
-                                        , currentActor 
-                                        , rest 
-                                        , Cmd.none 
-                                          )
-                                    )
-
-                            Left e -> 
-                                -- Except.throwError $ BlockedOnReceive pid
-                                error "wants to send but session type won't allow it"
 
 
 {-| Wrap a function into a block that 
@@ -494,15 +469,15 @@ backwardP pid currentActor history program = do
                 ( CalledProcedure functionName arguments, body : restOfProgram ) ->
                     continue (Apply functionName arguments : restOfProgram)
 
-                ( Sent { channelName, payload, creator }, restOfProgram ) -> 
-                    Context.modifyLocalTypeStateM creator $ \localTypeState -> 
+                ( Sent { channelName, payload }, restOfProgram ) -> 
+                    Context.modifyLocalTypeStateM currentActor $ \localTypeState -> 
                         case SessionType.backwardWithSend localTypeState of
                             Left e -> 
                                 error $ show e
 
                             Right ( receiver, newLocalTypeState ) -> 
                                 withChannel channelName $ \queue -> do
-                                    participant <- Context.lookupParticipant creator
+                                    participant <- currentParticipant currentActor 
                                     case Queue.rollPush pid participant receiver queue of
                                         Right (newChannel, _) -> do
                                             mapChannel channelName (const newChannel)
@@ -510,10 +485,10 @@ backwardP pid currentActor history program = do
                                             return  ( newLocalTypeState,
                                                 ( True
                                                 , currentActor 
-                                                , Send channelName payload creator : restOfProgram
+                                                , Send channelName payload  : restOfProgram
                                                 , Cmd.none 
                                                 ))
-                                        Left (Queue.InvalidAction _) -> do
+                                        Left (Queue.InvalidAction _ _) -> do
                                             -- generate the list of actions on the channel that need to be undone
                                             -- including the current one: processing of the message will make us go
                                             -- into the `then` branch above.
@@ -529,17 +504,17 @@ backwardP pid currentActor history program = do
                                         Left e -> error $ "backward evaluation should not fail, but got" ++ show e
 
 
-                ( Received{ channelName, binding, variableName, creator }, continuation : restOfProgram ) -> do
+                ( Received{ channelName, binding, variableName }, continuation : restOfProgram ) -> do
                     value <- Context.lookupVariable variableName 
                     State.modify $ removeVariable variableName 
-                    Context.modifyLocalTypeStateM creator $ \localTypeState ->
+                    Context.modifyLocalTypeStateM currentActor $ \localTypeState ->
                         case SessionType.backwardWithReceive localTypeState of
                             Left e -> 
                                 error $ show e
 
                             Right ( sender, valueType, newLocalTypeState ) ->
                                 withChannel channelName $ \queue -> do
-                                    participant <- Context.lookupParticipant pid
+                                    participant <- currentParticipant currentActor 
 
                                     case Queue.rollPop pid participant sender valueType value queue of
                                         Right newChannel -> do
@@ -550,11 +525,11 @@ backwardP pid currentActor history program = do
                                                 ( newLocalTypeState
                                                     , ( True
                                                 , currentActor
-                                                , Let binding (Receive channelName creator) (renameVariable variableName binding continuation) : restOfProgram 
+                                                , Let binding (Receive channelName) (renameVariable variableName binding continuation) : restOfProgram 
                                                 , Cmd.none 
                                                 ))
 
-                                        Left (Queue.InvalidAction _) -> do
+                                        Left (Queue.InvalidAction _ _) -> do
                                             -- generate the list of actions on the channel that need to be undone
                                             -- including the current one: processing of the message will make us go
                                             -- into the `then` branch above.

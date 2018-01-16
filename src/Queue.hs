@@ -80,7 +80,7 @@ rollPop thread sender receiver valueType payload queue@Queue{past, items} =
                     pure $ Queue  (h : hs) [value]
 
         Queue ( Added  pid : _ ) [] -> 
-            Except.throwError $ InvalidAction (Added pid)
+            Except.throwError $ InvalidAction "rollpop 1" (Added pid)
 
         Queue [] [] -> 
             Except.throwError RollPopEmptyQueue 
@@ -95,10 +95,10 @@ rollPop thread sender receiver valueType payload queue@Queue{past, items} =
                     if thread == pid then
                         pure $ Queue remaining (value : items ) 
                     else
-                        Except.throwError $ InvalidAction h
+                        Except.throwError $ InvalidAction "rollpop 2" h
 
                 ( Added pid, _ ) -> 
-                    Except.throwError $ InvalidAction (Added pid)
+                    Except.throwError $ InvalidAction "rollpop 3" (Added pid)
 
         Queue [] _ -> 
             error "impossible: no history but there are items"
@@ -106,7 +106,7 @@ rollPop thread sender receiver valueType payload queue@Queue{past, items} =
 data QueueRollError
     = RollPushEmptyQueue
     | RollPopEmptyQueue
-    | InvalidAction { expected :: QueueHistory } 
+    | InvalidAction { source :: String, expected :: QueueHistory } 
     deriving (Show, Eq)
 
 
@@ -118,7 +118,7 @@ rollPush thread sender receiver queue =
 
         Queue (h:_) [] -> 
             -- can't rollPush, but can rollPull if there is history
-            Except.throwError $ InvalidAction h
+            Except.throwError $ InvalidAction "rollPush 1" h
 
         Queue (h:history) (i:is) -> 
             case h of 
@@ -126,10 +126,10 @@ rollPush thread sender receiver queue =
                     if thread == pid then
                         pure ( Queue history is, i )
                     else
-                        Except.throwError $ InvalidAction h
+                        Except.throwError $ InvalidAction "rollpush 2" h
 
                 _ -> 
-                    Except.throwError $ InvalidAction h
+                    Except.throwError $ InvalidAction "rollpush 3" h
 
              
 

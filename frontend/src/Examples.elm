@@ -15,11 +15,13 @@ let d = port in
 // A
 thread Alice where
     let title = 42 in
-        {send d title} ;
-        let price = {receive d} in
-            {send d share};
-            let ok = {receive d} in
-                skip
+        let share = 1 in
+            {send d title} ;
+            let price = {receive d} in
+                {send d share};
+                let ok = {receive d} in
+                    skip
+                end
             end
         end
     end

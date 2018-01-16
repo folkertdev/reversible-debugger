@@ -32,6 +32,8 @@ library
                      , SessionType
                      , Queue
   other-modules:       Utils
+                     , Utils.Maybe
+                     , Utils.Result
   ghc-options:         -fwarn-incomplete-patterns
   build-depends:       base >= 4.7 && < 5
                      , transformers

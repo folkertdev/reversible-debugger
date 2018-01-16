@@ -20,22 +20,11 @@ import Types
 import qualified Cmd
 import Debug.Trace as Debug
 
-import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMsg(..), BackwardMsg(..), advanceP, backwardP, renameCreator) 
+import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMsg(..), BackwardMsg(..), advanceP, backwardP) 
 import qualified MicroOz
 
-
-{-| The main type keeping the context of the execution
-
-It's a `StateT` that has read and write access to a tuple of two values
-
-* `Context Value` stores variable bindings, channels and handles fresh variable name generation
-* `ThreadState History Program` contains the threads 
-
-Additionally, any computation `Either` succeed, or fail producing an `Error`.
-
-Finally, a value of type `a` is produced.
--}
 type Execution a = StateT (Context Value, ThreadState History Program) (Either Error) a
+
 
 
 rollSends :: Int -> ChannelName -> Execution () 
@@ -244,7 +233,7 @@ handleBackwardEffects action =
 
             let addHistory :: Thread History Program -> Thread History Program 
                 addHistory thread@Thread{pid, program} = 
-                    thread { program = SpawnThread actor (renameCreator pid threadProgram) : program }
+                    thread { program = SpawnThread actor threadProgram : program }
 
             State.modify (change $ ThreadState.mapActive addHistory . ThreadState.removeUninitialized toRoll) 
 
@@ -262,7 +251,7 @@ handleForwardEffects action =
     case action of
         Spawn thread@Thread { pid, program } ->
             -- add the thread to the state (it is in the context already)
-            State.modify $ change $ ThreadState.add $ thread { program = map (MicroOz.renameCreator pid) program }
+            State.modify $ change $ ThreadState.add $ thread { program = program }
 
 
 -- ATOMIC MOVING FUNCTIONS
@@ -366,8 +355,17 @@ advance thread@(Thread pid currentActor histories program) =
             return ( Done, Cmd.none )
 
         (p:ps) -> do
-            (h, newActor, newProgram, cmd ) <- advanceP pid currentActor p ps
+            (h, newActor, newProgram, cmd ) <- embed (advanceP pid currentActor p ps) 
             return ( Step $ Thread pid newActor (h:histories) newProgram, cmd )
+
+embed :: (MonadState s m, MonadError Error m) => StateT s (Either Error) a -> m a
+embed specific = do
+    state <- State.get
+    case State.runStateT specific state of
+        Left e -> Except.throwError e
+        Right (a, s) -> do
+            State.put s
+            return a
 
 
 rollback :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd BackwardMsg)

@@ -11,10 +11,8 @@ module Data.Context
     , removeVariable
     , lookupVariable
     , lookupCreator
-    , lookupParticipant
     , lookupLocalTypeState
     , modifyLocalTypeStateM
-    , insertParticipant
     , mapChannel
     , withChannel
     , readChannel
@@ -23,6 +21,7 @@ module Data.Context
     , removeChannel
     , insertThread
     , removeThread
+    , currentParticipant
     ) where 
 
 import Queue (Queue)
@@ -33,7 +32,7 @@ import qualified Data.Map as Map
 import Types
 import Data.Thread as Thread (Thread(..))
 import Data.PID as PID (PID, create, parent, child)
-import Data.Actor as Actor (Actor, toList, named, push)
+import Data.Actor as Actor (Participant, Actor, toList, named, push)
 import Data.List as List
 import Data.Monoid ((<>))
 
@@ -136,7 +135,7 @@ lookupLocalTypeState :: (MonadState (Context value) m, MonadError Error m) => Id
 lookupLocalTypeState = 
     lookupper localTypeStates 
 
-
+{-
 lookupParticipant :: (MonadState (Context value) m, MonadError Error m) => PID -> m Identifier 
 lookupParticipant pid = do
     context <- State.get
@@ -146,7 +145,7 @@ lookupParticipant pid = do
  
         (v:_) -> 
             return v 
-
+-}
 
 -- forwardWithReceive :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Identifier, t, LocalTypeState t)
 
@@ -158,11 +157,11 @@ putLocalTypeState identifier localTypeState =
             context { localTypeStates = newBindings } 
 
 modifyLocalTypeStateM :: (MonadState (Context value) m, MonadError Error m) 
-                      => PID 
+                      => Actor 
                       -> (SessionType.LocalTypeState String -> m (SessionType.LocalTypeState String, a)) 
                       ->  m a
-modifyLocalTypeStateM pid tagger = do
-    identifier <- lookupParticipant pid
+modifyLocalTypeStateM actor tagger = do 
+    identifier <- currentParticipant actor 
     typeState <- lookupLocalTypeState identifier
     (newTypeState, value) <- tagger typeState
     putLocalTypeState identifier newTypeState
@@ -200,15 +199,6 @@ insertBinding pid tagger = do
             context { bindings = newBindings } 
 
     return identifier
-
-insertParticipant :: MonadState (Context value) m => PID -> Actor -> m ()
-insertParticipant pid actor = 
-    State.modify $ \context ->
-        let newBindings = Map.insert pid actor (participantMap context)
-        in
-            context { participantMap = newBindings } 
-    
-    
 
 {-| Generate a guaranteed unused (fresh) new identifier -}
 freshIdentifier :: MonadState (Context value) m => m Identifier 
@@ -329,4 +319,14 @@ readChannel threadName sender receiver valueType identifier =
 writeChannel :: MonadState (Context value) m => PID -> Identifier -> Identifier -> String -> ChannelName -> value -> m ()  
 writeChannel threadName sender receiver valueType identifier payload = 
     mapChannel identifier (Queue.push threadName sender receiver valueType payload)
+
+
+currentParticipant :: (MonadState (Context value) m, MonadError Error m) => Actor -> m Participant
+currentParticipant actor = 
+    case Actor.toList actor of
+        [] -> 
+            Except.throwError $ RuntimeException "actor has no participant"
+
+        (x:_) -> 
+            return x
 
