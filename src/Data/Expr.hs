@@ -1,10 +1,10 @@
-{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns, GADTs, StandaloneDeriving, DuplicateRecordFields, DeriveGeneric, DeriveAnyClass, DefaultSignatures, OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns, GADTs, StandaloneDeriving, DuplicateRecordFields, DeriveGeneric, DeriveAnyClass #-}
 module Data.Expr (IntExpr(..), BoolExpr(..), IntOperator(..), BooleanOperator(..), renameIntExpr, renameBoolExpr, intOperatorToFunction, boolOperatorToFunction, exprToIntExpr, exprToBoolExpr, Expr(..)) where
 
 import Control.Monad.State
 import Control.Monad.Except
 
-import Types
+import Data.Identifier as Identifier (Identifier)
 import Data.Context (Context)
 
 import Data.Aeson (ToJSON, FromJSON)

@@ -21,13 +21,14 @@ module Queue
     , Item
     ) where
 
-import Types ((|>), List, Identifier)
+import Types ((|>), List)
 import Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Data.List.NonEmpty as NonEmpty 
 import Data.Semigroup ((<>))
 import Data.Maybe (fromMaybe)
 import Data.PID (PID)
 import Control.Monad.Except as Except
+import Data.Actor (Participant)
 
 import Debug.Trace as Debug
 
@@ -37,7 +38,7 @@ import Data.Aeson
 
 type ValueType = String
 
-data Item a = Item { sender :: Identifier, receiver :: Identifier, type_ :: ValueType, payload :: a } deriving (Show, Eq, Functor, Generic, ElmType, ToJSON, FromJSON)
+data Item a = Item { sender :: Participant, receiver :: Participant, type_ :: ValueType, payload :: a } deriving (Show, Eq, Functor, Generic, ElmType, ToJSON, FromJSON)
 
 data Queue a = Queue { past :: List QueueHistory, items :: List (Item a) }  deriving (Show, Eq, Functor, Generic, ElmType, ToJSON, FromJSON)
 
@@ -45,15 +46,15 @@ empty = Queue [] []
 
 data QueueHistory = Added PID  | Removed PID deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
-push :: PID -> Identifier -> Identifier -> ValueType -> a -> Queue a -> Queue a
+push :: PID -> Participant -> Participant -> ValueType -> a -> Queue a -> Queue a
 push pid sender receiver valueType payload queue@Queue{past, items} = 
     Queue { past = Added pid : past, items = items ++ [ Item sender receiver valueType payload ] }
 
 data QueueError 
     = QueueEmpty
-    | ItemMismatch { expected :: (Identifier, Identifier, ValueType) , actual :: (Identifier, Identifier, ValueType) } 
+    | ItemMismatch { expected :: (Participant, Participant, ValueType) , actual :: (Participant, Participant, ValueType) } 
 
-pop :: PID -> Identifier -> Identifier -> ValueType -> Queue a -> Either QueueError (a, Queue a)
+pop :: PID -> Participant -> Participant -> ValueType -> Queue a -> Either QueueError (a, Queue a)
 pop pid send receive valueType queue@Queue{ past, items } = 
     case items of 
         [] -> 
@@ -66,7 +67,7 @@ pop pid send receive valueType queue@Queue{ past, items } =
             else
                 Except.throwError $ ItemMismatch ( sender, receiver, type_ ) ( send, receive, valueType ) 
 
-rollPop :: PID -> Identifier -> Identifier -> ValueType -> a -> Queue a -> Either QueueRollError (Queue a)
+rollPop :: PID -> Participant -> Participant -> ValueType -> a -> Queue a -> Either QueueRollError (Queue a)
 rollPop thread sender receiver valueType payload queue@Queue{past, items} = 
     let value = Item sender receiver valueType payload in
     case queue of 
@@ -110,7 +111,7 @@ data QueueRollError
     deriving (Show, Eq)
 
 
-rollPush :: Show a => PID -> Identifier -> Identifier -> Queue a -> Either QueueRollError ( Queue a, Item a ) 
+rollPush :: Show a => PID -> Participant -> Participant -> Queue a -> Either QueueRollError ( Queue a, Item a ) 
 rollPush thread sender receiver queue = 
     case queue of 
         Queue [] _ -> 

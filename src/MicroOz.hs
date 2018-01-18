@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns, GADTs, StandaloneDeriving, DuplicateRecordFields, DeriveGeneric, DeriveAnyClass, DefaultSignatures, OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns, DuplicateRecordFields, DeriveGeneric, DeriveAnyClass #-}
 module MicroOz 
     (Program(..)
     , History(..)
@@ -31,6 +31,7 @@ import Data.Thread as Thread
 import Data.ThreadState (ThreadState) 
 import Data.Context as Context 
 import Data.PID as PID (PID, create, parent, child)
+import Data.Identifier as Identifier (Identifier, ChannelName)
 import Data.Expr
 import Data.Actor as Actor (Participant, Actor, named, unnamed, push, pop, toList)
 
@@ -63,7 +64,7 @@ type Queue = Queue.Queue
 type QueueHistory = Queue.QueueHistory
 
 
-init :: SessionType.GlobalType -> Map.Map Identifier (SessionType.LocalType String) -> Program -> ( Context Value, Thread History Program ) 
+init :: SessionType.GlobalType -> Map.Map Participant (SessionType.LocalType String) -> Program -> ( Context Value, Thread History Program ) 
 init globalType types program = 
     let 
         thread = Thread (PID.create [ 0 ]) Actor.unnamed [] [ program ] 
@@ -93,7 +94,7 @@ data History
     | SpawnedThread Actor PID
     | BranchedOn BoolExpr Bool Program 
     | AssertedOn BoolExpr 
-    | ChangedActor (StackAction Identifier)
+    | ChangedActor (StackAction Participant)
     deriving (Eq, Show, Generic, ElmType, ToJSON, FromJSON)
 
 data StackAction a = Pop a | Push a
@@ -220,15 +221,9 @@ renameVariableInValue old new value =
 
 -- HELPERS
 
-
-delayed :: Program -> Program
-delayed program = 
-    Let (Identifier "_") (Procedure [ Identifier "__" ] program) $ 
-        Apply (Identifier "_") [ Identifier "unit" ]
-
 asParticipant :: Participant -> Program -> Program
 asParticipant participant program = 
-    foldl (Sequence) Skip [ ChangeActor (Push participant), program, ChangeActor (Pop participant) ]
+    foldl Sequence Skip [ ChangeActor (Push participant), program, ChangeActor (Pop participant) ]
 
 
 
@@ -266,7 +261,7 @@ receive pid currentActor (identifier, value, continuation) rest channelName loca
     formatError e = 
         error $ "The session type won't allow moving forward with a send" ++ show e
 
-    handleMessage :: (Identifier, String, LocalTypeState String)
+    handleMessage :: (Participant, String, LocalTypeState String)
       -> Execution (LocalTypeState String, (History, Actor, [Program], Cmd.Cmd a0)) 
     handleMessage  ( expectedSender, valueType, newLocalTypeState ) = do
         participant <- currentParticipant currentActor 
@@ -311,7 +306,7 @@ advanceP pid currentActor program rest =
                 in
                     return ( ChangedActor action, newActor, rest, Cmd.none ) 
 
-            Let identifier value continuation -> do
+            Let identifier value continuation -> 
                 case value of
                     Receive { channelName } ->
                         receive pid currentActor (identifier, value, continuation) rest channelName

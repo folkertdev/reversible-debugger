@@ -10,16 +10,19 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.String
 import Types 
+import Data.Actor as Participant (Participant, participant, unParticipant)
 
 import GHC.Generics
 import Elm
 import Data.Aeson
 
 
-data LocalTypeState t = LocalTypeState { participant :: Identifier, state :: ExhaustableZipper (LocalAtom t) } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
+
+
+data LocalTypeState t = LocalTypeState { participant :: Participant, state :: ExhaustableZipper (LocalAtom t) } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
 
 instance Show t => Show (LocalTypeState t) where
-    show LocalTypeState{participant, state} = "LocalTypeState " ++ unIdentifier participant ++ " " ++ show state 
+    show LocalTypeState{participant, state} = "LocalTypeState " ++ unParticipant participant ++ " " ++ show state 
 
 deriving instance (ElmType a, ElmType b, ElmType c) => ElmType (a,b,c) 
 data ExhaustableZipper a = Empty | Zipper (List a, a, List a) | Exhausted (List a) deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
@@ -30,9 +33,9 @@ isEmpty typeState =
         _ -> False
 
 empty :: LocalTypeState t 
-empty = LocalTypeState { participant = Identifier "unnamed session type", state = Empty }
+empty = LocalTypeState { participant = Participant.participant "unnamed session type", state = Empty }
 
-fromLocalType :: Identifier -> LocalType t -> LocalTypeState t
+fromLocalType :: Participant -> LocalType t -> LocalTypeState t
 fromLocalType participant localType =
     case localType of
         [] -> 
@@ -44,7 +47,7 @@ fromLocalType participant localType =
 data SessionError t = ExhaustedForward | ExhaustedBackward | InvalidAction -- { expected :: t,  actual :: t}
     deriving (Eq, Show)
 
-forwardWithSend :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Identifier, t, LocalTypeState t)
+forwardWithSend :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, t, LocalTypeState t)
 forwardWithSend typeState@LocalTypeState{state} = 
     case state of
         Empty -> 
@@ -66,7 +69,7 @@ forwardWithSend typeState@LocalTypeState{state} =
                 Receive { } -> 
                     Except.throwError InvalidAction
 
-forwardWithReceive :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Identifier, t, LocalTypeState t)
+forwardWithReceive :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, t, LocalTypeState t)
 forwardWithReceive typeState@LocalTypeState{state} = 
     case state of
         Empty -> 
@@ -88,7 +91,7 @@ forwardWithReceive typeState@LocalTypeState{state} =
                         (n:next) ->
                             pure (sender, type_, typeState { state = Zipper (current:previous, n, next) })
 
-backwardWithReceive :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Identifier, t, LocalTypeState t)
+backwardWithReceive :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, t, LocalTypeState t)
 backwardWithReceive typeState =
     let 
         helper previous before next = 
@@ -101,7 +104,7 @@ backwardWithReceive typeState =
     in
         backwardWith helper typeState 
 
-backwardWithSend :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Identifier, LocalTypeState t)
+backwardWithSend :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, LocalTypeState t)
 backwardWithSend typeState =
     let 
         helper previous before next = 
@@ -147,35 +150,33 @@ previousAction typeState@LocalTypeState{state} =
         Exhausted (h:hs) -> Just h
 
 
-send :: Identifier -> t -> LocalAtom t 
+send :: Participant -> t -> LocalAtom t 
 send = Send
 
-receive :: Identifier -> t -> LocalAtom t 
+receive :: Participant -> t -> LocalAtom t 
 receive = Receive
 
 
 
-data LocalAtom t = Send { receiver :: Identifier, type_ :: t } | Receive { sender :: Identifier, type_ :: t  } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
-
-unIdentifier (Identifier x) = x
+data LocalAtom t = Send { receiver :: Participant, type_ :: t } | Receive { sender :: Participant, type_ :: t  } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
 
 
 instance Show t => Show (LocalAtom t) where
-    show Send { receiver, type_ } = unIdentifier receiver ++ "!" ++ ": <" ++ show type_ ++ "> "
-    show Receive { sender, type_ } = unIdentifier sender ++ "?" ++ ": <" ++ show type_ ++ "> "
+    show Send { receiver, type_ } = Participant.unParticipant receiver ++ "!" ++ ": <" ++ show type_ ++ "> "
+    show Receive { sender, type_ } = Participant.unParticipant sender ++ "?" ++ ": <" ++ show type_ ++ "> "
 
 
 type LocalType t = List (LocalAtom t)
 
-data GlobalAtom = Transaction { sender :: Identifier, receiver :: Identifier, tipe :: String } deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
+data GlobalAtom = Transaction { sender :: Participant, receiver :: Participant, tipe :: String } deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 prettyPrintGlobalAtom :: GlobalAtom -> String
 prettyPrintGlobalAtom Transaction{ sender , receiver, tipe } = 
     show sender ++ " -> " ++ show receiver ++ " : <" ++ tipe ++ ">."
 
-data GlobalType = GlobalType { parameters :: List Identifier, atoms :: List GlobalAtom } deriving (Eq, Show, Generic, ElmType, ToJSON, FromJSON)
+data GlobalType = GlobalType { parameters :: List Participant, atoms :: List GlobalAtom } deriving (Eq, Show, Generic, ElmType, ToJSON, FromJSON)
 
-instanciateGlobalType :: List Identifier -> GlobalType -> List GlobalAtom
+instanciateGlobalType :: List Participant -> GlobalType -> List GlobalAtom
 instanciateGlobalType arguments GlobalType{ parameters, atoms } = 
     let 
         replace old new actual = 
@@ -189,10 +190,10 @@ instanciateGlobalType arguments GlobalType{ parameters, atoms } =
     in
         map tagger atoms
 
-deriveLocals :: List GlobalAtom -> Map Identifier (LocalType String)
-deriveLocals atoms = Prelude.foldr go Map.empty atoms
+deriveLocals :: List GlobalAtom -> Map Participant (LocalType String)
+deriveLocals = Prelude.foldr go Map.empty 
 
-go :: GlobalAtom -> Map Identifier (LocalType String) -> Map Identifier (LocalType String)
+go :: GlobalAtom -> Map Participant (LocalType String) -> Map Participant (LocalType String)
 go atom@Transaction{ sender, receiver, tipe } = 
     let 
         inserter = Map.insertWith (++)
@@ -201,15 +202,15 @@ go atom@Transaction{ sender, receiver, tipe } =
             . inserter receiver [ Receive { sender = sender, type_ = tipe } ]
 
 
-data ParserGlobalTypeAtom = Action { sender :: Identifier, receiver :: Identifier, tipe :: String, continuation :: ParserGlobalTypeAtom} | End
+data ParserGlobalTypeAtom = Action { sender :: Participant, receiver :: Participant, tipe :: String, continuation :: ParserGlobalTypeAtom} | End
 
-identifier :: Parser Identifier
+identifier :: Parser Participant
 identifier = do
     result <- liftA2 (:) letter (many (letter <|> char '_'))
     spaces 
-    return $ Identifier result
+    return $ Participant.participant result
 
-identifiers :: Parser (List Identifier)
+identifiers :: Parser (List Participant)
 identifiers = 
     let multiple = do
             string "{"
@@ -222,11 +223,11 @@ identifiers =
         try (fmap (: []) identifier) <|> multiple
 
 
-parseGlobalType :: List Identifier -> String -> Either ParseError GlobalType
+parseGlobalType :: List Participant -> String -> Either ParseError GlobalType
 parseGlobalType parameters = 
     Parsec.parse (globalType parameters) "" 
 
-globalType :: List Identifier -> Parser GlobalType
+globalType :: List Participant -> Parser GlobalType
 globalType parameters = 
     let end = do 
             string "end"

@@ -1,15 +1,27 @@
 {-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
-module Data.Actor (Participant, Actor, named, unnamed, toList, push, pop) where 
+module Data.Actor (Participant, Actor, named, unnamed, toList, push, pop, participant, unParticipant) where 
 
-import Types
+import Data.Identifier as Identifier (Identifier, unwrap, create)
 
 import GHC.Generics
 import Elm
 import Data.Aeson
 
-type Participant = Identifier
 
-data Actor = Actor [Participant] 
+newtype Participant = Participant Identifier
+    deriving (Eq, Ord, Generic, ElmType, ToJSON, FromJSON, Show, ToJSONKey, FromJSONKey)
+
+unParticipant :: Participant -> String
+unParticipant (Participant identifier) = Identifier.unwrap identifier
+
+participant :: String -> Participant 
+participant = Participant . Identifier.create
+
+instance HasElmComparable Participant where
+    toElmComparable (Participant i) = toElmComparable i
+
+
+newtype Actor = Actor [Participant] 
     deriving (Eq, Generic, ElmType, ToJSON, FromJSON, Show)
 
 unnamed = Actor []
@@ -24,7 +36,7 @@ pop (Actor names) =
         (x:xs) -> Actor xs
 
 
-toList :: Actor -> List Participant
+toList :: Actor -> [Participant]
 toList (Actor xs) = xs
 
 instance Monoid Actor where

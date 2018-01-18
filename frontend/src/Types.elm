@@ -14,8 +14,8 @@ tupleDict decodeValue =
         tuple2 value =
             Decode.map2 (,) (index 0 string) (index 1 value)
     in
-    Decode.list (tuple2 decodeValue)
-        |> Decode.map Dict.fromList
+        Decode.list (tuple2 decodeValue)
+            |> Decode.map Dict.fromList
 
 
 dict =
@@ -660,20 +660,18 @@ encodePID x =
             (Json.Encode.list << List.map Json.Encode.int) y0
 
 
-type alias Participant =
-    Identifier
-
-
 type alias Actor =
     List Participant
 
 
+decodeActor : Decoder Actor
 decodeActor =
-    list decodeIdentifier
+    list decodeParticipant
 
 
+encodeActor : Encoder Actor
 encodeActor participants =
-    (Json.Encode.list << List.map encodeIdentifier) participants
+    (Json.Encode.list << List.map encodeParticipant) participants
 
 
 type History
@@ -694,7 +692,7 @@ type History
     | SpawnedThread Actor PID
     | BranchedOn BoolExpr Bool Program
     | AssertedOn BoolExpr
-    | ChangedActor (StackAction Identifier)
+    | ChangedActor (StackAction Participant)
 
 
 decodeHistory : Decoder History
@@ -750,7 +748,7 @@ decodeHistory =
 
                     "ChangedActor" ->
                         decode ChangedActor
-                            |> required "contents" (decodeStackAction decodeIdentifier)
+                            |> required "contents" (decodeStackAction decodeParticipant)
 
                     _ ->
                         fail <| "History: Constructor not matched, got " ++ x
@@ -826,7 +824,7 @@ encodeHistory x =
         ChangedActor y0 ->
             Json.Encode.object
                 [ ( "tag", Json.Encode.string "ChangedActor" )
-                , ( "contents", encodeStackAction encodeIdentifier y0 )
+                , ( "contents", encodeStackAction encodeParticipant y0 )
                 ]
 
 
@@ -911,8 +909,7 @@ encodeValue x =
         VUnit ->
             Json.Encode.object
                 [ ( "tag", Json.Encode.string "VUnit" )
-
-                -- , ( "contents", encodeBoolExpr y0 )
+                  -- , ( "contents", encodeBoolExpr y0 )
                 ]
 
 
@@ -1027,7 +1024,7 @@ type Program
         , payload : Identifier
         }
     | Assert BoolExpr
-    | ChangeActor (StackAction Identifier)
+    | ChangeActor (StackAction Participant)
 
 
 decodeProgram : Decoder Program
@@ -1077,7 +1074,7 @@ decodeProgram =
 
                     "ChangeActor" ->
                         decode ChangeActor
-                            |> required "contents" (decodeStackAction decodeIdentifier)
+                            |> required "contents" (decodeStackAction decodeParticipant)
 
                     _ ->
                         fail <| "Program: Constructor not matched, got " ++ x
@@ -1139,7 +1136,7 @@ encodeProgram x =
         ChangeActor y0 ->
             Json.Encode.object
                 [ ( "tag", Json.Encode.string "ChangeActor" )
-                , ( "contents", encodeStackAction encodeIdentifier y0 )
+                , ( "contents", encodeStackAction encodeParticipant y0 )
                 ]
 
 
@@ -1165,8 +1162,8 @@ encodeQueue x =
 
 
 type alias Item =
-    { sender : Identifier
-    , receiver : Identifier
+    { sender : Participant
+    , receiver : Participant
     , type_ : String
     , payload : Value
     }
@@ -1175,8 +1172,8 @@ type alias Item =
 decodeItem : Decoder Item
 decodeItem =
     decode Item
-        |> required "sender" decodeIdentifier
-        |> required "receiver" decodeIdentifier
+        |> required "sender" decodeParticipant
+        |> required "receiver" decodeParticipant
         |> required "type_" string
         |> required "payload" decodeValue
 
@@ -1184,8 +1181,8 @@ decodeItem =
 encodeItem : Item -> Json.Encode.Value
 encodeItem x =
     Json.Encode.object
-        [ ( "sender", encodeIdentifier x.sender )
-        , ( "receiver", encodeIdentifier x.receiver )
+        [ ( "sender", encodeParticipant x.sender )
+        , ( "receiver", encodeParticipant x.receiver )
         , ( "type_", Json.Encode.string x.type_ )
         , ( "payload", encodeValue x.payload )
         ]
@@ -1232,7 +1229,7 @@ encodeQueueHistory x =
 
 
 type alias LocalTypeState =
-    { participant : Identifier
+    { participant : Participant
     , state : ExhaustableZipper (LocalAtom String)
     }
 
@@ -1240,14 +1237,14 @@ type alias LocalTypeState =
 decodeLocalTypeState : Decoder LocalTypeState
 decodeLocalTypeState =
     decode LocalTypeState
-        |> required "participant" decodeIdentifier
+        |> required "participant" decodeParticipant
         |> required "state" (decodeExhaustableZipper (decodeLocalAtom string))
 
 
 encodeLocalTypeState : LocalTypeState -> Json.Encode.Value
 encodeLocalTypeState x =
     Json.Encode.object
-        [ ( "participant", encodeIdentifier x.participant )
+        [ ( "participant", encodeParticipant x.participant )
         , ( "state", encodeExhaustableZipper (encodeLocalAtom Json.Encode.string) x.state )
         ]
 
@@ -1293,10 +1290,10 @@ encodeExhaustableZipper encodeValue x =
                 encodeList decodeV =
                     Json.Encode.list << List.map decodeV
             in
-            Json.Encode.object
-                [ ( "tag", Json.Encode.string "Zipper" )
-                , ( "contents", encodeTuple3 ( encodeList encodeValue a, encodeValue b, encodeList encodeValue c ) )
-                ]
+                Json.Encode.object
+                    [ ( "tag", Json.Encode.string "Zipper" )
+                    , ( "contents", encodeTuple3 ( encodeList encodeValue a, encodeValue b, encodeList encodeValue c ) )
+                    ]
 
         Exhausted y0 ->
             Json.Encode.object
@@ -1353,3 +1350,25 @@ encodeLocalAtom encodeType x =
                 , ( "sender", encodeIdentifier x.sender )
                 , ( "type_", encodeType x.type_ )
                 ]
+
+
+type Participant
+    = Participant Identifier
+
+
+unParticipant : Participant -> String
+unParticipant (Participant (Identifier s)) =
+    s
+
+
+decodeParticipant : Decoder Participant
+decodeParticipant =
+    decodeIdentifier
+        |> map Participant
+
+
+encodeParticipant : Participant -> Json.Encode.Value
+encodeParticipant x =
+    case x of
+        Participant y0 ->
+            encodeIdentifier y0

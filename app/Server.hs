@@ -18,7 +18,7 @@ import qualified MicroOz.Parser
 import qualified Data.ThreadState as ThreadState
 import Data.ReplState
 import Data.Context as Context (Context, localTypeStates)
-import Types (Identifier(..))
+import Data.Identifier (Identifier)
 
 import qualified Repl 
 import DebuggerParser (Instruction)

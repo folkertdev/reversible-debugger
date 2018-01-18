@@ -10,7 +10,7 @@ import Data.PID as PID (PID, create)
 
 import Text.ParserCombinators.Parsec as Parsec
 
-import Types (Identifier(..))
+import Data.Identifier as Identifier (Identifier, create)
 
 import GHC.Generics
 import Elm
@@ -155,7 +155,7 @@ threadOrIdentifier =
     ( Left <$> pid) <|> (Right <$> identifier)
 
 identifier = do
-    result <- Identifier <$> liftA2 (:) letter (many (letter <|> digit <|> char '_'))
+    result <- Identifier.create <$> liftA2 (:) letter (many (letter <|> digit <|> char '_'))
     spaces 
     return result
 

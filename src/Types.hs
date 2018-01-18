@@ -10,6 +10,8 @@ import Data.Traversable (sequence)
 
 import qualified Data.Map as Map
 import Data.PID as PID (PID, create, parent) 
+import Data.Identifier as Identifier (Identifier, unwrap) 
+import Data.Actor as Actor (Participant) 
 
 import GHC.Generics
 import Elm
@@ -20,17 +22,11 @@ infixl 0 |>
 (|>) :: a -> (a -> b) -> b
 x |> f = f x
 
-withDefault :: a -> Maybe a -> a
-withDefault def may = 
-    case may of 
-        Nothing -> def
-        Just v -> v
-
 data Error
     = UndefinedVariable Identifier
     | UndefinedThread PID
     | UndefinedChannel Identifier
-    | UndefinedParticipant PID
+    | UndefinedParticipant Participant
 -- | TypeError Identifier String Value
     | TypeError Identifier String String
 -- | AssertionError BoolExp
@@ -49,20 +45,20 @@ data ThreadScheduleErrorCause = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFin
 instance Show Error where
     show e = 
         case e of
-            UndefinedVariable (Identifier name) -> 
-                "Variable `" ++ name ++ "` is undefined"
+            UndefinedVariable name -> 
+                "Variable `" ++ Identifier.unwrap name ++ "` is undefined"
 
             UndefinedThread name ->
                 "Thread `" ++ show name ++ "` is undefined"
 
-            UndefinedChannel (Identifier name) ->
-                "Channel `" ++ name ++ "` is undefined"
+            UndefinedChannel name ->
+                "Channel `" ++ Identifier.unwrap name ++ "` is undefined"
 
-            UndefinedParticipant pid -> 
-                "Participant `" ++ show pid ++ "` is undefined"
+            UndefinedParticipant participant -> 
+                "Participant `" ++ show participant ++ "` is undefined"
 
-            TypeError (Identifier name) expected actual -> 
-                "Type mismatch: I expect value `" ++ name ++ "` to be of type " ++ expected ++ ", but it is " ++ show actual 
+            TypeError name expected actual -> 
+                "Type mismatch: I expect value `" ++ Identifier.unwrap name ++ "` to be of type " ++ expected ++ ", but it is " ++ show actual 
 
             AssertionError expression -> 
                 "The assertion `" ++ show expression ++ "` evaluated to False"
@@ -73,8 +69,8 @@ instance Show Error where
             RuntimeException message -> 
                 "Something went wrong: " ++ message
 
-            ArgumentMismatch (Identifier name) expected actual -> 
-                "Function `" ++ name ++ "` expects " ++ show expected ++ " arguments, but got " ++ show actual
+            ArgumentMismatch name expected actual -> 
+                "Function `" ++ Identifier.unwrap name ++ "` expects " ++ show expected ++ " arguments, but got " ++ show actual
 
             SchedulingError (ThreadScheduleError pid cause) -> 
                 "The scheduler encountered a problem with thread `" ++ show pid ++ "`:\n" ++ show cause
@@ -82,14 +78,5 @@ instance Show Error where
 
 
 type List = []
-
-newtype Identifier 
-    = Identifier String 
-    deriving (Eq, Show, Ord, Generic, ElmType, ToJSON, ToJSONKey, FromJSON, FromJSONKey)
-
-instance HasElmComparable Identifier where
-    toElmComparable (Identifier i) = toElmComparable i
-
-type ChannelName = Identifier
 
 

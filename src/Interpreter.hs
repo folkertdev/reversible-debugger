@@ -13,6 +13,7 @@ import qualified Queue
 import Data.Thread as Thread
 import Data.Context as Context 
 import Data.PID as PID (PID, create, parent, child)
+import Data.Identifier as Identifier (Identifier, ChannelName)
 import Data.ThreadState (Progress(..) , ThreadState(..) , OtherThreads)
 import qualified Data.ThreadState as ThreadState
 

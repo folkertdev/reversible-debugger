@@ -33,6 +33,7 @@ import Types
 import Data.Thread as Thread (Thread(..))
 import Data.PID as PID (PID, create, parent, child)
 import Data.Actor as Actor (Participant, Actor, toList, named, push)
+import Data.Identifier as Identifier (Identifier, ChannelName, create)
 import Data.List as List
 import Data.Monoid ((<>))
 
@@ -52,7 +53,7 @@ data Context value =
     , threads :: Map PID Int
     -- , localTypes :: Map Identifier (SessionType.LocalType String)
     , participantMap :: Map PID Actor
-    , localTypeStates :: Map Identifier (SessionType.LocalTypeState String)
+    , localTypeStates :: Map Participant (SessionType.LocalTypeState String)
     , globalType :: SessionType.GlobalType
     } deriving (Generic, ElmType, ToJSON, FromJSON)
 
@@ -69,7 +70,7 @@ instance Show value => Show (Context value) where
             -- <> Utils.showMap "participants" participantMap
             <> Utils.showMap "local types" localTypeStates
 
-singleton :: SessionType.GlobalType -> Map.Map Identifier (SessionType.LocalType String) -> Thread h a -> Context value
+singleton :: SessionType.GlobalType -> Map.Map Participant (SessionType.LocalType String) -> Thread h a -> Context value
 singleton globalType types Thread{ pid } =
     Context 
         { bindings = Map.empty
@@ -131,9 +132,15 @@ lookupVariable identifier =
     snd <$> lookupper bindings identifier
 
 
-lookupLocalTypeState :: (MonadState (Context value) m, MonadError Error m) => Identifier -> m (SessionType.LocalTypeState String)
-lookupLocalTypeState = 
-    lookupper localTypeStates 
+lookupLocalTypeState :: (MonadState (Context value) m, MonadError Error m) => Participant -> m (SessionType.LocalTypeState String)
+lookupLocalTypeState key = do
+    context <- State.get
+    case Map.lookup key (localTypeStates context) of
+        Nothing ->
+            Except.throwError (UndefinedParticipant key)
+
+        Just v -> 
+            return v 
 
 {-
 lookupParticipant :: (MonadState (Context value) m, MonadError Error m) => PID -> m Identifier 
@@ -149,10 +156,10 @@ lookupParticipant pid = do
 
 -- forwardWithReceive :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Identifier, t, LocalTypeState t)
 
-putLocalTypeState :: (MonadState (Context value) m, MonadError Error m) => Identifier -> SessionType.LocalTypeState String ->  m ()
-putLocalTypeState identifier localTypeState = 
+putLocalTypeState :: (MonadState (Context value) m, MonadError Error m) => Participant -> SessionType.LocalTypeState String ->  m ()
+putLocalTypeState participant localTypeState = 
     State.modify $ \context ->
-        let newBindings = Map.insert identifier localTypeState (localTypeStates context)
+        let newBindings = Map.insert participant localTypeState (localTypeStates context)
         in
             context { localTypeStates = newBindings } 
 
@@ -206,7 +213,7 @@ freshIdentifier = do
     context <- State.get
     let new = 1 + variableCount context
     put (context { variableCount = new } )
-    return $ Identifier $ "var" ++ show new
+    return $ Identifier.create $ "var" ++ show new
 
 
 insertChannel :: MonadState (Context value) m => PID -> Queue value -> m Identifier 
@@ -296,7 +303,7 @@ mapChannel identifier tagger =
         context { channels = Map.adjust (\(pid, v) -> (pid, tagger v)) identifier (channels context) } 
 
 
-readChannel :: (MonadState (Context value) m, MonadError Error m) => PID -> Identifier -> Identifier -> String -> ChannelName -> m (Maybe value)
+readChannel :: (MonadState (Context value) m, MonadError Error m) => PID -> Participant -> Participant -> String -> ChannelName -> m (Maybe value)
 readChannel threadName sender receiver valueType identifier = 
     let fetch = 
             withChannel identifier $ \queue ->
@@ -316,7 +323,7 @@ readChannel threadName sender receiver valueType identifier =
         fmap Just fetch `Except.catchError` handler 
 
 
-writeChannel :: MonadState (Context value) m => PID -> Identifier -> Identifier -> String -> ChannelName -> value -> m ()  
+writeChannel :: MonadState (Context value) m => PID -> Participant -> Participant -> String -> ChannelName -> value -> m ()  
 writeChannel threadName sender receiver valueType identifier payload = 
     mapChannel identifier (Queue.push threadName sender receiver valueType payload)
 

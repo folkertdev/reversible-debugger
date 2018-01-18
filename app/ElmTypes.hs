@@ -20,6 +20,7 @@ import Data.ThreadState
 import Data.ReplState
 import Data.PID
 import Data.Actor
+import Data.Identifier
 import DebuggerParser
 import Data.Expr (IntExpr, BoolExpr)
 
@@ -36,7 +37,7 @@ types =
     [ "import Json.Decode exposing (..)"
     , "import Dict exposing (Dict)" 
     , "import Json.Decode.Pipeline exposing (..)"
-    , toBoth (Proxy :: Proxy (StackAction Identifier))
+    , toBoth (Proxy :: Proxy Participant)
     {-
     , toBoth (Proxy :: Proxy (Result Int String))
     , toBoth (Proxy :: Proxy Instruction)

@@ -8,13 +8,14 @@ import Text.ParserCombinators.Parsec as Parsec
 
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-import Types (List, Identifier(..))
+import Types (List)
 import MicroOz
 import Queue
 import qualified SessionType
 import SessionType (GlobalType(..))
 import Data.PID as PID
-import Data.Actor as Actor (named, unnamed)
+import Data.Identifier as Identifier (Identifier, create, unwrap)
+import Data.Actor as Actor (Participant, participant, named, unnamed)
 import Data.Expr (Expr(..), IntExpr(..), BoolExpr(..), exprToIntExpr, exprToBoolExpr)
 
 program :: String -> Either ParseError Program
@@ -23,7 +24,7 @@ program rawString = do
     Parsec.parse programParser "" withoutWhitespace
 
 
-programWithTypes :: String -> Either ParseError (SessionType.GlobalType, Map.Map Identifier (SessionType.LocalType String), Program)
+programWithTypes :: String -> Either ParseError (SessionType.GlobalType, Map.Map Participant (SessionType.LocalType String), Program)
 programWithTypes rawString = do 
     withoutWhitespace <- Parsec.parse eatComments "" rawString
 
@@ -59,47 +60,30 @@ eatComments = do
 -- SESSION TYPES 
 
 
-globalType :: Parser ( Identifier, SessionType.GlobalType )
+globalType :: Parser ( Participant, SessionType.GlobalType )
 globalType = do
     try $ string "global type"
     spaces
-    name <- identifierParser
-    arguments <- identifierParser `sepBy` spaces 
+    name <- participantParser
+    arguments <- participantParser `sepBy` spaces 
     spaces
     char '='
     spaces
     tipe <- SessionType.globalType arguments
     return ( name, tipe )
 
-typeAlias :: Parser (Identifier, (Identifier, Identifier)) 
-typeAlias = do
-    try $ string "type alias"
-    spaces
-    name <- identifierParser
-    char '='
-    spaces
-    tipe <- typeAt 
-    return ( name, tipe )
 
-typeAt = do
-    global <- identifierParser
-    string "at"
-    spaces
-    local <- identifierParser
-    return (global, local )
-
-
-sessionWhere :: Map.Map Identifier GlobalType -> Parser ( List SessionType.GlobalAtom, Program )
+sessionWhere :: Map.Map Participant GlobalType -> Parser ( List SessionType.GlobalAtom, Program )
 sessionWhere globals = do
     try $ string "session"
     spaces
-    typeName <- identifierParser 
+    typeName <- participantParser 
     case Map.lookup typeName globals of
         Nothing ->
             unexpected $ "I'm trying to instantiate session type `" ++ show typeName ++ "`, but it is not defined" 
         Just global@GlobalType{ parameters, atoms } -> 
             let header = do
-                    arguments <- count (length parameters) identifierParser 
+                    arguments <- count (length parameters) participantParser 
                     spaces
                     string "where"
                     return arguments
@@ -212,13 +196,17 @@ sendParser = do
             whitespaceOrComment 
             return $ Send id1 value 
 
+
+threadHeader :: Parser (Maybe Participant)
 threadHeader = do
     try $ string "thread"
     spaces
     optionMaybe threadWhereHeader
 
+
+threadWhereHeader :: Parser Participant
 threadWhereHeader = do
-    name <- try $ identifierParser <* string "where"
+    name <- try $ participantParser <* string "where"
     spaces
     return name
 
@@ -241,14 +229,20 @@ functionApplicationParser = do
     whitespaceOrComment 
     return $ Apply functionName arguments
     
-
- 
-
-identifierParser = do
-    result <- Identifier <$> liftA2 (:) letter (many (letter <|> char '_'))
+parseIdentifier :: Parser String
+parseIdentifier = do
+    result <- liftA2 (:) letter (many (letter <|> char '_'))
     whitespaceOrComment 
     return result
+ 
 
+identifierParser :: Parser Identifier
+identifierParser = 
+    Identifier.create <$> parseIdentifier
+
+participantParser :: Parser Participant
+participantParser = 
+    Actor.participant <$> parseIdentifier
 
 valueParser = 
     let
