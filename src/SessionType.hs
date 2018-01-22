@@ -91,7 +91,7 @@ forwardWithReceive typeState@LocalTypeState{state} =
                         (n:next) ->
                             pure (sender, type_, typeState { state = Zipper (current:previous, n, next) })
 
-backwardWithReceive :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, t, LocalTypeState t)
+backwardWithReceive :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, LocalTypeState t, t)
 backwardWithReceive typeState =
     let 
         helper previous before next = 
@@ -100,17 +100,17 @@ backwardWithReceive typeState =
                     Except.throwError InvalidAction
 
                 Receive { sender, type_ } -> 
-                    pure (sender, type_, typeState { state = Zipper (before, previous, next) })
+                    pure (sender, typeState { state = Zipper (before, previous, next) }, type_)
     in
         backwardWith helper typeState 
 
-backwardWithSend :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, LocalTypeState t)
+backwardWithSend :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, LocalTypeState t, t)
 backwardWithSend typeState =
     let 
         helper previous before next = 
             case previous of
-                Send {receiver} -> 
-                    pure (receiver, typeState { state = Zipper (before, previous, next) })
+                Send {receiver, type_ } -> 
+                    pure (receiver, typeState { state = Zipper (before, previous, next) }, type_)
 
                 Receive {  } -> 
                     Except.throwError InvalidAction

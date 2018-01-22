@@ -19,6 +19,13 @@ complete rewinding (rolling) of threads, variable assignments and the full progr
 
 ## My idea works
 
+To look at how this might function we will define 
+
+* a simple reversible language 
+* forward and backward steps for a single thread
+* running and scheduling multiple threads
+* implementing debugging operations
+
 The practical running example in this paper will be implementing this debugger for the MicroOz language.
 MicroOz is a small language for expressing parallel computation. It uses a stack for its instructions.
 Its instruction set can be captured in the following data type.
@@ -45,30 +52,13 @@ data Program
 
     -- Send channel payload: send the payload over the channel
     | Send Identifier Identifier
-
-    -- assert a condition
-    | Assert BoolExp
 ```
 
-The execution needs an environment to store variable bindings. 
-The evaluation uses renaming, so we also need to be able to generate unique variable names.
-
+Recent research has shown that every non-reversible language can be made reversible [Orchard et al.](), but 
+the MicroOz language has a defined backward semantics. For every forward step, we keep track of the step
+we took and enough data to reverse it.
 
 ```haskell
-data Context a = 
-    Context 
-        { _threads :: Map PID Int
-        , _variableCount :: Int
-        , _bindings :: Map Identifier a
-        , _channels :: Map Identifier (Queue.Queue Identifier)
-        }
-    deriving (Show)
-```
-
-Finally we need a type that shadows the instruction set, and keeps enough information to 
-undo any forward step
-
-```
 data History 
     = Skipped
     | Composed 
@@ -79,154 +69,242 @@ data History
     | CalledProcedure Identifier (List Identifier)
     | SpawnedThread PID
     | BranchedOn BoolExp Bool Program 
-    | AssertedOn BoolExp
     deriving (Eq, Show)
 ```
 
-We can now define our computations 
+### Moving Forward 
+
+The first primitive we need is to move one thread forward. So essentially: 
 
 ```haskell
-data Thread a = Thread PID (List (History a)) (List a)  
+forwardThread :: Context -> Program -> (History, Context)
 
--- a type alias
--- context contains the value associated with program
-type Interpreter value a = State (Context value) a
+data Context a = 
+    Context 
+        { _threads :: Map PID Int
+        , _variableCount :: Int
+        , _bindings :: Map Identifier a
+        , _channels :: Map Identifier (Queue.Queue String Identifier)
+        }
+    deriving (Show)
+```
+
+Given an instruction and some context (containing variable bindings and other environment information), produce a `History` and an updated context.
+The idiom `s -> (a, s)` has some special algebraic structure. It is often written as `State`: 
+
+```
+-- define a newtype wrapper around the type `s -> (a, s)`
+newtype State s a = State (s -> (a, s))
+```
+
+The most important characteristic is its `bind` or `>>=`: Multiple state transformation functions can be chained into one, so for instance this will work as expected, giving unique identifiers.
+
+```haskell
+
+uniqueIdentifier :: State Context String
+uniqueIdentifier = do
+    -- aquire the state, a value of type Context
+    context :: Context <- State.get
+    -- convert the variable count to String and prepend "variable_"
+    let result = "variable_" ++ show (_variableCount context)
+    -- increment the _variableCount in the context, overwrite the state with it
+    put (context { _variableCount = _variableCount + 1 })
+    -- return the result
+    return result
+
+threeNewVariableNames = do
+    one <- uniqueIdentifier
+    two <- uniqueIdentifier
+    three <- uniqueIdentifier
+```
+
+The above snippet uses do-notation. This is syntactic sugar for the bind operator. 
+The functions bind `>>=` and `return` (and some laws on how they interact) 
+correspond to a mathematical concept called a "Monad".  Therefore `State` is sometimes called the "State Monad".
+
+We can rewrite our function above as
+
+```haskell
+forwardThread :: Program -> State Context History 
+```
+
+**Exceptions** 
+
+Sometimes the evaluation of a program cannot proceed: we've hit an error. There can be many reasons 
+like a type mismatch or the use of an undefined variable. 
+
+In Haskell it is recommended to account for errors in your types. This makes sure the error 
+needs to be handled at some point. 
+
+The basic type we can use is the `Either` sum type.
+
+```
+Either error value = Left error | Right value 
+```
+
+Value of this type are either tagged values (with `Left`) of type `error`, or tagged values (with `Right`) of 
+type value. To get at the `value`, you have to perform a case split and handle the possible error value
+too.
+
+Like state, `Either` has lawful definitions for bind and `return`. 
+To integrate the binds and returns of `Either` and `State` with each other, we use
+Monad Transformers, written as `<monad name>T` by convention. 
+
+```haskell
+data Error = 
+    UndefinedVariable Identifier
+
+forwardThread :: Program -> StateT Context (Either Error) History
+```
+
+We can now write helpers like so
+
+```haskell
+lookupVariable :: Identifier -> StateT Context (Either Error) Value
+lookupVariable identifier = do 
+    context <- State.get
+    case Map.lookup identifier (_bindings context) of 
+        Nothing -> 
+            Except.throwError (UndefinedVariable identifier)
+
+        Just value -> 
+            return value
+```
+
+**Effects** 
+
+In the forward case, there are two effects: items can be pushed on the stack, and a new thread can be spawned. 
+`forwardThread` function needs to be able to signal this to the caller.
+
+```haskell
+data ForwardMsg
+    = SpawnThread (Thread History Program) 
+    | PushOnStack Program
+
+forwardThread :: Program -> StateT Context (Either Error) (History, List ForwardMsg)
+```
+
+Finally, for various bookkeeping requirements, this function needs a unique identifier. 
+For now that is just a pid `newtype PID = PID (List Int)`, but with the introduction of session types 
+this will become the current actor.
+
+### Backward 
+
+```haskell
+data BackwardMsg
+    = RollChild PID 
+    | RollReceives 
+    | RollSends 
+
+backwardThread :: PID -> History -> List Program -> StateT Context (Either Error) (List Program, List BackwardMsg)
+```
+
+The backward function also has some effects (to undo actions that the current thread depends on) and can throw errors. 
+A difference is that this function gets the full program stack, because it needs to pattern match on that stack. 
+
+### Multiple Threads
+
+We can now wrap the primitives into functions that keep track of whether progress was actually made. 
+
+```haskell
+data Thread = Thread PID (List History) (List Program) 
+
+type Execution a = State (Context Value, ThreadState History Program) (Either Error) a
 
 data Progress work 
     = Done 
     | Step work 
-    | Blocked work
-    | Branched work work
 
-forwardThread  :: Thread Program -> Interpreter (Value Program) (Progress  (Thread Program))
-backwardThread :: Thread Program -> Interpreter (Value Program) (Progress  (Thread Program))
+forwardThread  :: Thread -> Execution (Progress Thread, List ForwardMsg)
+backwardThread :: Thread -> Execution (Progress Thread, List BackwardMsg)
 ```
 
-The accompanying code also does error handling, but we'll omit that for now. The `State` types 
-makes a value of type `Context value` available for reading and writing in a pure way. The progress 
-type is used to indicate to the caller how it should proceed. 
-
-### Generalizing 
-
-The references to the `Program` type in the previous snippet can be removed, allowing 
-for a fully abstract representation of what a type needs to be or implement in order to be 
-reversed.
+**Thread Pool** 
 
 ```haskell
-class ReversibleLanguage a where 
-    -- associated type for values
-    data Value a :: * 
-
-    -- associated type for history
-    data History a :: * 
-
-    -- individual thread primitives
-    forwardThread  :: Thread a -> Interpreter (Value a) (Progress  (Thread a))
-    backwardThread :: Thread a -> Interpreter (Value a) (Progress  (Thread a))
-
-    -- the instruction that spawns a new thread
-    spawn :: a -> a
-
-    -- functions used in moving backward to inspect an instruction 
-    spawned :: History a -> Maybe PID
-    createdVariable :: History a -> Maybe Identifier
+data Pool a = 
+    Pool
+        { active :: Map PID Thread
+        , done :: Map PID Thread
+        , blocked :: Map PID Thread
+        , uninitialized :: Map PID Thread
+        }
 ```
 
-We need 
-
-* an associated data type for the values in our program
-* an associated data type for the history of our program
-* primitives for moving threads forward and backward
-* the spawning instruction (to handle the `Branched work work` case of progress)
-* history instruction inspection functions: 
-    - to undo a spawned thread, we need to undo the whole program the thread ran first
-    - to undo a variable, we need to remove all its occurences first
-
-### Multiple threads
-
-With these primitives we can build a scheduler and functions that moves a program with many threads one step forward or backward. 
-
-Again we'll need to keep track of some context:
+Next it is useful to have one thread "active", so we define 
 
 ```haskell
-type Threads a = Map PID (Thread a)
-
-data ThreadState a = 
-    ThreadState
-        { active :: Threads a
-        , inactive :: Threads a
-        , blocked :: Threads a
-        , filtered :: Threads a
-        } 
+ThreadState a
+    = Stuck (Pool a)
+    | Running a (Pool a)
 ```
 
-With these types we can define `reschedule` which picks the next thread to be exectuted (pop from active threads, when empty try to wake up blocked threads), and `scheduleThread` which 
-tries to schedule a particular thread and errors when it is inactive, filtered, or non-existent.
+We use the rescheduling algormthm from [monad par paper]().
+
+**Applying Effects** 
+
+We can define the functions 
 
 ```haskell
-reschedule :: ThreadState program -> Either (ThreadState program) (Thread program, ThreadState program)
-
-scheduleThread :: ReversibleLanguage program 
-    => PID 
-    -> Thread program 
-    -> ThreadState program 
-    -> Either ThreadScheduleError (Thread program, ThreadState program) 
+handleForwardMsg :: ForwardMsg -> Pool Thread -> Pool Thread 
+handleBackwardMsg :: BackwardMsg -> Pool Thread -> Pool Thread
 ```
 
-With the above primitives we can define two stepping functions, that
-evaluate the program in one thread with one instruction.
+### Channels 
 
-```
-schedule :: ReversibleLanguage program 
-    => (Thread program -> Bool)
-    -> Thread program 
-    -> ThreadState program
-    -> Interpreter (Value program) (Either (ThreadState program) (Thread program, ThreadState program))
+Channels are a distinctive feature: they make the language multi-threaded. 
 
-
-unschedule :: ReversibleLanguage program 
-    => (Thread program -> Bool)
-    -> Thread program 
-    -> ThreadState program
-    -> Interpreter (Value program) (Either (ThreadState program) (Thread program, ThreadState program))
-
-```
-
-The `(Thread program -> Bool)` argument is for filtering. This is a convenience which allows the program to be evaluated up to some point. 
-An example is to evaluate all let-bindings in all active threads: there can be many of them and typically they are not very interesting, so we 
-can skip them all in one go.
-
-With this we can define the main functions of our debugger
+The Channel module is also the module that has changed the most during development. It is really 
+hard to have threads interact over a channel in a principled and reversible way (hence of course the introduction of session types).
 
 ```haskell
--- either there is a current thread or not 
--- if there is no current thread the program is done
-type ExecutionState a = Either  (ThreadState a) (Thread a, ThreadState a)
+data Channel a = Channel 
+    { histories :: List ChannelHistory 
+    , items :: List (Item a)
+    }
 
-init :: ReversibleLanguage program => Thread program -> Interpreter (Value program) (ExecutionState program)
-init thread = 
-    schedule (const True) thread (ThreadState Map.empty Map.empty Map.empty Map.empty)
+data ChannelHistory 
+    = Pushed PID
+    | Popped PID
 
-forward :: ReversibleLanguage program => Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program)
-forward = 
-    schedule (const True) 
-
-backward :: ReversibleLanguage program => Thread program -> ThreadState program -> Interpreter (Value program) (ExecutionState program)
-backward thread@(Thread name history program) =
-    unschedule (const True) thread 
+data Item a = Item 
+    { sender :: PID
+    , receiver :: PID
+    , value :: a 
+    }
 ```
 
-With the above functions, we can generate many debugging options
+On this data strucutre we can define push and pop (corresponding to send and receive), and 
+also helpers to determine whether a thread may roll a send or receive, and if not what threads/actions 
+have to be rolled first. 
+
+### Debugger Primitives 
+
+With the above functions, we can construct many debugging options
 
 * move one step forward
 * move one step backward
 * move a particular thread forward or backward
 * evaluate active threads until the next instruction is not a let-instruction. 
 
+Of particular interest is "send/receive normal form": When in this form, a thread is either exhausted
+or its next action is a send or a receive. Equivalently, every instructution that doesn't change
+the session type state is evaluated.  
+
 
 ### Problems 
 
 I'ts not possible to detect deadlock at the moment: the scheduler will just reschedule all the blocked threads infinitely. 
+
+It is unclear to what extend this code should be general. 
+
+It is quite easy and recommended (in Haskell) that one writes higly polymorphic code. Not only does code reuse get easier, but the 
+lack of concreteness means that you can't make assumptions.
+
+On the other hand, this highly general code can become a real mess. 
+
+I feel like at the moment the code is still a bit too general, but because most of the core logic (the µOz semantics) are still 
+in flux that seems inevitable.
 
 
 ## Prior Work 
@@ -264,9 +342,22 @@ grammar as CaReDeb would have been nice.
 
 ## Future work 
 
-* improve debugging experience 
-* implement different `ReversibleLanguage` instances
+**Session Types** 
 
+This work has already begun
+
+The syntax is extended to support assigning a session type to each thread. A session type is a specification of the interactions that a thread may have, in this case
+when and what it may send or receive on channels. Every time a thread want's to perform some action on a channel, its session type is checked and advanced when the action 
+is allowed, or the thread blocks when the action is not allowed.
+
+Further fiddling with the semantics of the language is likely
+
+**Visual Debugging**
+
+Stepping through the program 
+
+We're still looking into how best to visualize the execution and possible execution paths whilst the debugger is running. 
+It is impossible to do this a-priori because there is no strict ordering of the instructions.
 
 
 

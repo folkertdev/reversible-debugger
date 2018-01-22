@@ -4,7 +4,7 @@ module Queue
     , empty
     , push
     , pop
-    , QueueHistory(..)
+        , QueueHistory(..)
     , QueueRollError(..)
     --, Msg(..)
     --, revert
@@ -38,40 +38,56 @@ import Data.Aeson
 
 type ValueType = String
 
-data Item a = Item { sender :: Participant, receiver :: Participant, type_ :: ValueType, payload :: a } deriving (Show, Eq, Functor, Generic, ElmType, ToJSON, FromJSON)
+data Item t a = 
+    Item 
+        { sender :: Participant
+        , receiver :: Participant
+        , type_ :: t
+        , payload :: a 
+        } 
+        deriving (Show, Eq, Functor, Generic, ElmType, ToJSON, FromJSON)
 
-data Queue a = Queue { past :: List QueueHistory, items :: List (Item a) }  deriving (Show, Eq, Functor, Generic, ElmType, ToJSON, FromJSON)
+data Queue t a = 
+    Queue 
+        { past :: List (QueueHistory t)
+        , items :: List (Item t a) 
+        }  
+        deriving (Show, Eq, Functor, Generic, ElmType, ToJSON, FromJSON)
 
 empty = Queue [] [] 
 
-data QueueHistory = Added PID  | Removed PID deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
+data QueueHistory t 
+    = Added Participant t 
+    | Removed Participant t 
+    deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
-push :: PID -> Participant -> Participant -> ValueType -> a -> Queue a -> Queue a
-push pid sender receiver valueType payload queue@Queue{past, items} = 
-    Queue { past = Added pid : past, items = items ++ [ Item sender receiver valueType payload ] }
+push :: Participant -> Participant -> t -> a -> Queue t a -> Queue t a
+push sender receiver valueType payload queue@Queue{past, items} = 
+    Queue { past = Added sender valueType : past, items = items ++ [ Item sender receiver valueType payload ] }
 
 data QueueError 
     = QueueEmpty
-    | ItemMismatch { expected :: (Participant, Participant, ValueType) , actual :: (Participant, Participant, ValueType) } 
+    | ItemMismatch { expected :: (Participant, Participant, String) , actual :: (Participant, Participant, String) } 
 
-pop :: PID -> Participant -> Participant -> ValueType -> Queue a -> Either QueueError (a, Queue a)
-pop pid send receive valueType queue@Queue{ past, items } = 
+pop :: (Show t, Eq t) => Participant -> Participant -> t -> Queue t a -> Either QueueError (a, Queue t a)
+pop send receive valueType queue@Queue{ past, items } = 
     case items of 
         [] -> 
             Except.throwError QueueEmpty
 
         (Item{sender, receiver, type_, payload}:xs) -> 
             if send == sender && receive == receiver && type_ == valueType then
-                pure ( payload, Queue (Removed pid : past) xs )
+                pure ( payload, Queue (Removed receiver valueType : past) xs )
 
             else
-                Except.throwError $ ItemMismatch ( sender, receiver, type_ ) ( send, receive, valueType ) 
+                Except.throwError $ ItemMismatch ( sender, receiver, show type_ ) ( send, receive, show valueType ) 
 
-rollPop :: PID -> Participant -> Participant -> ValueType -> a -> Queue a -> Either QueueRollError (Queue a)
-rollPop thread sender receiver valueType payload queue@Queue{past, items} = 
+{-| Undoing a pop, putting the value back into the queue -}
+rollPop :: (Show t, Eq t) => Participant -> Participant -> t -> a -> Queue t a -> Either QueueRollError (Queue t a)
+rollPop sender receiver valueType payload queue@Queue{past, items} = 
     let value = Item sender receiver valueType payload in
     case queue of 
-        Queue ( Removed pid : remaining ) [] -> 
+        Queue ( Removed _ _ : remaining ) [] -> 
             case remaining of 
                 [] -> 
                     -- impossible
@@ -80,26 +96,27 @@ rollPop thread sender receiver valueType payload queue@Queue{past, items} =
                 (h:hs) -> 
                     pure $ Queue  (h : hs) [value]
 
-        Queue ( Added  pid : _ ) [] -> 
-            Except.throwError $ InvalidAction "rollpop 1" (Added pid)
+        Queue ( Added participant tipe : _ ) [] -> 
+            Except.throwError $ InvalidAction "rollpop 1" (show $ Added participant tipe)
 
         Queue [] [] -> 
             Except.throwError RollPopEmptyQueue 
 
         Queue (h:hs) items -> 
             case (h, hs ) of 
-                ( Removed pid, [] ) ->
+                ( Removed _ _, [] ) ->
                     -- impossible
                     error "unpopping value that was never added"
 
-                ( Removed pid, remaining ) ->
-                    if thread == pid then
+                ( Removed participant tipe, remaining ) ->
+                    -- only the receiver can undo the read
+                    if participant == receiver && tipe == valueType then
                         pure $ Queue remaining (value : items ) 
                     else
-                        Except.throwError $ InvalidAction "rollpop 2" h
+                        Except.throwError $ InvalidAction "rollpop 2" (show h)
 
-                ( Added pid, _ ) -> 
-                    Except.throwError $ InvalidAction "rollpop 3" (Added pid)
+                ( added, _ ) -> 
+                    Except.throwError $ InvalidAction "rollpop 3" (show added)
 
         Queue [] _ -> 
             error "impossible: no history but there are items"
@@ -107,57 +124,58 @@ rollPop thread sender receiver valueType payload queue@Queue{past, items} =
 data QueueRollError
     = RollPushEmptyQueue
     | RollPopEmptyQueue
-    | InvalidAction { source :: String, expected :: QueueHistory } 
+    | InvalidAction { source :: String, history :: String } 
     deriving (Show, Eq)
 
 
-rollPush :: Show a => PID -> Participant -> Participant -> Queue a -> Either QueueRollError ( Queue a, Item a ) 
-rollPush thread sender receiver queue = 
+rollPush :: (Show a, Show t, Eq t) => Participant -> Participant -> t -> Queue t a -> Either QueueRollError ( Queue t a, Item t a ) 
+rollPush sender receiver valueType queue = 
     case queue of 
         Queue [] _ -> 
             Except.throwError RollPushEmptyQueue 
 
         Queue (h:_) [] -> 
             -- can't rollPush, but can rollPull if there is history
-            Except.throwError $ InvalidAction "rollPush 1" h
+            Except.throwError $ InvalidAction "rollPush 1" (show h)
 
         Queue (h:history) (i:is) -> 
+            -- only the sender can undo a write
             case h of 
-                Added pid -> 
-                    if thread == pid then
+                Added participant tipe -> 
+                    if participant == sender && tipe == valueType then
                         pure ( Queue history is, i )
                     else
-                        Except.throwError $ InvalidAction "rollpush 2" h
+                        Except.throwError $ InvalidAction "rollpush 2" (show h)
 
                 _ -> 
-                    Except.throwError $ InvalidAction "rollpush 3" h
+                    Except.throwError $ InvalidAction "rollpush 3" (show h)
 
              
 
-toHistory :: Queue a -> List QueueHistory
+toHistory :: Queue t a -> List (QueueHistory t)
 toHistory = past
 
 
-hasJustReceived :: PID -> Queue a -> Bool
-hasJustReceived pid queue = 
+hasJustReceived :: Eq t => Participant -> t -> Queue t a -> Bool
+hasJustReceived participant valueType queue = 
     case queue of 
-        Queue (Removed remover:_) _ ->
-            pid == remover
+        Queue (Removed remover tipe :_) _ ->
+            participant == remover && tipe == valueType
 
         Queue _ _ ->
             False
 
-hasJustSent :: PID -> Queue a -> Bool
-hasJustSent pid queue = 
+hasJustSent :: Eq t => Participant -> t -> Queue t a -> Bool
+hasJustSent participant valueType queue = 
     case queue of 
-        Queue (Added adder:_) _ ->
-            pid == adder
+        Queue (Added adder tipe:_) _ ->
+            participant == adder && tipe == valueType
 
         Queue _ _ ->
             False
 
 {-
-data Queue a = Empty (List QueueHistory) | Queue { items :: NonEmpty (Item a), history :: NonEmpty QueueHistory } 
+    data Queue t a = Empty (List QueueHistory t) | Queue { items :: NonEmpty (Item a), history :: NonEmpty QueueHistory t } 
     deriving (Show, Eq, Functor) 
 
 
@@ -165,11 +183,11 @@ data Queue a = Empty (List QueueHistory) | Queue { items :: NonEmpty (Item a), h
 
 
 
-empty :: Queue a
+empty :: Queue t a
 empty = 
     Empty []
 
-push :: PID -> Item a -> Queue a -> Queue a
+push :: PID -> Item a -> Queue t a -> Queue t a
 push pid item queue =
     case queue of 
         Queue items history ->
@@ -180,7 +198,7 @@ push pid item queue =
 
 
 
-pop :: PID -> Queue a -> Maybe (Item a, Queue a)
+pop :: PID -> Queue t a -> Maybe (Item a, Queue t a)
 pop pid queue =  
     case queue of
         Empty history ->
@@ -196,7 +214,7 @@ pop pid queue =
 
 data Msg a = RevertSendFrom PID a | RevertReceiveTo PID 
 
-revert :: Queue a -> Maybe (Queue a, Msg a)
+revert :: Queue t a -> Maybe (Queue t a, Msg a)
 revert queue = 
     case queue of 
         Empty history -> 
@@ -218,7 +236,7 @@ revert queue =
                         Just ( fromMaybe (Empty historyList) $ Queue items <$> newHistory, RevertReceiveTo pid )
 
 
-unpop :: Item a -> Queue a -> Queue a
+unpop :: Item a -> Queue t a -> Queue t a
 unpop value queue = 
     case queue of 
         Empty ( Removed pid : remaining ) -> 
@@ -247,7 +265,7 @@ unpop value queue =
                     error "unpopping, but the most recent action as Added"
 
 
-unpush :: Queue a -> ( Queue a, Item a ) 
+unpush :: Queue t a -> ( Queue t a, Item a ) 
 unpush queue = 
     case queue of 
         Empty _ -> error "unpushing on empty queue"
@@ -270,22 +288,30 @@ unpush queue =
 
 
 {-| The instruction immediately following a receive on the given thread -} 
-followingReceive :: PID -> Queue a -> List QueueHistory
-followingReceive pid queue =
+followingReceive :: Participant -> Queue t a -> List (QueueHistory t)
+followingReceive participant queue =
     queue
         |> toHistory
-        |> takeWhile (\h -> h /= Removed pid)
+        |> takeWhile (\h ->
+            case h of 
+                Removed p _ | p == participant -> True
+                _ -> False 
+                     )
 
 
 {-| The instruction immediately following a send on the given thread -} 
-followingSend :: PID -> Queue a -> List QueueHistory
-followingSend pid queue =
+followingSend :: Participant -> Queue t a -> List (QueueHistory t)
+followingSend participant queue =
     queue
         |> toHistory 
-        |> takeWhile (\h -> h /= Added pid)
+        |> takeWhile (\h -> 
+            case h of 
+                Added p _ | p == participant -> True
+                _ -> False 
+                     )
 
 {-| The last N receive instructions (with intermittent sends) on the channel -} 
-lastNReceives :: Int -> Queue a -> List QueueHistory
+lastNReceives :: Int -> Queue t a -> List (QueueHistory t)
 lastNReceives n queue =
     let 
         go n histories = 
@@ -294,8 +320,8 @@ lastNReceives n queue =
             else
                 case histories of
                     [] -> []
-                    (h@(Added _):rest) -> h : go n rest 
-                    (h@(Removed _)  :rest) -> h : go (n - 1) rest 
+                    (h@(Added _ _):rest) -> h : go n rest 
+                    (h@(Removed _ _)  :rest) -> h : go (n - 1) rest 
 
     in
         queue
@@ -304,7 +330,7 @@ lastNReceives n queue =
 
 
 {-| The last N send instructions (with intermittent receives) on the channel -} 
-lastNSends :: Int -> Queue a -> List QueueHistory
+lastNSends :: Int -> Queue t a -> List (QueueHistory t)
 lastNSends n queue =
     let
         go n histories = 
@@ -313,8 +339,8 @@ lastNSends n queue =
             else
                 case histories of
                     [] -> []
-                    (h@(Removed _):rest) -> h : go n rest 
-                    (h@(Added _)  :rest) -> h : go (n - 1) rest 
+                    (h@(Removed _ _):rest) -> h : go n rest 
+                    (h@(Added _ _)  :rest) -> h : go (n - 1) rest 
     in
         queue
             |> toHistory

@@ -49,7 +49,7 @@ data Context value =
     Context
     { bindings :: Map Identifier (PID, value)
     , variableCount :: Int 
-    , channels :: Map Identifier (PID, Queue value)
+    , channels :: Map Identifier (PID, Queue String value)
     , threads :: Map PID Int
     -- , localTypes :: Map Identifier (SessionType.LocalType String)
     , participantMap :: Map PID Actor
@@ -216,7 +216,7 @@ freshIdentifier = do
     return $ Identifier.create $ "var" ++ show new
 
 
-insertChannel :: MonadState (Context value) m => PID -> Queue value -> m Identifier 
+insertChannel :: MonadState (Context value) m => PID -> Queue String value -> m Identifier 
 insertChannel pid value = do
     identifier <- freshIdentifier  
 
@@ -287,7 +287,7 @@ removeThread pid =
         State.put context{ threads = newTs }
         
 
-withChannel :: (MonadState (Context value) m, MonadError Error m) => Identifier -> (Queue.Queue value -> m a) -> m a 
+withChannel :: (MonadState (Context value) m, MonadError Error m) => Identifier -> (Queue.Queue String value -> m a) -> m a 
 withChannel identifier tagger = do
     channel <- Map.lookup identifier . channels <$> State.get 
     case channel of 
@@ -297,24 +297,24 @@ withChannel identifier tagger = do
         Nothing ->
             Except.throwError $ UndefinedChannel identifier
 
-mapChannel :: (MonadState (Context value) m) => Identifier -> (Queue.Queue value -> Queue.Queue value) -> m ()
+mapChannel :: (MonadState (Context value) m) => Identifier -> (Queue.Queue String value -> Queue.Queue String value) -> m ()
 mapChannel identifier tagger = 
     State.modify $ \context ->
         context { channels = Map.adjust (\(pid, v) -> (pid, tagger v)) identifier (channels context) } 
 
 
-readChannel :: (MonadState (Context value) m, MonadError Error m) => PID -> Participant -> Participant -> String -> ChannelName -> m (Maybe value)
-readChannel threadName sender receiver valueType identifier = 
+readChannel :: (MonadState (Context value) m, MonadError Error m) => Participant -> Participant -> String -> ChannelName -> m (Maybe value)
+readChannel sender receiver valueType identifier = 
     let fetch = 
             withChannel identifier $ \queue ->
-                case Queue.pop threadName sender receiver valueType queue of
+                case Queue.pop sender receiver valueType queue of
                     Right ( first, rest ) -> do 
                         -- put the rest of the queue back into the context
                         mapChannel identifier (const rest)
                         return first
 
                     Left _ ->
-                        Except.throwError $ BlockedOnReceive threadName  
+                        Except.throwError $ BlockedOnReceive undefined  
         handler error = 
             case error of
                 BlockedOnReceive _ -> return Nothing
@@ -323,9 +323,9 @@ readChannel threadName sender receiver valueType identifier =
         fmap Just fetch `Except.catchError` handler 
 
 
-writeChannel :: MonadState (Context value) m => PID -> Participant -> Participant -> String -> ChannelName -> value -> m ()  
-writeChannel threadName sender receiver valueType identifier payload = 
-    mapChannel identifier (Queue.push threadName sender receiver valueType payload)
+writeChannel :: MonadState (Context value) m => Participant -> Participant -> String -> ChannelName -> value -> m ()  
+writeChannel sender receiver valueType identifier payload = 
+    mapChannel identifier (Queue.push sender receiver valueType payload)
 
 
 currentParticipant :: (MonadState (Context value) m, MonadError Error m) => Actor -> m Participant

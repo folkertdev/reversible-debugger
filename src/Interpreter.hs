@@ -21,7 +21,7 @@ import Types
 import qualified Cmd
 import Debug.Trace as Debug
 
-import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMsg(..), BackwardMsg(..), advanceP, backwardP) 
+import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMsg(..), BackwardMsg(..), advanceP, backwardP, Consumed(..)) 
 import qualified MicroOz
 
 type Execution a = StateT (Context Value, ThreadState History Program) (Either Error) a
@@ -107,7 +107,7 @@ rollVariable identifier = do
 
 
 {-| Roll the (assumed) most recent action on a channel -}
-rollChannel :: ChannelName -> Queue.QueueHistory -> Execution () 
+rollChannel :: ChannelName -> Queue.QueueHistory String -> Execution () 
 rollChannel ourChannel history = 
     let pid = 
             case Debug.traceShowId history of 
@@ -247,12 +247,19 @@ handleBackwardEffects action =
             Foldable.traverse_ (rollChannel channelName) histories
 
 
-handleForwardEffects :: (MonadError Error m, Has (ThreadState History Program) c) => ForwardMsg -> StateT c m () 
+handleForwardEffects :: ForwardMsg -> Execution () 
 handleForwardEffects action = 
     case action of
         Spawn thread@Thread { pid, program } ->
             -- add the thread to the state (it is in the context already)
             State.modify $ change $ ThreadState.add $ thread { program = program }
+        PushOnStack toPush -> 
+            withRunning $ \(current@Thread { program }) rest -> do
+                let newThread = current { program = toPush : program }
+                setThreadState (Running newThread rest)
+
+
+
 
 
 -- ATOMIC MOVING FUNCTIONS
@@ -349,15 +356,17 @@ forward =
                         Except.throwError $ SchedulingError $ ThreadScheduleError (PID.create []) DeadLock
 
 
-advance :: (MonadState (Context Value) m, MonadError Error m) => Thread History Program -> m ( Progress (Thread History Program), Cmd.Cmd ForwardMsg) 
+advance :: (MonadState (Context Value) m, MonadError Error m) 
+        => Thread History Program 
+        -> m ( Progress (Thread History Program), Cmd.Cmd ForwardMsg) 
 advance thread@(Thread pid currentActor histories program) = 
     case program of
         [] -> 
             return ( Done, Cmd.none )
 
         (p:ps) -> do
-            (h, newActor, newProgram, cmd ) <- embed (advanceP pid currentActor p ps) 
-            return ( Step $ Thread pid newActor (h:histories) newProgram, cmd )
+            (h, newActor, cmd ) <- embed (advanceP pid currentActor p) 
+            return ( Step $ Thread pid newActor (h:histories) ps, cmd )
 
 embed :: (MonadState s m, MonadError Error m) => StateT s (Either Error) a -> m a
 embed specific = do
@@ -378,11 +387,12 @@ rollback thread@(Thread pid currentActor histories program) =
 
         (h:hs) -> do
             ( consumed, newActor, newProgram, cmd ) <- backwardP pid currentActor h program 
-            --return ( Step $ Thread pid hs newProgram, cmd )
-            if consumed then
-                return ( Step $ Thread pid newActor hs newProgram, cmd )
-            else
-                return ( Step $ Thread pid newActor (h:hs) newProgram, cmd )
+            case consumed of
+                Consumed ->
+                    return ( Step $ Thread pid newActor hs newProgram, cmd )
+
+                Unconsumed ->
+                    return ( Step $ Thread pid newActor (h:hs) newProgram, cmd )
 
 -- HELPERS 
 
