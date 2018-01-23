@@ -28,7 +28,7 @@ RUN elm-package install -y
 
 COPY . /reversible-debugger
 
-RUN elm-make src/Main.elm src/ThreeBuyer.elm --output=index.html
+RUN elm-make src/Main.elm --output=index.html
 
 WORKDIR /reversible-debugger
 RUN stack build reversible-debugger:server
