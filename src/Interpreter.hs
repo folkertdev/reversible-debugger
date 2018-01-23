@@ -1,4 +1,5 @@
-{-# LANGUAGE ScopedTypeVariables, NamedFieldPuns, FlexibleContexts, MultiParamTypeClasses, FlexibleInstances, DuplicateRecordFields #-}
+{-# LANGUAGE ScopedTypeVariables, NamedFieldPuns, FlexibleContexts, MultiParamTypeClasses, FlexibleInstances, DuplicateRecordFields, 
+GeneralizedNewtypeDeriving #-}
 module Interpreter where
 
 import qualified Data.Map as Map
@@ -24,7 +25,8 @@ import Debug.Trace as Debug
 import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMsg(..), BackwardMsg(..), advanceP, backwardP, Consumed(..)) 
 import qualified MicroOz
 
-type Execution a = StateT (Context Value, ThreadState History Program) (Either Error) a
+newtype Execution a = Execution { unExecution :: StateT (Context Value, ThreadState History Program) (Either Error) a }
+    deriving (Show, Eq, Functor, Applicative, Monad)
 
 
 

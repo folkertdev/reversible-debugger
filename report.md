@@ -16,6 +16,14 @@ scheduling one thread before another.
 The goal is to define a debugger that can step forward and backward in time, allowing for 
 complete rewinding (rolling) of threads, variable assignments and the full program.
 
+A future goal - that influenced the implementation - is that we want to introduce session types to this language and model. 
+Session types are specifications for the interactions of a process. For instance
+
+    A: send "Ping"
+    B: send "Pong"
+
+Thread `A` must send (it cannot perform a receive) the value "Ping" on some channel before it terminates. 
+Likewise, thread `B` must send the value "Pong".
 
 ## My idea works
 
@@ -28,7 +36,7 @@ To look at how this might function we will define
 
 The practical running example in this paper will be implementing this debugger for the MicroOz language.
 MicroOz is a small language for expressing parallel computation. It uses a stack for its instructions.
-Its instruction set can be captured in the following data type.
+Its instruction set is expressed as the following data type.
 
 ```haskell
 data Program 
@@ -105,10 +113,13 @@ uniqueIdentifier :: State Context String
 uniqueIdentifier = do
     -- aquire the state, a value of type Context
     context :: Context <- State.get
+
     -- convert the variable count to String and prepend "variable_"
     let result = "variable_" ++ show (_variableCount context)
+
     -- increment the _variableCount in the context, overwrite the state with it
     put (context { _variableCount = _variableCount + 1 })
+
     -- return the result
     return result
 
@@ -173,8 +184,13 @@ lookupVariable identifier = do
 
 **Effects** 
 
+Effects in this context are changes that a thread wants to happen in the world. Because 
+we have a very constrained type signature giving only the information needed to move 
+a single thread forward, and because haskell is pure, we can't directly mutate other threads. 
+Instead, we can return a `Msg` to signal that something should happen.
+
 In the forward case, there are two effects: items can be pushed on the stack, and a new thread can be spawned. 
-`forwardThread` function needs to be able to signal this to the caller.
+The `forwardThread` function signals these actions to its caller with a `Msg`. 
 
 ```haskell
 data ForwardMsg
@@ -189,6 +205,8 @@ For now that is just a pid `newtype PID = PID (List Int)`, but with the introduc
 this will become the current actor.
 
 ### Backward 
+
+A similar derivation can be made for the backward function, producing:
 
 ```haskell
 data BackwardMsg
@@ -209,7 +227,8 @@ We can now wrap the primitives into functions that keep track of whether progres
 ```haskell
 data Thread = Thread PID (List History) (List Program) 
 
-type Execution a = State (Context Value, ThreadState History Program) (Either Error) a
+-- a type alias
+type Execution a = StateT (Context Value, ThreadState History Program) (Either Error) a
 
 data Progress work 
     = Done 
@@ -219,40 +238,47 @@ forwardThread  :: Thread -> Execution (Progress Thread, List ForwardMsg)
 backwardThread :: Thread -> Execution (Progress Thread, List BackwardMsg)
 ```
 
+This information is important because we want to move forward by exactly one step. When a thread 
+did not make progress and we don't detect it, we might get into infinite loops. 
+
 **Thread Pool** 
 
+A thread pool in our case is a collection of dictionaries (`Map`) for the four states that a thread can be in. 
+
 ```haskell
-data Pool a = 
+data Pool thread = 
     Pool
-        { active :: Map PID Thread
-        , done :: Map PID Thread
-        , blocked :: Map PID Thread
-        , uninitialized :: Map PID Thread
+        { active :: Map PID thread
+        , done :: Map PID thread
+        , blocked :: Map PID thread
+        , uninitialized :: Map PID thread
         }
 ```
+
+We borrow the scheduling algorithm from [A Monad for Deterministic Parallelism](https://simonmar.github.io/bib/papers/monad-par.pdf). 
+In the forward case, this algorithm will first exhaust the active set, then wake up blocked threads and finally activate uninitialized threads. 
+The backward variant will first roll active threads, then blocked ones and finally done ones.
 
 Next it is useful to have one thread "active", so we define 
 
 ```haskell
-ThreadState a
-    = Stuck (Pool a)
-    | Running a (Pool a)
+ThreadState
+    = Stuck Pool
+    | Running Thread Pool 
 ```
-
-We use the rescheduling algormthm from [monad par paper]().
 
 **Applying Effects** 
 
 We can define the functions 
 
 ```haskell
-handleForwardMsg :: ForwardMsg -> Pool Thread -> Pool Thread 
-handleBackwardMsg :: BackwardMsg -> Pool Thread -> Pool Thread
+handleForwardMsg :: ForwardMsg -> Pool Thread -> Execution (Pool Thread)
+handleBackwardMsg :: BackwardMsg -> Pool Thread -> Execution (Pool Thread) 
 ```
 
 ### Channels 
 
-Channels are a distinctive feature: they make the language multi-threaded. 
+Channels are a distinctive feature of MicroOz: they make the language multi-threaded. 
 
 The Channel module is also the module that has changed the most during development. It is really 
 hard to have threads interact over a channel in a principled and reversible way (hence of course the introduction of session types).
@@ -274,7 +300,7 @@ data Item a = Item
     }
 ```
 
-On this data strucutre we can define push and pop (corresponding to send and receive), and 
+On this data structure we define push and pop (corresponding to send and receive), and 
 also helpers to determine whether a thread may roll a send or receive, and if not what threads/actions 
 have to be rolled first. 
 
@@ -358,6 +384,13 @@ Stepping through the program
 
 We're still looking into how best to visualize the execution and possible execution paths whilst the debugger is running. 
 It is impossible to do this a-priori because there is no strict ordering of the instructions.
+
+## experience 
+
+finding abstractions that work well is really hard. 
+
+Haskell is a language where, when the abstraction is good, your life is great. The haskell ecosystem has many great abstractions. 
+But for this project I've often had to come up with my own, with varying success. 
 
 
 
