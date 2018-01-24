@@ -25,9 +25,7 @@ import Debug.Trace as Debug
 import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMsg(..), BackwardMsg(..), advanceP, backwardP, Consumed(..)) 
 import qualified MicroOz
 
-newtype Execution a = Execution { unExecution :: StateT (Context Value, ThreadState History Program) (Either Error) a }
-    deriving (Show, Eq, Functor, Applicative, Monad)
-
+type Execution a = StateT (Context Value, ThreadState History Program) (Either Error) a 
 
 
 rollSends :: Int -> ChannelName -> Execution () 
@@ -113,8 +111,8 @@ rollChannel :: ChannelName -> Queue.QueueHistory String -> Execution ()
 rollChannel ourChannel history = 
     let pid = 
             case Debug.traceShowId history of 
-                Queue.Added v -> v
-                Queue.Removed v -> v
+                Queue.Added _ v -> v
+                Queue.Removed _ v -> v
 
         predicate h = 
             case h of 

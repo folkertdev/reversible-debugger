@@ -1,249 +1,75 @@
 # A sequential debugger for parallel programs
 
-Finding bugs in parallel programs is often hard. Existing debugging tools 
-can't deal with parallel programs very well. 
- 
-## My Idea  
+Finding bugs in parallel programs is often hard. Existing debugging tools can't deal with parallel programs very well. 
 
-The main idea of this paper is to simulate parallel evaluation in a sequential way. 
-The debugger state is therefore completely observable at any point, and can be treated as just data: 
-modified by pure functions, serialized, sent to a collegue, etc.
+This project implements a sequential debugger for the MicroOz language: simple parallel language with threads and message channels. 
+MicroOz programs can be evaluated forward, but also backward. This debugger makes it easy to not only see what went wrong, 
+but to also go back several steps and try alternative 
+evaluations (making different choices) to see what exactly went wrong. The debugger is heavily inspired by [CaReDeb](http://www.cs.unibo.it/caredeb).
 
-This particular debugger is building on the idea that to debug parallel programs, it is valuable to be able to 
-step through their forward evaluation, then step back a few steps and pick a different execution path. For instance,
-scheduling one thread before another.
+## Architecture overview 
 
-The goal is to define a debugger that can step forward and backward in time, allowing for 
-complete rewinding (rolling) of threads, variable assignments and the full program.
+The debugger design is conceptually simple 
 
-A future goal - that influenced the implementation - is that we want to introduce session types to this language and model. 
-Session types are specifications for the interactions of a process. For instance
+* define your language (and a parser for it)
+* define a stepping function for one thread 
+* define a stepping function for multiple threads
+* define debugger functions 
 
-    A: send "Ping"
-    B: send "Pong"
-
-Thread `A` must send (it cannot perform a receive) the value "Ping" on some channel before it terminates. 
-Likewise, thread `B` must send the value "Pong".
-
-## My idea works
-
-To look at how this might function we will define 
-
-* a simple reversible language 
-* forward and backward steps for a single thread
-* running and scheduling multiple threads
-* implementing debugging operations
-
-The practical running example in this paper will be implementing this debugger for the MicroOz language.
-MicroOz is a small language for expressing parallel computation. It uses a stack for its instructions.
-Its instruction set is expressed as the following data type.
+First we need to define what program we're actually debugging. This debugger is written in haskell, which makes defining a 
+data type with many disjoint cases easy with its sum types (also known as tagged unions).
 
 ```haskell
+
 data Program 
-    -- execute two programs sequentially
-    = Sequence Program Program
-
-    -- bind a variable. Value here is an integer, a variable or a new channel
-    | Let Identifier (ReversibleLanguage.Value Program) Program
-
-    -- branch on a condition
-    | If BoolExp Program Program
-
-    -- spawn a new thread with the given program
-    | SpawnThread Program
-
-    -- do nothing
-    | Skip
-
-    -- apply function arguments
-    | Apply Identifier (List Identifier)
-
-    -- Send channel payload: send the payload over the channel
-    | Send Identifier Identifier
+    = Let { variable :: Identifier, value :: Value, continuation :: Program }
+    | If { condition :: BoolExp, thenBody :: Program, elseBody :: Program }
+    | Spawn Program
+    | Send { channel :: ChannelName, payload :: Identifier } 
+    | ...
 ```
 
-Recent research has shown that every non-reversible language can be made reversible [Orchard et al.](), but 
-the MicroOz language has a defined backward semantics. For every forward step, we keep track of the step
-we took and enough data to reverse it.
+The parser is a very standard recursive descent parser using the [Parsec](https://hackage.haskell.org/package/parsec) library. 
+
+Next we can define a function that makes one step of progress in evaluating a `Program`, conceptually:
+
+```haskell
+data Error 
+    = UndefinedVariable Identifier
+    | ...
+
+stepThread :: VariableBindings 
+           -> List Program 
+           -> Either Error ( List Program, VariableBindings, List Message )
+```
+
+A value of type `VariableBindings` stores the names and values of all variables. MicroOz uses a stack, so we 
+pass a `List Program` to represent the thread's instructions. Evaluating the program may fail, so 
+we return `Either` and error of type `Error`, or a modified instruction stack, set of variable bindings and a list of messages.
+
+The `Message` is used for side-effects. In this case used to spawn a new thread. 
+
+MicroOz is special because it has a defined backward semantics. We can keep information around to 
+make backward steps - essentially unevaluating the program. This is [possible in general (modulo side-effects)](https://www.cs.indiana.edu/~sabry/papers/information-effects.pdf), but very convenient in MicroOz.
 
 ```haskell
 data History 
-    = Skipped
-    | Composed 
-    | Sent Identifier Identifier
-    | Received Identifier Identifier
-    | CreatedVariable Identifier
-    | CreatedChannel Identifier
-    | CalledProcedure Identifier (List Identifier)
-    | SpawnedThread PID
-    | BranchedOn BoolExp Bool Program 
-    deriving (Eq, Show)
+    = BoundVariable { variable :: Identifier }
+    | If { condition :: BoolExp, verdict :: Bool, otherBody :: Program }
+    | Spawned { pid :: PID }
+    | Sent { channel :: ChannelName, payload :: Identifier } 
+    ...
+
+stepThreadBackward :: VariableBindings 
+                   -> List Program 
+                   -> Either Error ( List Program, VariableBindings, List Message )
 ```
+_A PID is a process id, a value uniquely identifying a particular thread_ 
 
-### Moving Forward 
+For backward steps the messages are used to undo dependencies. For instance, to undo a `Send`, we must make sure the corresponding
+receive is also undone. 
 
-The first primitive we need is to move one thread forward. So essentially: 
-
-```haskell
-forwardThread :: Context -> Program -> (History, Context)
-
-data Context a = 
-    Context 
-        { _threads :: Map PID Int
-        , _variableCount :: Int
-        , _bindings :: Map Identifier a
-        , _channels :: Map Identifier (Queue.Queue String Identifier)
-        }
-    deriving (Show)
-```
-
-Given an instruction and some context (containing variable bindings and other environment information), produce a `History` and an updated context.
-The idiom `s -> (a, s)` has some special algebraic structure. It is often written as `State`: 
-
-```
--- define a newtype wrapper around the type `s -> (a, s)`
-newtype State s a = State (s -> (a, s))
-```
-
-The most important characteristic is its `bind` or `>>=`: Multiple state transformation functions can be chained into one, so for instance this will work as expected, giving unique identifiers.
-
-```haskell
-
-uniqueIdentifier :: State Context String
-uniqueIdentifier = do
-    -- aquire the state, a value of type Context
-    context :: Context <- State.get
-
-    -- convert the variable count to String and prepend "variable_"
-    let result = "variable_" ++ show (_variableCount context)
-
-    -- increment the _variableCount in the context, overwrite the state with it
-    put (context { _variableCount = _variableCount + 1 })
-
-    -- return the result
-    return result
-
-threeNewVariableNames = do
-    one <- uniqueIdentifier
-    two <- uniqueIdentifier
-    three <- uniqueIdentifier
-```
-
-The above snippet uses do-notation. This is syntactic sugar for the bind operator. 
-The functions bind `>>=` and `return` (and some laws on how they interact) 
-correspond to a mathematical concept called a "Monad".  Therefore `State` is sometimes called the "State Monad".
-
-We can rewrite our function above as
-
-```haskell
-forwardThread :: Program -> State Context History 
-```
-
-**Exceptions** 
-
-Sometimes the evaluation of a program cannot proceed: we've hit an error. There can be many reasons 
-like a type mismatch or the use of an undefined variable. 
-
-In Haskell it is recommended to account for errors in your types. This makes sure the error 
-needs to be handled at some point. 
-
-The basic type we can use is the `Either` sum type.
-
-```
-Either error value = Left error | Right value 
-```
-
-Value of this type are either tagged values (with `Left`) of type `error`, or tagged values (with `Right`) of 
-type value. To get at the `value`, you have to perform a case split and handle the possible error value
-too.
-
-Like state, `Either` has lawful definitions for bind and `return`. 
-To integrate the binds and returns of `Either` and `State` with each other, we use
-Monad Transformers, written as `<monad name>T` by convention. 
-
-```haskell
-data Error = 
-    UndefinedVariable Identifier
-
-forwardThread :: Program -> StateT Context (Either Error) History
-```
-
-We can now write helpers like so
-
-```haskell
-lookupVariable :: Identifier -> StateT Context (Either Error) Value
-lookupVariable identifier = do 
-    context <- State.get
-    case Map.lookup identifier (_bindings context) of 
-        Nothing -> 
-            Except.throwError (UndefinedVariable identifier)
-
-        Just value -> 
-            return value
-```
-
-**Effects** 
-
-Effects in this context are changes that a thread wants to happen in the world. Because 
-we have a very constrained type signature giving only the information needed to move 
-a single thread forward, and because haskell is pure, we can't directly mutate other threads. 
-Instead, we can return a `Msg` to signal that something should happen.
-
-In the forward case, there are two effects: items can be pushed on the stack, and a new thread can be spawned. 
-The `forwardThread` function signals these actions to its caller with a `Msg`. 
-
-```haskell
-data ForwardMsg
-    = SpawnThread (Thread History Program) 
-    | PushOnStack Program
-
-forwardThread :: Program -> StateT Context (Either Error) (History, List ForwardMsg)
-```
-
-Finally, for various bookkeeping requirements, this function needs a unique identifier. 
-For now that is just a pid `newtype PID = PID (List Int)`, but with the introduction of session types 
-this will become the current actor.
-
-### Backward 
-
-A similar derivation can be made for the backward function, producing:
-
-```haskell
-data BackwardMsg
-    = RollChild PID 
-    | RollReceives 
-    | RollSends 
-
-backwardThread :: PID -> History -> List Program -> StateT Context (Either Error) (List Program, List BackwardMsg)
-```
-
-The backward function also has some effects (to undo actions that the current thread depends on) and can throw errors. 
-A difference is that this function gets the full program stack, because it needs to pattern match on that stack. 
-
-### Multiple Threads
-
-We can now wrap the primitives into functions that keep track of whether progress was actually made. 
-
-```haskell
-data Thread = Thread PID (List History) (List Program) 
-
--- a type alias
-type Execution a = StateT (Context Value, ThreadState History Program) (Either Error) a
-
-data Progress work 
-    = Done 
-    | Step work 
-
-forwardThread  :: Thread -> Execution (Progress Thread, List ForwardMsg)
-backwardThread :: Thread -> Execution (Progress Thread, List BackwardMsg)
-```
-
-This information is important because we want to move forward by exactly one step. When a thread 
-did not make progress and we don't detect it, we might get into infinite loops. 
-
-**Thread Pool** 
-
-A thread pool in our case is a collection of dictionaries (`Map`) for the four states that a thread can be in. 
+Next we use the per-thread primitives to run multiple threads: 
 
 ```haskell
 data Pool thread = 
@@ -254,116 +80,106 @@ data Pool thread =
         , uninitialized :: Map PID thread
         }
 ```
+_`Map` is Haskell's name for a dictionary or key-value store_
 
-We borrow the scheduling algorithm from [A Monad for Deterministic Parallelism](https://simonmar.github.io/bib/papers/monad-par.pdf). 
+We borrow the sequential scheduling algorithm from [A Monad for Deterministic Parallelism](https://simonmar.github.io/bib/papers/monad-par.pdf). 
 In the forward case, this algorithm will first exhaust the active set, then wake up blocked threads and finally activate uninitialized threads. 
 The backward variant will first roll active threads, then blocked ones and finally done ones.
 
-Next it is useful to have one thread "active", so we define 
+Finally, we can implement debugging primitives based on the pool stepping functions. Functionality like rolling threads or rolling transactions 
+over channels are already part of the pool stepping, but we can also define something custom. During debugging it is useful to step through a program quickly, 
+so there is a function `run` that makes 10 forward steps. 
+
+Of particular interest for future work is "send/receive normal form": A thread in this for is either exhausted (no instructions left), or its
+next instruction is a send or a receive.
+
+These functions are part of a command line interface where one can load a program, and step through it in both the forward and backward direction.
+
+
+## Project Structure 
+
+This project follows common haskell practice putting data structures in `src/Data/*.hs` files. In that directory are things like
+`Thread`, `Context` and `Identifier`. These files are mostly boilerplate, but putting data structures into separate files makes
+it possible to qualify functions: 
 
 ```haskell
-ThreadState
-    = Stuck Pool
-    | Running Thread Pool 
+Thread.new x y z
 ```
 
-**Applying Effects** 
+is vastly better than
 
-We can define the functions 
+```haskel
+import Thread (new)
+
+-- 100 lines later
+
+new x y z
+```
+
+In the `src/` directory we also find `MicroOz.hs` and `MicroOz/Parser.hs`. The latter is the parser for our language, and the former defines the language 
+data type and how individual threads can step forward and backward. 
+
+The `Interpreter.hs` file takes these individual thread stepping functions, and uses them to implement a pool of multiple threads. 
+
+For the moment, `src` also contains `Queue.hs` and `SessionType.hs`. These could be in `src/Data`, but haven't been moved there yet because
+these files change regularly. 
+
+Beside code there are three configuration files. `reversible-debugger.cabal` specifies required packages and their versions, and `stack.yaml` defines a 
+local sandbox that is used while building the project. There is also a `Dockerfile` that is used to build the project into an image that can
+be hosted on heroku.
+
+Finally there is `app/Main.hs` which defines the debugger command line interface.
+
+## Technical Lessons
+
+The main issue I struggled with is that _good abstractions are hard to find_. 
+
+Haskell is a language of elegance: when your abstractions are good, writing code is just a delight. When they are not though, you're back to 
+["digging a tunnel under Mordor with a screwdriver"](https://gizmodo.com/programming-sucks-why-a-job-in-coding-is-absolute-hell-1570227192/1570452729). 
+
+In particular, I tried to make make use of a type class (akin to an interface in other languages) called `ReversibleLanguage`. 
+The code for running multiple threads would be based on the individual thread stepper functions, and some other parameters of the type class. 
+General haskell philosophy would most likely say that this seems like a good idea, but I only found that I now had an abstract 
+interface that required more code (first define the language/data type, then the `ReversibleLanguage` instance), and requires many assumptions and ad-hoc decisions.
+So for now, if we'd really want another language to also run with the debugger, we'll have to perform a compilation to MicroOz.
+
+Many of the functions are still highly polymorphic, using type class constraints:
 
 ```haskell
-handleForwardMsg :: ForwardMsg -> Pool Thread -> Execution (Pool Thread)
-handleBackwardMsg :: BackwardMsg -> Pool Thread -> Execution (Pool Thread) 
+lookupVariable :: (MonadState VariableBindings m, MonadError Error m) => Identifier -> m Value
 ```
 
-### Channels 
-
-Channels are a distinctive feature of MicroOz: they make the language multi-threaded. 
-
-The Channel module is also the module that has changed the most during development. It is really 
-hard to have threads interact over a channel in a principled and reversible way (hence of course the introduction of session types).
+Opposed to the concrete:
 
 ```haskell
-data Channel a = Channel 
-    { histories :: List ChannelHistory 
-    , items :: List (Item a)
-    }
-
-data ChannelHistory 
-    = Pushed PID
-    | Popped PID
-
-data Item a = Item 
-    { sender :: PID
-    , receiver :: PID
-    , value :: a 
-    }
+lookupVariable :: Identifier -> StateT VariableBindings (Either Error) Value
 ```
 
-On this data structure we define push and pop (corresponding to send and receive), and 
-also helpers to determine whether a thread may roll a send or receive, and if not what threads/actions 
-have to be rolled first. 
+Given that the code is still changing regularly, keeping these functions polymorphic is reasonable, but for a final product I'd rather want 
+them to be concrete. 
 
-### Debugger Primitives 
+So, a side-effect of haskell's obsession with abstractions is that it's sometimes too easy to abstract.  
 
-With the above functions, we can construct many debugging options
+Maybe part of the problem is that we as a field haven't had a lot of time yet to create elegant programming abstractions around the 
+pi-calculus and the problems that it solves. Maybe adding session types makes all the puzzle pieces fall into place. Anyhow, I'm still 
+searching for something elegant.
+ 
 
-* move one step forward
-* move one step backward
-* move a particular thread forward or backward
-* evaluate active threads until the next instruction is not a let-instruction. 
+## Personal lessons 
 
-Of particular interest is "send/receive normal form": When in this form, a thread is either exhausted
-or its next action is a send or a receive. Equivalently, every instructution that doesn't change
-the session type state is evaluated.  
+Strangely, this is the first project where the requirements actually changed along the way. It's always said that "the customer will change the requirements", but so 
+far I've always found these changes totally predictable: changing colors, adding a page; small things. 
 
+This time around I had to really think about how we could translate ideas into code, often turning an idea around in my mind for multiple days. 
+Maybe my projects weren't challenging enough before? In any case, it has become clear to me that for hard problems, it really is better 
+to think them through well before you touch a keyboard. 
 
-### Problems 
+This project has also been my closest experience to (people) working in academia so far. It's bothered me before that our courses actually show 
+very little of the anonymous people working in the mysterious offices on the higher floors.
+In particular I was supprised by the casualness with which "ooh let's write a paper about that" was used. It had always
+seemed to me that papers were a big thing: An official document of hard labor furthering mankind. 
 
-I'ts not possible to detect deadlock at the moment: the scheduler will just reschedule all the blocked threads infinitely. 
-
-It is unclear to what extend this code should be general. 
-
-It is quite easy and recommended (in Haskell) that one writes higly polymorphic code. Not only does code reuse get easier, but the 
-lack of concreteness means that you can't make assumptions.
-
-On the other hand, this highly general code can become a real mess. 
-
-I feel like at the moment the code is still a bit too general, but because most of the core logic (the µOz semantics) are still 
-in flux that seems inevitable.
-
-
-## Prior Work 
-
-This system is similar to CaReDeb in that it 
-
-* allows for debugging of MicroOz programs, stepping forward and backward, being able to unroll variables, threads and full programs.
-
-But improves on it in the following ways.
-
-* purity 
-
-    The debugger state is completely observable at all times. 
-
-* generality 
-
-    This system can be easily adopted to function for a different language/instruction set: just implement the typeclass and the rest works.
-
-* composability
-
-    The system exposes some basic primitives, on top of which new debugger features can be built.
-
-    The primitives come in two pairs. The first one is `forward` and `backward`. They are used for moving the whole program state or individual threads forward or backward. 
-    They also support a filtering function, which allows to target only threads satisfying a predicate to be evaluated. 
-    In the case of MicroOz this functionality is convenient to do all initial variable bindings (there are a lot in complex programs) in one go.  
-
-    The second pair is `reschedule` - picking the next active (or when they run out, blocked) thread - and `scheduleThread` which picks a specific thread 
-    based on its process ID. `reschedule` is used when the next thread to be worked on doesn't really matter, `scheduleThread` is for fine-grained control of the 
-    evaluation order.
-
-
-A minor hurdle was that I had to write my own parser. It's built with Parsec, so it is pretty solid in terms of performance, but using the same 
-grammar as CaReDeb would have been nice.
+Many good papers are actually short and about small ideas. 
 
 
 ## Future work 
@@ -378,19 +194,28 @@ is allowed, or the thread blocks when the action is not allowed.
 
 Further fiddling with the semantics of the language is likely
 
+**Working with invalid programs**
+
+The error data type currently stores a lot of information, but doesn't present it in a nice way. Writing an interpreter for valid code is easy in comparison
+to writing a debugger that must also be able to handle code with bugs. 
+
+Over the last years, several programming languages have seriously improved their error messages. Many of these changes were inspired by the [Elm](http://elm-lang.org/) language,
+which I've been working with for years now and will use for the web-interface. Its implementation of [compilers as assistants](http://elm-lang.org/blog/compilers-as-assistants) is so good that many other languages had to follow suit. 
+
+Working with elm has proven that error messages and error feedback can be improved massively if time is devoted to them. 
+It would be great if our debugger was not only technically sound, but actually an assistant in debugging invalid programs.
+
 **Visual Debugging**
 
-Stepping through the program 
+A command line interface isn't very flexible and hard to use for larger programs: the 
+amount of information that could be useful for debugging is so large that there is no way to present it 
+clearly on a command line.
 
-We're still looking into how best to visualize the execution and possible execution paths whilst the debugger is running. 
-It is impossible to do this a-priori because there is no strict ordering of the instructions.
+That's why it would be great to have a visual way to interact with the debugger. Load your program, step through its execution. When something 
+goes awry, an error message is given with context. It is possible to look at specific parts of the program state via collapsible lists. 
 
-## experience 
+## Conclusion
 
-finding abstractions that work well is really hard. 
+...
 
-Haskell is a language where, when the abstraction is good, your life is great. The haskell ecosystem has many great abstractions. 
-But for this project I've often had to come up with my own, with varying success. 
-
-
-
+The code and build instructions are can be found on GitHub: [https://github.com/folkertdev/reversible-debugger](https://github.com/folkertdev/reversible-debugger)
