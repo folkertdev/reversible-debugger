@@ -7,6 +7,10 @@ MicroOz programs can be evaluated forward, but also backward. This debugger make
 but to also go back several steps and try alternative 
 evaluations (making different choices) to see what exactly went wrong. The debugger is heavily inspired by [CaReDeb](http://www.cs.unibo.it/caredeb).
 
+The code for this project can be found at: [https://github.com/folkertdev/reversible-debugger]
+
+[https://github.com/folkertdev/reversible-debugger]: (https://github.com/folkertdev/reversible-debugger) 
+
 ## Architecture overview 
 
 The debugger design is conceptually simple 
@@ -16,7 +20,7 @@ The debugger design is conceptually simple
 * define a stepping function for multiple threads
 * define debugger functions 
 
-First we need to define what program we're actually debugging. This debugger is written in haskell, which makes defining a 
+First we need to define what program we're actually debugging. This debugger is written in Haskell, which makes defining a 
 data type with many disjoint cases easy with its sum types (also known as tagged unions).
 
 ```haskell
@@ -50,7 +54,7 @@ we return `Either` and error of type `Error`, or a modified instruction stack, s
 The `Message` is used for side-effects. In this case used to spawn a new thread. 
 
 MicroOz is special because it has a defined backward semantics. We can keep information around to 
-make backward steps - essentially unevaluating the program. This is [possible in general (modulo side-effects)](https://www.cs.indiana.edu/~sabry/papers/information-effects.pdf), but very convenient in MicroOz.
+make backward steps - essentially unevaluating the program. This is [possible in general (modulo side-effects)(James and Sabry, 2012)](https://www.cs.indiana.edu/~sabry/papers/information-effects.pdf), but very convenient in MicroOz.
 
 ```haskell
 data History 
@@ -82,7 +86,7 @@ data Pool thread =
 ```
 _`Map` is Haskell's name for a dictionary or key-value store_
 
-We borrow the sequential scheduling algorithm from [A Monad for Deterministic Parallelism](https://simonmar.github.io/bib/papers/monad-par.pdf). 
+We borrow the sequential scheduling algorithm from [A Monad for Deterministic Parallelism (Marlow et al. 2011)](https://simonmar.github.io/bib/papers/monad-par.pdf). 
 In the forward case, this algorithm will first exhaust the active set, then wake up blocked threads and finally activate uninitialized threads. 
 The backward variant will first roll active threads, then blocked ones and finally done ones.
 
@@ -90,7 +94,7 @@ Finally, we can implement debugging primitives based on the pool stepping functi
 over channels are already part of the pool stepping, but we can also define something custom. During debugging it is useful to step through a program quickly, 
 so there is a function `run` that makes 10 forward steps. 
 
-Of particular interest for future work is "send/receive normal form": A thread in this for is either exhausted (no instructions left), or its
+Of particular interest for future work is "send/receive normal form": A thread in this form is either exhausted (no instructions left), or its
 next instruction is a send or a receive.
 
 These functions are part of a command line interface where one can load a program, and step through it in both the forward and backward direction.
@@ -98,7 +102,7 @@ These functions are part of a command line interface where one can load a progra
 
 ## Project Structure 
 
-This project follows common haskell practice putting data structures in `src/Data/*.hs` files. In that directory are things like
+This project follows common Haskell practice putting data structures in `src/Data/*.hs` files. In that directory are things like
 `Thread`, `Context` and `Identifier`. These files are mostly boilerplate, but putting data structures into separate files makes
 it possible to qualify functions: 
 
@@ -139,7 +143,7 @@ Haskell is a language of elegance: when your abstractions are good, writing code
 
 In particular, I tried to make make use of a type class (akin to an interface in other languages) called `ReversibleLanguage`. 
 The code for running multiple threads would be based on the individual thread stepper functions, and some other parameters of the type class. 
-General haskell philosophy would most likely say that this seems like a good idea, but I only found that I now had an abstract 
+General Haskell philosophy would most likely say that this seems like a good idea, but I only found that I now had an abstract 
 interface that required more code (first define the language/data type, then the `ReversibleLanguage` instance), and requires many assumptions and ad-hoc decisions.
 So for now, if we'd really want another language to also run with the debugger, we'll have to perform a compilation to MicroOz.
 
@@ -158,7 +162,7 @@ lookupVariable :: Identifier -> StateT VariableBindings (Either Error) Value
 Given that the code is still changing regularly, keeping these functions polymorphic is reasonable, but for a final product I'd rather want 
 them to be concrete. 
 
-So, a side-effect of haskell's obsession with abstractions is that it's sometimes too easy to abstract.  
+So, a side-effect of Haskell's obsession with abstractions is that it's sometimes too easy to abstract.  
 
 Maybe part of the problem is that we as a field haven't had a lot of time yet to create elegant programming abstractions around the 
 pi-calculus and the problems that it solves. Maybe adding session types makes all the puzzle pieces fall into place. Anyhow, I'm still 
@@ -182,17 +186,25 @@ seemed to me that papers were a big thing: An official document of hard labor fu
 Many good papers are actually short and about small ideas. 
 
 
-## Future work 
+## Conclusion
 
-**Session Types** 
+We have presented a debugger for the MicroOz language, and looked at its concepts and architecture. 
+We have also mentioned the strengths and weaknesses of haskell as a language to implement 
+such a tool, and the structure of haskell programs.
 
-This work has already begun
+This project is already used to build implementations of theoretical ideas. Ideas for future work include:
+
+**Session Types**
+
+This work has already started.
 
 The syntax is extended to support assigning a session type to each thread. A session type is a specification of the interactions that a thread may have, in this case
-when and what it may send or receive on channels. Every time a thread want's to perform some action on a channel, its session type is checked and advanced when the action 
-is allowed, or the thread blocks when the action is not allowed.
+when and what it may send or receive on channels. Every time a thread want's to perform some action on a channel, 
+its session type is checked and advanced when the action is allowed, or the thread blocks when the action is not allowed.
 
-Further fiddling with the semantics of the language is likely
+Further fiddling with the semantics of the language is likely, to make the debugger relevant to current research.
+The goal is to implement a prototype of a language that is reversible and has session types, and then show that 
+in such a language a debugger can offer more help than in a typical language. 
 
 **Working with invalid programs**
 
@@ -214,8 +226,9 @@ clearly on a command line.
 That's why it would be great to have a visual way to interact with the debugger. Load your program, step through its execution. When something 
 goes awry, an error message is given with context. It is possible to look at specific parts of the program state via collapsible lists. 
 
-## Conclusion
+## References
 
-...
-
-The code and build instructions are can be found on GitHub: [https://github.com/folkertdev/reversible-debugger](https://github.com/folkertdev/reversible-debugger)
+* [A Monad for Deterministic Parallelism - Marlow S., Newton R., Peyton Jones S. (2011)](https://simonmar.github.io/bib/papers/monad-par.pdf)
+* [Information Effects - James R. P., Sabry A. (2012)](https://www.cs.indiana.edu/~sabry/papers/information-effects.pdf)
+* [Compilers as Assistants - Evan Czaplicki (2015)](http://elm-lang.org/blog/compilers-as-assistants) 
+* [A Reversible Abstract Machine and Its Space Overhead - Lienhardt M., Lanese I., Mezzina C.A., Stefani JB. (2012)](http://www.cs.unibo.it/caredeb/vm-oz.pdf)
