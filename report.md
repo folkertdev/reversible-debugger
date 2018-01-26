@@ -7,9 +7,16 @@ MicroOz programs can be evaluated forward, but also backward. This debugger make
 but to also go back several steps and try alternative 
 evaluations (making different choices) to see what exactly went wrong. The debugger is heavily inspired by [CaReDeb](http://www.cs.unibo.it/caredeb).
 
-The code for this project can be found at: [https://github.com/folkertdev/reversible-debugger]
+The code for this project can be found at: [github.com/folkertdev/reversible-debugger](https://github.com/folkertdev/reversible-debugger)
 
-[https://github.com/folkertdev/reversible-debugger]: (https://github.com/folkertdev/reversible-debugger) 
+
+<hr>
+
+_This is a short programming project in the year 17/18_ <br>
+
+* _student: Folkert de Vries (s2993740)_ <br>
+* _supervisor: Jorge A. Perez  (<j.a.perez@rug.nl>)_
+
 
 ## Architecture overview 
 
@@ -150,13 +157,16 @@ So for now, if we'd really want another language to also run with the debugger, 
 Many of the functions are still highly polymorphic, using type class constraints:
 
 ```haskell
-lookupVariable :: (MonadState VariableBindings m, MonadError Error m) => Identifier -> m Value
+lookupVariable :: (MonadState VariableBindings m, MonadError Error m) 
+               => Identifier 
+               -> m Value
 ```
 
 Opposed to the concrete:
 
 ```haskell
-lookupVariable :: Identifier -> StateT VariableBindings (Either Error) Value
+lookupVariable :: Identifier 
+               -> StateT VariableBindings (Either Error) Value
 ```
 
 Given that the code is still changing regularly, keeping these functions polymorphic is reasonable, but for a final product I'd rather want 
@@ -181,8 +191,7 @@ to think them through well before you touch a keyboard.
 This project has also been my closest experience to (people) working in academia so far. It's bothered me before that our courses actually show 
 very little of the anonymous people working in the mysterious offices on the higher floors.
 In particular I was supprised by the casualness with which "ooh let's write a paper about that" was used. It had always
-seemed to me that papers were a big thing: An official document of hard labor furthering mankind. 
-
+seemed to me that papers were a big thing: An official document of hard labor furthering mankind.
 Many good papers are actually short and about small ideas. 
 
 
@@ -191,6 +200,26 @@ Many good papers are actually short and about small ideas.
 We have presented a debugger for the MicroOz language, and looked at its concepts and architecture. 
 We have also mentioned the strengths and weaknesses of haskell as a language to implement 
 such a tool, and the structure of haskell programs.
+
+The improvements over the original CaReDeb implementation include:
+
+* Haskell is closer to the theory than Java - which CaReDeb is written in. A type with disjoint cases 
+    needs several files in CaReDeb, only several lines here. Additionally, the Haskell compiler will check that all valid cases are handled
+
+    Mathematical abstractions, like monoids and functors, are available, making it easier to 
+    implement theoretical work going forward. 
+
+* It is easy to define custom debugging operations. All these operations are state transformations, essentially functions of type
+`a -> a`, and thus we can use function composition to chain them.
+
+* The program state is just data. The program state is completely serialize able to JSON which we plan to use to 
+visualize the debugger with a web application. 
+
+    The above also means that the debugger state can be shared easily, as part of a paper or to share a tricky problem with 
+    a colleague.
+
+    Errors are also just data, making sure all possible error cases are handled. With some more design work, 
+    we can generate helpful errors to debug problems (see below).
 
 This project is already used to build implementations of theoretical ideas. Ideas for future work include:
 

@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns, DuplicateRecordFields, DeriveGeneric, DeriveAnyClass #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 module MicroOz 
     (Program(..)
     , History(..)
@@ -115,6 +116,9 @@ data Program
     | ChangeActor (StackAction Participant) 
     deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
+instance Monoid Program where 
+    mappend = Sequence
+    mempty = Skip
 
 -- EVALUATION
 
