@@ -1,5 +1,4 @@
 {-# LANGUAGE ScopedTypeVariables, FlexibleContexts, NamedFieldPuns, DuplicateRecordFields, DeriveGeneric, DeriveAnyClass #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 module MicroOz 
     (Program(..)
     , History(..)
@@ -250,41 +249,6 @@ data ForwardMsg
     deriving (Show)
 
 
-receive :: 
-        PID 
-        -> Actor
-        -> (Identifier, Value, Program) 
-        -> ChannelName 
-        -> LocalTypeState String 
-        -> Execution (LocalTypeState String, (History, Actor, Cmd.Cmd ForwardMsg))
-receive pid currentActor (identifier, value, continuation) channelName localTypeState = 
-    SessionType.forwardWithReceive localTypeState
-        |> Result.mapError formatError
-        |> Result.map handleMessage
-        |> Result.unwrap
-
-  where 
-    formatError e = 
-        error $ "The session type won't allow moving forward with a send" ++ show e
-
-    handleMessage :: (Participant, String, LocalTypeState String)
-              -> Execution (LocalTypeState String, (History, Actor, Cmd ForwardMsg)) 
-    handleMessage  ( expectedSender, valueType, newLocalTypeState ) = do
-        participant <- currentParticipant currentActor 
-        message <- readChannel expectedSender participant valueType channelName 
-
-        let assign channelName value = do
-                variableName <- Context.insertVariable pid value 
-                return 
-                    ( Received{ channelName = channelName, binding = identifier, variableName = variableName } 
-                        , currentActor 
-                        , Cmd.create (PushOnStack $ renameVariable identifier variableName continuation)  
-                    ) 
-        message
-            |> Maybe.map (\value -> (,) newLocalTypeState <$> assign channelName value)
-            |> Maybe.withDefault (Except.throwError $ BlockedOnReceive pid)
-
-
 {-| Take one step forward -} 
 advanceP :: PID -> Actor -> Program -> Execution ( History, Actor, Cmd ForwardMsg)
 advanceP pid currentActor program = 
@@ -314,12 +278,21 @@ advanceP pid currentActor program =
 
         Let identifier value continuation -> 
             case value of
-                Receive { channelName } ->
-                    receive pid currentActor (identifier, value, continuation) channelName
-                        |> Context.modifyLocalTypeStateM currentActor 
+                Receive { channelName } -> do
+                    receiver <- currentParticipant currentActor 
+
+                    value <- readChannel receiver channelName
+
+                    variableName <- Context.insertVariable receiver value 
+                    return 
+                        ( Received{ channelName = channelName, binding = identifier, variableName = variableName } 
+                            , currentActor 
+                            , Cmd.create (PushOnStack $ renameVariable identifier variableName continuation)  
+                        ) 
 
                 Port -> do
-                    channelName <- Context.insertChannel pid Queue.empty
+                    creator <- currentParticipant currentActor 
+                    channelName <- Context.insertChannel creator Queue.empty
                     return 
                         ( CreatedChannel channelName
                         , currentActor
@@ -327,7 +300,8 @@ advanceP pid currentActor program =
                         )
 
                 Procedure arguments body -> do
-                    functionName <- Context.insertBinding pid $ \functionName -> 
+                    creator <- currentParticipant currentActor 
+                    functionName <- Context.insertBinding creator $ \functionName -> 
                         -- rename the function name itself in the body, for recursive functions
                         let renamedBody = 
                                 if identifier `notElem` arguments then
@@ -347,7 +321,8 @@ advanceP pid currentActor program =
                     
 
                 _ -> do
-                    variableName <- Context.insertVariable pid value 
+                    creator <- currentParticipant currentActor 
+                    variableName <- Context.insertVariable creator value 
                     return 
                         ( CreatedVariable variableName
                         , currentActor
@@ -397,26 +372,16 @@ advanceP pid currentActor program =
                         ) 
 
                         
-        Send { channelName, payload } -> 
-            Context.modifyLocalTypeStateM currentActor $ \localTypeState -> 
-                case SessionType.forwardWithSend localTypeState of 
-                    Right (expectedReceiver, valueType, newLocalTypeState) -> do
-                        participant <- currentParticipant currentActor 
-                        value <- procedureAsParticipant participant <$> lookupVariable payload 
-                        writeChannel participant expectedReceiver valueType channelName value 
-                        return 
-                            ( newLocalTypeState
-                                , ( Sent channelName payload 
-                                , currentActor 
-                                , Cmd.none 
-                                  )
-                            )
+        Send { channelName, payload } -> do
+            sender <- currentParticipant currentActor 
+            value <- procedureAsParticipant sender <$> lookupVariable payload 
+            writeChannel sender channelName value
 
-                    Left e -> 
-                        -- Except.throwError $ BlockedOnReceive pid
-                        error "wants to send but session type won't allow it"
-
-
+            return 
+                ( Sent channelName payload 
+                , currentActor 
+                , Cmd.none 
+                )
 
 
 {-| Wrap a function into a block that 
@@ -491,82 +456,62 @@ backwardP pid currentActor history program = do
         ( CalledProcedure functionName arguments, body : restOfProgram ) ->
             continue (Apply functionName arguments : restOfProgram)
 
-        ( Sent { channelName, payload }, restOfProgram ) -> 
-            Context.modifyLocalTypeStateM currentActor $ \localTypeState -> 
-                case SessionType.backwardWithSend localTypeState of
-                    Left e -> 
-                        error $ show e
+        ( Sent { channelName, payload }, restOfProgram ) -> do
+            sender <- currentParticipant currentActor 
+            result <- undoWriteChannel sender channelName
 
-                    Right ( receiver, newLocalTypeState, valueType ) -> 
-                        withChannel channelName $ \queue -> do
-                            participant <- currentParticipant currentActor 
-                            case Queue.rollPush participant receiver valueType queue of
-                                Right (newChannel, _) -> do
-                                    mapChannel channelName (const newChannel)
+            case result of 
+                Right _ -> 
+                    return   
+                        ( Consumed
+                        , currentActor 
+                        , Send channelName payload  : restOfProgram
+                        , Cmd.none 
+                        )
 
-                                    return  ( newLocalTypeState,
-                                        ( Consumed
-                                        , currentActor 
-                                        , Send channelName payload  : restOfProgram
-                                        , Cmd.none 
-                                        ))
-                                Left (Queue.InvalidAction _ _) -> do
-                                    -- generate the list of actions on the channel that need to be undone
-                                    -- including the current one: processing of the message will make us go
-                                    -- into the `then` branch above.
-                                    toRollFirst <- withChannel channelName (return . Queue.followingReceive participant)
-                                    return 
-                                        ( localTypeState
-                                            , ( Unconsumed
-                                        , currentActor
-                                        , restOfProgram
-                                        , Cmd.create RollSend{ caller = pid, histories =  toRollFirst, channelName = channelName }
-                                        ))
 
-                                Left e -> error $ "backward evaluation should not fail, but got" ++ show e
+                Left (QueueRollError (Queue.InvalidAction _ _)) -> do
+                    queue <- Context.getChannel channelName
+                    let toRollFirst = Queue.followingReceive sender queue
+                    return 
+                        ( Unconsumed
+                        , currentActor 
+                        , restOfProgram
+                        , Cmd.create RollSend{ caller = pid, histories =  toRollFirst, channelName = channelName }
+                        )
 
+                Left e -> 
+                    error $ "backwards action should not fail but got " ++ show e
 
         ( Received{ channelName, binding, variableName }, continuation : restOfProgram ) -> do
-            value <- Context.lookupVariable variableName 
+            value :: Value <- Context.lookupVariable variableName 
             State.modify $ removeVariable variableName 
-            Context.modifyLocalTypeStateM currentActor $ \localTypeState ->
-                case SessionType.backwardWithReceive localTypeState of
-                    Left e -> 
-                        error $ show e
 
-                    Right ( sender, newLocalTypeState, valueType ) ->
-                        withChannel channelName $ \queue -> do
-                            participant <- currentParticipant currentActor 
+            sender <- currentParticipant currentActor 
+            result <- undoReadChannel sender channelName value
 
-                            case Queue.rollPop participant sender valueType value queue of
-                                Right newChannel -> do
-                                    -- set the channel to the new version
-                                    mapChannel channelName (const newChannel)
+            case result of 
+                Right _ -> 
+                    return 
+                            ( Consumed
+                            , currentActor
+                            , Let binding (Receive channelName) (renameVariable variableName binding continuation) : restOfProgram 
+                            , Cmd.none 
+                            )
 
-                                    return 
-                                        ( newLocalTypeState
-                                            , ( Consumed
-                                        , currentActor
-                                        , Let binding (Receive channelName) (renameVariable variableName binding continuation) : restOfProgram 
-                                        , Cmd.none 
-                                        ))
+                Left (QueueRollError (Queue.InvalidAction _ _)) -> do
+                    -- generate the list of actions on the channel that need to be undone including the current one 
+                    queue <- Context.getChannel channelName
+                    let toRollFirst = Queue.followingReceive sender queue
+                    return 
+                        ( Unconsumed
+                        , currentActor 
+                        , restOfProgram
+                        , Cmd.create RollReceive{ caller = pid, histories =  toRollFirst, channelName = channelName }
+                        )
 
-                                Left (Queue.InvalidAction _ _) -> do
-                                    -- generate the list of actions on the channel that need to be undone
-                                    -- including the current one: processing of the message will make us go
-                                    -- into the `then` branch above.
-                                    toRollFirst <- withChannel channelName (return . Queue.followingReceive participant)
-
-                                    return 
-                                        ( localTypeState 
-                                            , ( Unconsumed
-                                            , currentActor 
-                                        , restOfProgram
-                                        , Cmd.create RollReceive{ caller = pid, histories =  toRollFirst, channelName = channelName }
-                                        ))
-
-                                Left e -> 
-                                    error $ "backward evaluation should not fail, but got" ++ show e
+                Left e -> 
+                    error $ "backwards receive action should not fail but got " ++ show e
 
         ( SpawnedThread participant toRoll, restOfProgram ) -> 
             return 

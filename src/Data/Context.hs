@@ -11,6 +11,8 @@ module Data.Context
     , empty
     , insertVariable
     , insertBinding
+    , insertChannel
+    , removeChannel
     , removeVariable
     , lookupVariable
     , lookupCreator
@@ -18,9 +20,13 @@ module Data.Context
     , modifyLocalTypeStateM
     , readChannel
     , writeChannel
+    , undoReadChannel
+    , undoWriteChannel
     , insertThread
     , removeThread
     , currentParticipant
+    , QueueError(..)
+    , getChannel
     ) where 
 
 import Queue (Queue, Transaction(..), Item(Item, payload))
@@ -209,6 +215,27 @@ insertBinding participant tagger = do
 
     return identifier
 
+insertChannel :: MonadState (Context value) m => Participant -> Queue String value -> m Identifier
+insertChannel participant queue = do
+    identifier <- freshIdentifier
+
+    State.modify $ \context ->
+        let newBindings = Map.insert identifier (participant, queue) (channels context)
+        in
+            context { channels = newBindings } 
+
+    return identifier
+
+removeChannel :: MonadState (Context value) m => ChannelName -> m ()
+removeChannel channelName =
+    State.modify $ \context ->
+        let newBindings = Map.delete channelName (channels context)
+        in
+            context { channels = newBindings } 
+
+
+
+
 {-| Generate a guaranteed unused (fresh) new identifier -}
 freshIdentifier :: MonadState (Context value) m => m Identifier 
 freshIdentifier = do
@@ -279,11 +306,11 @@ putChannel participant identifier newQueue =
         context { channels = Map.insert identifier (participant, newQueue) (channels context) } 
 
 
-readChannel :: (Show value, MonadState (Context value) m, MonadError Error m) => Transaction String -> ChannelName -> m value 
-readChannel transaction@Transaction{receiver} channelName = do
+readChannel :: (Show value, MonadState (Context value) m, MonadError Error m) => Participant -> ChannelName -> m value 
+readChannel receiver channelName = do
     typeState <- lookupLocalTypeState receiver
     queue <- getChannel channelName
-    case performReceive transaction typeState queue of 
+    case performReceive receiver typeState queue of 
         Right ( value, newTypeState, newQueue ) -> do
             putChannel receiver channelName newQueue
             putLocalTypeState receiver newTypeState
@@ -295,11 +322,41 @@ readChannel transaction@Transaction{receiver} channelName = do
         Left e -> 
             error (show e)
 
-writeChannel :: ( MonadState (Context value) m, MonadError Error m  ) => Transaction String -> ChannelName -> value -> m ()  
-writeChannel transaction@Transaction{sender} channelName payload = do
+
+
+undoWriteChannel :: (Show value, MonadState (Context value) m, MonadError Error m) => Participant -> ChannelName -> m (Either QueueError value)
+undoWriteChannel sender channelName = do
     typeState <- lookupLocalTypeState sender
     queue <- getChannel channelName
-    case performSend transaction payload typeState queue of 
+    case performUndoSend sender typeState queue of 
+        Right ( value, newTypeState, newQueue ) -> do
+            putChannel sender channelName newQueue
+            putLocalTypeState sender newTypeState
+            return $ Right value
+
+        Left e -> 
+            return $ Left e
+
+undoReadChannel :: ( Show value, MonadState (Context value) m, MonadError Error m  ) => Participant -> ChannelName -> value -> m (Either QueueError ())
+undoReadChannel receiver channelName payload = do
+    typeState <- lookupLocalTypeState receiver
+    queue <- getChannel channelName
+
+    case performUndoReceive receiver typeState payload queue of 
+        Right ( newTypeState, newQueue ) -> do
+            putChannel receiver channelName newQueue
+            putLocalTypeState receiver newTypeState
+            return $ Right ()
+
+        Left e -> 
+            return $ Left e
+
+
+writeChannel :: ( MonadState (Context value) m, MonadError Error m  ) => Participant -> ChannelName -> value -> m ()  
+writeChannel sender channelName payload = do
+    typeState <- lookupLocalTypeState sender
+    queue <- getChannel channelName
+    case performSend sender payload typeState queue of 
         Right ( newTypeState, newQueue ) -> do
             putChannel sender channelName newQueue
             putLocalTypeState sender newTypeState
@@ -313,9 +370,6 @@ writeChannel transaction@Transaction{sender} channelName payload = do
 data QueueError 
     = ReachedEnd SessionType.ReachedEnd 
     | ReachedBegin SessionType.ReachedBegin 
-    | InvalidReceiver { expectedReceiver :: Participant, actualReceiver :: Participant }
-    | InvalidSender { expectedSender :: Participant, actualSender :: Participant }
-    | forall t. Show t => InvalidType { expectedType :: t, actualType :: t } 
     | QueueError Queue.QueueError
     | QueueRollError Queue.QueueRollError
 
@@ -323,43 +377,34 @@ deriving instance Show QueueError
     
 
 performUndoSend :: (Show t, Eq t, Show a)
-            => Transaction t 
-            ->  a 
+            => Participant 
             ->  SessionType.LocalTypeState t 
             ->  Queue t a 
-            ->  Either QueueError (SessionType.LocalTypeState t, Queue t a)
-performUndoSend transaction@Transaction{sender, receiver, valueType} payload typeState queue = do 
+            ->  Either QueueError (a, SessionType.LocalTypeState t, Queue t a)
+performUndoSend sender typeState queue = do 
     ( localAtom, newLocalTypeState ) <- Result.mapError ReachedBegin $ SessionType.backward typeState
     case localAtom of 
-        SessionType.Send target type_ -> do
-            unless (target == receiver) $ 
-                Except.throwError InvalidReceiver { expectedReceiver = receiver, actualReceiver = target }  
-
-            unless (type_ == valueType) $ 
-                Except.throwError InvalidType { expectedType = valueType, actualType = type_ }  
+        SessionType.Send receiver valueType -> do
+            let transaction = Transaction { sender = sender, receiver = receiver, valueType = valueType } 
 
             (newQueue, Queue.Item{payload}) <- Result.mapError QueueRollError $ Queue.rollPush transaction queue
-            pure ( newLocalTypeState, newQueue )
+            pure ( payload, newLocalTypeState, newQueue )
 
         SessionType.Receive {} ->
             Except.throwError undefined
 
 
 performUndoReceive :: (Eq t, Show t, Show a)
-               => Transaction t 
+               => Participant 
                ->  SessionType.LocalTypeState t 
                -> a
                ->  Queue t a 
                ->  Either QueueError (SessionType.LocalTypeState t, Queue t a)
-performUndoReceive transaction@Transaction{sender, receiver, valueType} typeState payload queue = do 
+performUndoReceive receiver typeState payload queue = do 
     ( localAtom, newLocalTypeState ) <- Result.mapError ReachedBegin $ SessionType.backward typeState
     case localAtom of 
-        SessionType.Receive origin type_ -> do
-            unless (origin == sender) $ 
-                Except.throwError InvalidSender { expectedSender = sender, actualSender = origin }  
-
-            unless (type_ == valueType) $ 
-                Except.throwError InvalidType { expectedType = valueType, actualType = type_ }  
+        SessionType.Receive sender valueType -> do
+            let transaction = Transaction { sender = sender, receiver = receiver, valueType = valueType } 
 
             newQueue <- Result.mapError QueueRollError $ Queue.rollPop transaction payload queue
             pure ( newLocalTypeState, newQueue )
@@ -368,19 +413,15 @@ performUndoReceive transaction@Transaction{sender, receiver, valueType} typeStat
             Except.throwError undefined
 
 performReceive :: (Eq t, Show t, Show a)
-               => Transaction t 
+               =>  Participant
                ->  SessionType.LocalTypeState t 
                ->  Queue t a 
                ->  Either QueueError (a, SessionType.LocalTypeState t, Queue t a)
-performReceive transaction@Transaction{sender, receiver, valueType} typeState queue = do 
+performReceive receiver typeState queue = do 
     ( localAtom, newLocalTypeState ) <- Result.mapError ReachedEnd $ SessionType.forward typeState
     case localAtom of 
-        SessionType.Receive origin type_ -> do
-            unless (origin == sender) $ 
-                Except.throwError InvalidSender { expectedSender = sender, actualSender = origin }  
-
-            unless (type_ == valueType) $ 
-                Except.throwError InvalidType { expectedType = valueType, actualType = type_ }  
+        SessionType.Receive sender valueType -> do
+            let transaction = Transaction { sender = sender, receiver = receiver, valueType = valueType } 
 
             (value, newQueue) <- Result.mapError QueueError $ Queue.pop transaction queue
             pure ( value, newLocalTypeState, newQueue )
@@ -389,26 +430,24 @@ performReceive transaction@Transaction{sender, receiver, valueType} typeState qu
             Except.throwError undefined
 
 performSend :: (Show t, Eq t)
-            => Transaction t 
+            =>  Participant
             ->  a 
             ->  SessionType.LocalTypeState t 
             ->  Queue t a 
             ->  Either QueueError (SessionType.LocalTypeState t, Queue t a)
-performSend transaction@Transaction{sender, receiver, valueType} payload typeState queue = do 
+performSend sender payload typeState queue = do 
     ( localAtom, newLocalTypeState ) <- Result.mapError ReachedEnd $ SessionType.forward typeState
     case localAtom of 
-        SessionType.Send target type_ -> do
-            unless (target == receiver) $ 
-                Except.throwError InvalidReceiver { expectedReceiver = receiver, actualReceiver = target }  
-
-            unless (type_ == valueType) $ 
-                Except.throwError InvalidType { expectedType = valueType, actualType = type_ }  
+        SessionType.Send receiver valueType -> do
+            let transaction = Transaction { sender = sender, receiver = receiver, valueType = valueType } 
 
             let newQueue = Queue.push transaction payload queue
             pure ( newLocalTypeState, newQueue )
 
         SessionType.Receive {} ->
             Except.throwError undefined
+
+
 currentParticipant :: (MonadState (Context value) m, MonadError Error m) => Actor -> m Participant
 currentParticipant actor = 
     case Actor.toList actor of
