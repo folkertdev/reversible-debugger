@@ -1,5 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, NamedFieldPuns, FlexibleContexts, MultiParamTypeClasses, FlexibleInstances, DuplicateRecordFields, 
-GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables, NamedFieldPuns, FlexibleContexts, MultiParamTypeClasses, FlexibleInstances, DuplicateRecordFields #-}
 module Interpreter where
 
 import qualified Data.Map as Map
@@ -30,13 +29,13 @@ type Execution a = StateT (Context Value, ThreadState History Program) (Either E
 
 rollSends :: Int -> ChannelName -> Execution () 
 rollSends n channelName = do
-    histories <- liftContext $ Context.withChannel channelName (return . Queue.lastNSends n) 
+    histories <- liftContext $ Queue.lastNSends n <$> Context.getChannel channelName 
     handleBackwardEffects RollSend { caller = PID.create [], histories = histories, channelName = channelName }
 
 
 rollReceives :: Int -> ChannelName -> Execution () 
 rollReceives n channelName = do
-    histories <- liftContext $ Context.withChannel channelName (return . Queue.lastNReceives n)
+    histories <- liftContext $ Queue.lastNReceives n <$> Context.getChannel channelName 
     handleBackwardEffects RollReceive { caller = PID.create [], histories = histories, channelName = channelName }
 
 
@@ -97,7 +96,7 @@ rollThread pid =
 
 rollVariable :: Identifier -> Execution () 
 rollVariable identifier = do
-    pid <- liftContext $ Context.lookupCreator identifier 
+    creator <- liftContext $ Context.lookupCreator identifier 
     scheduleThread pid
     withRunning $ \current@Thread{history} rest -> do
         let toUndo = 1 + length (takeWhile (/= CreatedVariable identifier) history)
