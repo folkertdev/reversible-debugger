@@ -17,15 +17,27 @@ import Elm
 import Data.Aeson
 
 
+data LocalAtom t = Send { receiver :: Participant, type_ :: t } | Receive { sender :: Participant, type_ :: t  } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
 
 
+instance Show t => Show (LocalAtom t) where
+    show Send { receiver, type_ } = Participant.unParticipant receiver ++ "!" ++ ": <" ++ show type_ ++ "> "
+    show Receive { sender, type_ } = Participant.unParticipant sender ++ "?" ++ ": <" ++ show type_ ++ "> "
+
+
+type LocalType t = List (LocalAtom t)
 data LocalTypeState t = LocalTypeState { participant :: Participant, state :: ExhaustableZipper (LocalAtom t) } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
 
 instance Show t => Show (LocalTypeState t) where
     show LocalTypeState{participant, state} = "LocalTypeState " ++ unParticipant participant ++ " " ++ show state 
 
 deriving instance (ElmType a, ElmType b, ElmType c) => ElmType (a,b,c) 
-data ExhaustableZipper a = Empty | Zipper (List a, a, List a) | Exhausted (List a) deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
+data ExhaustableZipper a 
+    = Empty 
+    | Zipper (List a, a, List a) 
+    | ExhaustedForward (List a) a
+    | ExhaustedBackward a (List a)
+    deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
 isEmpty typeState = 
     case typeState of
@@ -44,129 +56,46 @@ fromLocalType participant localType =
         (x:xs) -> 
             LocalTypeState { participant = participant, state = Zipper ([], x, xs) } 
 
-data SessionError t = ExhaustedForward | ExhaustedBackward | InvalidAction -- { expected :: t,  actual :: t}
-    deriving (Eq, Show)
+data ReachedEnd = ReachedEnd deriving (Show, Eq)
+data ReachedBegin = ReachedBegin deriving (Show, Eq) 
 
-forwardWithSend :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, t, LocalTypeState t)
-forwardWithSend typeState@LocalTypeState{state} = 
+forward :: LocalTypeState t -> Either ReachedEnd (LocalAtom t, LocalTypeState t)
+forward typeState@LocalTypeState{state} = 
     case state of
         Empty -> 
-            Except.throwError ExhaustedForward 
+            Except.throwError ReachedEnd
 
-        Exhausted _ -> 
-            Except.throwError ExhaustedForward 
+        ExhaustedForward _ _ -> 
+            Except.throwError ReachedEnd 
 
-        Zipper (previous, current, remaining) -> 
-            case current of
-                Send { receiver, type_ } -> 
-                    case remaining of 
-                        [] -> 
-                            pure (receiver, type_, typeState { state = Exhausted (current:previous) }) 
+        ExhaustedBackward current rest -> 
+            forward (typeState { state = Zipper ([], current, rest) })
 
-                        (n:next) ->
-                            pure (receiver, type_, typeState { state = Zipper (current:previous, n, next) })
+        Zipper (previous, current, next:remaining) -> 
+            pure (current, typeState { state = Zipper (current:previous, next, remaining)})
 
-                Receive { } -> 
-                    Except.throwError InvalidAction
+        Zipper (previous, current, []) -> 
+            pure (current, typeState { state = ExhaustedForward previous current })
 
-forwardWithReceive :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, t, LocalTypeState t)
-forwardWithReceive typeState@LocalTypeState{state} = 
+
+backward :: LocalTypeState t -> Either ReachedBegin (LocalAtom t, LocalTypeState t)
+backward typeState@LocalTypeState{state} = 
     case state of
         Empty -> 
-            Except.throwError ExhaustedForward 
+            Except.throwError ReachedBegin
 
-        Exhausted _ ->
-            Except.throwError ExhaustedForward 
+        ExhaustedForward previous current -> 
+            backward (typeState { state = Zipper (previous, current, []) } )
 
-        Zipper (previous, current, remaining) -> 
-            case current of
-                Send {} -> 
-                    Except.throwError InvalidAction
+        ExhaustedBackward _ _ -> 
+            Except.throwError ReachedBegin 
 
-                Receive { sender, type_ } -> 
-                    case remaining of
-                        [] -> 
-                            pure (sender, type_, typeState { state = Exhausted (current:previous) }) 
+        Zipper (next:previous, current, remaining) -> 
+            pure (current, typeState { state = Zipper (previous, next, current:remaining)})
 
-                        (n:next) ->
-                            pure (sender, type_, typeState { state = Zipper (current:previous, n, next) })
+        Zipper ([], current, remaining) -> 
+            pure (current, typeState)
 
-backwardWithReceive :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, LocalTypeState t, t)
-backwardWithReceive typeState =
-    let 
-        helper previous before next = 
-            case previous of
-                Send {} -> 
-                    Except.throwError InvalidAction
-
-                Receive { sender, type_ } -> 
-                    pure (sender, typeState { state = Zipper (before, previous, next) }, type_)
-    in
-        backwardWith helper typeState 
-
-backwardWithSend :: LocalTypeState t -> Either (SessionError (LocalAtom t)) (Participant, LocalTypeState t, t)
-backwardWithSend typeState =
-    let 
-        helper previous before next = 
-            case previous of
-                Send {receiver, type_ } -> 
-                    pure (receiver, typeState { state = Zipper (before, previous, next) }, type_)
-
-                Receive {  } -> 
-                    Except.throwError InvalidAction
-    in
-        backwardWith helper typeState
-
-
-type Helper t1 b = LocalAtom t1 -> List (LocalAtom t1) -> List (LocalAtom t1) -> Either (SessionError (LocalAtom t1)) b 
-
-backwardWith :: Helper t b -> LocalTypeState t -> Either (SessionError (LocalAtom t)) b 
-backwardWith helper typeState@LocalTypeState{state} = 
-    case state of
-        Empty -> 
-            Except.throwError ExhaustedBackward 
-
-        Zipper ([], current, next) -> 
-            Except.throwError ExhaustedBackward
-
-        Exhausted [] -> 
-            Except.throwError ExhaustedBackward
-
-        Exhausted (previous:before) ->
-            helper previous before []
-
-        Zipper (previous:before, current, next) -> 
-            helper previous before (current:next)
-
-
-
-previousAction :: LocalTypeState t -> Maybe (LocalAtom t)
-previousAction typeState@LocalTypeState{state} = 
-    case state of
-        Empty -> Nothing 
-        Zipper ([], _, _) -> Nothing
-        Zipper (h:hs, _, _) -> Just h
-        Exhausted [] -> Nothing 
-        Exhausted (h:hs) -> Just h
-
-
-send :: Participant -> t -> LocalAtom t 
-send = Send
-
-receive :: Participant -> t -> LocalAtom t 
-receive = Receive
-
-
-
-data LocalAtom t = Send { receiver :: Participant, type_ :: t } | Receive { sender :: Participant, type_ :: t  } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
-
-
-instance Show t => Show (LocalAtom t) where
-    show Send { receiver, type_ } = Participant.unParticipant receiver ++ "!" ++ ": <" ++ show type_ ++ "> "
-    show Receive { sender, type_ } = Participant.unParticipant sender ++ "?" ++ ": <" ++ show type_ ++ "> "
-
-
-type LocalType t = List (LocalAtom t)
 
 data GlobalAtom = Transaction { sender :: Participant, receiver :: Participant, tipe :: String } deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 

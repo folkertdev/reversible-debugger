@@ -31,7 +31,7 @@ data Error
     | TypeError Identifier String String
 -- | AssertionError BoolExp
     | AssertionError String
-    | BlockedOnReceive PID 
+    | BlockedOnReceive Participant 
     | RuntimeException String
     | ArgumentMismatch Identifier Int Int
     | SchedulingError ThreadScheduleError 

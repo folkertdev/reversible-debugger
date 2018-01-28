@@ -1,6 +1,8 @@
-{-# LANGUAGE DeriveFunctor, NamedFieldPuns, DuplicateRecordFields, DeriveGeneric, DeriveAnyClass #-}
+{-# LANGUAGE DeriveFunctor, NamedFieldPuns, DuplicateRecordFields, DeriveGeneric, DeriveAnyClass, ExistentialQuantification #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Queue 
     ( Queue
+    , Transaction(..)
     , empty
     , push
     , pop
@@ -18,7 +20,8 @@ module Queue
     , followingReceive
     , lastNReceives
     , lastNSends
-    , Item
+    , Item(..)
+    , QueueError(ItemMismatch)
     ) where
 
 import Types ((|>), List)
@@ -61,30 +64,55 @@ data QueueHistory t
     | Removed Participant t 
     deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)
 
-push :: Participant -> Participant -> t -> a -> Queue t a -> Queue t a
-push sender receiver valueType payload queue@Queue{past, items} = 
+{-| A single transaction -} 
+data Transaction t = 
+    Transaction 
+        { sender :: Participant 
+        , receiver :: Participant
+        , valueType :: t
+        }
+    deriving (Show, Eq)
+
+invert :: Transaction t -> Transaction t
+invert Transaction{ sender, receiver, valueType } = 
+    Transaction 
+        { sender = receiver
+        , receiver = sender
+        , valueType = valueType 
+        } 
+
+equalsItem :: Eq t => Transaction t -> Item t a -> Bool
+equalsItem (Transaction s1 r1 t1) (Item s2 r2 t2 _) = 
+    s1 == s2 && r1 == r2 && t1 == t2
+
+-- FORWARD
+
+push :: Transaction t -> a -> Queue t a -> Queue t a
+push Transaction{sender, receiver, valueType} payload queue@Queue{past, items} = 
     Queue { past = Added sender valueType : past, items = items ++ [ Item sender receiver valueType payload ] }
 
 data QueueError 
     = QueueEmpty
-    | ItemMismatch { expected :: (Participant, Participant, String) , actual :: (Participant, Participant, String) } 
+    | forall a t. (Show a, Show t) => ItemMismatch { expected :: Transaction t , actual :: Item t a } 
+    
+deriving instance Show QueueError
 
-pop :: (Show t, Eq t) => Participant -> Participant -> t -> Queue t a -> Either QueueError (a, Queue t a)
-pop send receive valueType queue@Queue{ past, items } = 
+pop :: (Show a, Show t, Eq t) => Transaction t -> Queue t a -> Either QueueError (a, Queue t a)
+pop transaction@Transaction{sender, receiver, valueType} queue@Queue{ past, items } = 
     case items of 
         [] -> 
             Except.throwError QueueEmpty
 
-        (Item{sender, receiver, type_, payload}:xs) -> 
-            if send == sender && receive == receiver && type_ == valueType then
+        (item@Item{payload}:xs) -> 
+            if equalsItem transaction item then
                 pure ( payload, Queue (Removed receiver valueType : past) xs )
 
             else
-                Except.throwError $ ItemMismatch ( sender, receiver, show type_ ) ( send, receive, show valueType ) 
+                Except.throwError $ ItemMismatch transaction item 
 
 {-| Undoing a pop, putting the value back into the queue -}
-rollPop :: (Show t, Eq t) => Participant -> Participant -> t -> a -> Queue t a -> Either QueueRollError (Queue t a)
-rollPop sender receiver valueType payload queue@Queue{past, items} = 
+rollPop :: (Show t, Eq t) => Transaction t -> a -> Queue t a -> Either QueueRollError (Queue t a)
+rollPop Transaction{sender, receiver, valueType} payload queue@Queue{past, items} = 
     let value = Item sender receiver valueType payload in
     case queue of 
         Queue ( Removed _ _ : remaining ) [] -> 
@@ -124,12 +152,13 @@ rollPop sender receiver valueType payload queue@Queue{past, items} =
 data QueueRollError
     = RollPushEmptyQueue
     | RollPopEmptyQueue
-    | InvalidAction { source :: String, history :: String } 
-    deriving (Show, Eq)
+    | forall t. Show t => InvalidAction { source :: t, history :: t } 
+
+deriving instance Show QueueRollError
 
 
-rollPush :: (Show a, Show t, Eq t) => Participant -> Participant -> t -> Queue t a -> Either QueueRollError ( Queue t a, Item t a ) 
-rollPush sender receiver valueType queue = 
+rollPush :: (Show a, Show t, Eq t) => Transaction t -> Queue t a -> Either QueueRollError ( Queue t a, Item t a ) 
+rollPush Transaction{sender, receiver, valueType} queue = 
     case queue of 
         Queue [] _ -> 
             Except.throwError RollPushEmptyQueue 
@@ -173,118 +202,6 @@ hasJustSent participant valueType queue =
 
         Queue _ _ ->
             False
-
-{-
-    data Queue t a = Empty (List QueueHistory t) | Queue { items :: NonEmpty (Item a), history :: NonEmpty QueueHistory t } 
-    deriving (Show, Eq, Functor) 
-
-
-
-
-
-
-empty :: Queue t a
-empty = 
-    Empty []
-
-push :: PID -> Item a -> Queue t a -> Queue t a
-push pid item queue =
-    case queue of 
-        Queue items history ->
-            Queue (items <> pure item) (NonEmpty.cons (Added pid) history)
-
-        Empty history -> 
-            Queue (pure item) (Added pid :| history)
-
-
-
-pop :: PID -> Queue t a -> Maybe (Item a, Queue t a)
-pop pid queue =  
-    case queue of
-        Empty history ->
-            Nothing
-
-        Queue items history -> 
-            case NonEmpty.uncons items of 
-                ( x, Nothing ) -> 
-                    Just (x, Empty (Removed pid : NonEmpty.toList history))
-                ( x, Just xs ) -> 
-                    Just (x, Queue xs (NonEmpty.cons (Removed pid) history)) 
-
-
-data Msg a = RevertSendFrom PID a | RevertReceiveTo PID 
-
-revert :: Queue t a -> Maybe (Queue t a, Msg a)
-revert queue = 
-    case queue of 
-        Empty history -> 
-            Nothing
-    
-        Queue items history -> 
-            let 
-                ( top :| historyList ) = history 
-
-                newHistory = NonEmpty.nonEmpty historyList
-
-                ( topValue, newItems ) = NonEmpty.uncons items
-            in
-                case top of 
-                    Added pid -> 
-                        Just ( fromMaybe (Empty historyList) $ Queue <$> newItems <*> newHistory, RevertSendFrom pid topValue )
-
-                    Removed pid ->
-                        Just ( fromMaybe (Empty historyList) $ Queue items <$> newHistory, RevertReceiveTo pid )
-
-
-unpop :: Item a -> Queue t a -> Queue t a
-unpop value queue = 
-    case queue of 
-        Empty ( Removed pid : remaining ) -> 
-            case remaining of 
-                [] -> 
-                    error "there is a Removed, but no corresponding Added"
-
-                (h:hs) -> 
-                    Queue (pure value) (h :| hs)
-
-        Empty ( Added  pid : _ ) -> 
-            error "unpopping a stream that needs to unpush first"
-
-        Empty [] -> 
-            error "unpopping empty stream"
-
-        Queue items history -> 
-            case NonEmpty.uncons history of
-                ( Removed pid, Just remaining ) ->
-                    Queue (NonEmpty.cons value items) remaining
-
-                ( Removed pid, Nothing ) ->
-                    error "unpopping value that was never added"
-
-                ( Added pid, _ ) -> 
-                    error "unpopping, but the most recent action as Added"
-
-
-unpush :: Queue t a -> ( Queue t a, Item a ) 
-unpush queue = 
-    case queue of 
-        Empty _ -> error "unpushing on empty queue"
-        Queue items history -> 
-            let
-                ( top :| historyList ) = history 
-
-                newHistory = NonEmpty.nonEmpty historyList
-            in
-            case ( NonEmpty.uncons items, NonEmpty.uncons history ) of
-                (( topValue, remainingValues), ( Added pid, remainingHistory )) -> 
-                    ( fromMaybe (Empty historyList) $ Queue <$> remainingValues <*> remainingHistory 
-                    , topValue 
-                    ) 
-
-                _ -> 
-                    error "unpushing, but the most recent action was a Removed"
-
-        -}
 
 
 {-| The instruction immediately following a receive on the given thread -} 
