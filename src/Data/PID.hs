@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
-module Data.PID (PID, create, parent, child, master) where 
+module Data.PID (PID, create, parent, child, master, nonsense) where 
 
 import qualified Data.List as List
 
@@ -28,3 +28,6 @@ child n (PID list) = PID (list ++ [n])
 
 master :: PID
 master = PID [0]
+
+nonsense :: PID
+nonsense = PID [-42]

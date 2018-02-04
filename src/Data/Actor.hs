@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
-module Data.Actor (Participant, Actor, named, unnamed, toList, push, pop, participant, unParticipant) where 
+module Data.Actor (Participant, Actor, named, unnamed, toList, push, pop, participant, unParticipant, currentParticipant) where 
 
 import Data.Identifier as Identifier (Identifier, unwrap, create)
 
@@ -38,6 +38,12 @@ pop (Actor names) =
 
 toList :: Actor -> [Participant]
 toList (Actor xs) = xs
+
+currentParticipant :: Actor -> Maybe Participant
+currentParticipant (Actor participants) = 
+    case participants of 
+        [] -> Nothing 
+        x:xs -> Just x
 
 instance Monoid Actor where
     mempty = Actor []

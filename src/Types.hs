@@ -38,7 +38,7 @@ data Error
     deriving (Eq, Generic, ElmType, ToJSON)
 
 data ThreadScheduleError = ThreadScheduleError PID ThreadScheduleErrorCause deriving (Eq, Show, Generic, ElmType, ToJSON)
-data ThreadScheduleErrorCause = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist | ThreadIsUninitialized | DeadLock deriving (Eq, Show, Generic, ElmType, ToJSON)
+data ThreadScheduleErrorCause = ThreadIsBlocked | ThreadIsFiltered | ThreadIsFinished | ThreadDoesNotExist | ThreadIsUninitialized | ParticipantHasNoThread Participant | DeadLock deriving (Eq, Show, Generic, ElmType, ToJSON)
 
 
 

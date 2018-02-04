@@ -57,15 +57,13 @@ data Context value =
     , variableCount :: Int 
     , channels :: Map Identifier (Participant, Queue String value)
     , threads :: Map PID Int
-    -- , localTypes :: Map Identifier (SessionType.LocalType String)
-    , participantMap :: Map PID Actor
     , localTypeStates :: Map Participant (SessionType.LocalTypeState String)
     , globalType :: SessionType.GlobalType
     } deriving (Generic, ElmType, ToJSON, FromJSON)
 
 
 instance Show value => Show (Context value) where
-    show Context { bindings, variableCount, channels, threads, participantMap, localTypeStates } = 
+    show Context { bindings, variableCount, channels, threads, localTypeStates } = 
         "Context:"
             <> "\n"
             <> "variable count: "
@@ -74,7 +72,6 @@ instance Show value => Show (Context value) where
             <> Utils.showMap "bindings" bindings
             <> Utils.showMap "channels" channels
             <> Utils.showMap "threads" threads
-            -- <> Utils.showMap "participants" participantMap
             <> Utils.showMap "local types" localTypeStates
 
 
@@ -86,7 +83,6 @@ singleton globalType types Thread{ pid } =
         , channels = Map.empty
         , threads = Map.singleton pid 0  
         , localTypeStates = Map.mapWithKey SessionType.fromLocalType types
-        , participantMap = Map.empty
         , globalType = globalType
         } 
 
@@ -98,11 +94,8 @@ empty =
         , channels = Map.empty
         , threads = Map.empty 
         , localTypeStates = Map.empty
-        , participantMap = Map.empty
         , globalType = SessionType.GlobalType [] [] 
         } 
-
-
 
 
 removeVariable :: Identifier -> Context value -> Context value  

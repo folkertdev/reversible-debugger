@@ -22,6 +22,7 @@ module Data.ThreadState
     , canBeScheduledForward
     , canBeScheduledBackward
     , getThread
+    , scheduleParticipant
     )  where 
 
 import qualified Utils
@@ -37,7 +38,8 @@ import Data.Thread as Thread (Thread(..), pid)
 import Data.Maybe (fromMaybe)
 import Control.Applicative (Alternative, (<|>), empty)
 import Data.Monoid ((<>))
-import Data.PID as PID (PID)
+import Data.PID as PID (PID, nonsense)
+import Data.Actor as Actor (Actor, Participant, currentParticipant)
 
 import Control.Monad.Except as Except
 
@@ -55,6 +57,7 @@ data OtherThreads history a =
         , filtered :: Threads history a
         , uninitialized :: Threads history a
         } deriving (Generic, ElmType, ToJSON, FromJSON)
+
 
 
 empty :: ThreadState h a 
@@ -115,6 +118,21 @@ instance (Show h, Show a) => Show (ThreadState h a) where
         "Stuck:"
             <> "\n"
             <> show other
+
+asum :: (Foldable t, Alternative f) => t (f a) -> f a
+asum = foldl (<|>) Control.Applicative.empty 
+
+pidForParticipant :: Participant -> ThreadState h a -> Maybe PID
+pidForParticipant participant state = helper (toOther state)
+  where helper OtherThreads{ active, inactive , blocked , filtered , uninitialized } = 
+          let 
+              threads = Map.elems active ++ Map.elems inactive ++ Map.elems blocked ++ Map.elems filtered ++ Map.elems uninitialized 
+              predicate Thread{actor, pid } = 
+                  case Actor.currentParticipant actor of 
+                      Just v | v == participant -> Just pid
+                      _ -> Nothing
+          in
+                asum $ map predicate threads
 
 
 mapActive :: (Thread h a -> Thread h a) -> ThreadState h a -> ThreadState h a
@@ -255,6 +273,16 @@ scheduleThreadBackward pid threads =
 
             _ -> 
                 work 
+
+scheduleParticipant :: Participant -> ThreadState h a -> Either ThreadScheduleError (ThreadState h a) 
+scheduleParticipant participant threads =  
+    case pidForParticipant participant threads of 
+        Nothing -> 
+            Left $ ThreadScheduleError PID.nonsense (ParticipantHasNoThread participant)
+
+        Just pid -> 
+            scheduleThread pid threads
+            
 
 scheduleThread :: PID -> ThreadState h a -> Either ThreadScheduleError (ThreadState h a) 
 scheduleThread pid threads = 

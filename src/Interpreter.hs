@@ -13,6 +13,7 @@ import qualified Queue
 import Data.Thread as Thread
 import Data.Context as Context 
 import Data.PID as PID (PID, create, parent, child)
+import Data.Actor as Actor (Participant)
 import Data.Identifier as Identifier (Identifier, ChannelName)
 import Data.ThreadState (Progress(..) , ThreadState(..) , OtherThreads)
 import qualified Data.ThreadState as ThreadState
@@ -25,6 +26,7 @@ import MicroOz (Program(..), History(CreatedVariable), Value(Receive), ForwardMs
 import qualified MicroOz
 
 type Execution a = StateT (Context Value, ThreadState History Program) (Either Error) a 
+
 
 
 rollSends :: Int -> ChannelName -> Execution () 
@@ -97,7 +99,8 @@ rollThread pid =
 rollVariable :: Identifier -> Execution () 
 rollVariable identifier = do
     creator <- liftContext $ Context.lookupCreator identifier 
-    scheduleThread pid
+
+    scheduleParticipant creator
     withRunning $ \current@Thread{history} rest -> do
         let toUndo = 1 + length (takeWhile (/= CreatedVariable identifier) history)
         rollN pid toUndo 
@@ -461,6 +464,13 @@ scheduleThread :: (Has (ThreadState History Program) c, MonadError Error m) => P
 scheduleThread pid = do
     state <- extract <$> State.get 
     newState <- lift $ embedThreadScheduleError $ ThreadState.scheduleThread pid state
+    setThreadState newState
+
+{-| Schedule a thread for a forwards move: the thread must be active, uninitialized or blocked -}
+scheduleParticipant :: (Has (ThreadState History Program) c, MonadError Error m) => Participant -> StateT c m () 
+scheduleParticipant participant = do
+    state <- extract <$> State.get 
+    newState <- lift $ embedThreadScheduleError $ ThreadState.scheduleParticipant participant state
     setThreadState newState
 
 
