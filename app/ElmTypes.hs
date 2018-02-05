@@ -37,7 +37,7 @@ types =
     [ "import Json.Decode exposing (..)"
     , "import Dict exposing (Dict)" 
     , "import Json.Decode.Pipeline exposing (..)"
-    , toBoth (Proxy :: Proxy Participant)
+    , toBoth (Proxy :: Proxy Identifier)
     {-
     , toBoth (Proxy :: Proxy (Result Int String))
     , toBoth (Proxy :: Proxy Instruction)

@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
-module Data.Actor (Participant, Actor, named, unnamed, toList, push, pop, participant, unParticipant, currentParticipant) where 
+module Data.Actor (Participant, Actor, named, unnamed, toList, push, pop, participant, unParticipant, currentParticipant, mainThread) where 
 
 import Data.Identifier as Identifier (Identifier, unwrap, create)
 
@@ -16,6 +16,9 @@ unParticipant (Participant identifier) = Identifier.unwrap identifier
 
 participant :: String -> Participant 
 participant = Participant . Identifier.create
+
+mainThread :: Actor 
+mainThread = named $ participant "__main_thread_participant"
 
 instance HasElmComparable Participant where
     toElmComparable (Participant i) = toElmComparable i

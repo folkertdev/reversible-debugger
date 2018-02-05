@@ -34,7 +34,7 @@ import Data.Context as Context
 import Data.PID as PID (PID, create, parent, child)
 import Data.Identifier as Identifier (Identifier, ChannelName)
 import Data.Expr
-import Data.Actor as Actor (Participant, Actor, named, unnamed, push, pop, toList)
+import Data.Actor as Actor (Participant, Actor, named, unnamed, push, pop, toList, mainThread)
 
 import Types
 import Cmd (Cmd)
@@ -69,7 +69,7 @@ type QueueHistory = Queue.QueueHistory
 init :: SessionType.GlobalType -> Map.Map Participant (SessionType.LocalType String) -> Program -> ( Context Value, Thread History Program ) 
 init globalType types program = 
     let 
-        thread = Thread (PID.create [ 0 ]) Actor.unnamed [] [ program ] 
+        thread = Thread (PID.create [ 0 ]) Actor.mainThread [] [ program ] 
     in 
         ( Context.singleton globalType types thread, thread ) 
 

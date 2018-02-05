@@ -2,7 +2,11 @@ module Diagram exposing (..)
 
 import Svg exposing (Svg)
 import Svg.Attributes exposing (..)
-import Types exposing (GlobalAtom, GlobalType, unIdentifier)
+import Types exposing (GlobalAtom, GlobalType)
+
+
+unIdentifier =
+    identity
 
 
 type alias Canvas =

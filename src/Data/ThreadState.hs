@@ -22,7 +22,7 @@ module Data.ThreadState
     , canBeScheduledForward
     , canBeScheduledBackward
     , getThread
-    , scheduleParticipant
+    , pidForParticipant
     )  where 
 
 import qualified Utils
@@ -274,15 +274,22 @@ scheduleThreadBackward pid threads =
             _ -> 
                 work 
 
-scheduleParticipant :: Participant -> ThreadState h a -> Either ThreadScheduleError (ThreadState h a) 
-scheduleParticipant participant threads =  
+withParticipant :: Participant -> ThreadState h a -> (PID -> Either ThreadScheduleError b) -> Either ThreadScheduleError b
+withParticipant participant threads tagger = 
     case pidForParticipant participant threads of 
         Nothing -> 
             Left $ ThreadScheduleError PID.nonsense (ParticipantHasNoThread participant)
 
         Just pid -> 
-            scheduleThread pid threads
+            tagger pid
             
+scheduleParticipant :: Participant -> ThreadState h a -> Either ThreadScheduleError (ThreadState h a) 
+scheduleParticipant participant threads =  
+    withParticipant participant threads $ \pid -> scheduleThread pid threads
+            
+scheduleParticipantBackward :: Participant -> ThreadState h a -> Either ThreadScheduleError (ThreadState h a) 
+scheduleParticipantBackward participant threads =  
+    withParticipant participant threads $ \pid -> scheduleThreadBackward pid threads
 
 scheduleThread :: PID -> ThreadState h a -> Either ThreadScheduleError (ThreadState h a) 
 scheduleThread pid threads = 

@@ -12,7 +12,7 @@ import qualified Data.Foldable as Foldable
 import qualified Queue 
 import Data.Thread as Thread
 import Data.Context as Context 
-import Data.PID as PID (PID, create, parent, child)
+import Data.PID as PID (PID, create, parent, child, nonsense)
 import Data.Actor as Actor (Participant)
 import Data.Identifier as Identifier (Identifier, ChannelName)
 import Data.ThreadState (Progress(..) , ThreadState(..) , OtherThreads)
@@ -39,7 +39,6 @@ rollReceives :: Int -> ChannelName -> Execution ()
 rollReceives n channelName = do
     histories <- liftContext $ Queue.lastNReceives n <$> Context.getChannel channelName 
     handleBackwardEffects RollReceive { caller = PID.create [], histories = histories, channelName = channelName }
-
 
 
 rollThread :: PID -> Execution Program
@@ -100,10 +99,11 @@ rollVariable :: Identifier -> Execution ()
 rollVariable identifier = do
     creator <- liftContext $ Context.lookupCreator identifier 
 
-    scheduleParticipant creator
+    withParticipant creator scheduleThread
+
     withRunning $ \current@Thread{history} rest -> do
         let toUndo = 1 + length (takeWhile (/= CreatedVariable identifier) history)
-        rollN pid toUndo 
+        withParticipant creator $ \pid -> rollN pid toUndo 
 
 -- ROLLING HELPERS 
 
@@ -111,10 +111,10 @@ rollVariable identifier = do
 {-| Roll the (assumed) most recent action on a channel -}
 rollChannel :: ChannelName -> Queue.QueueHistory String -> Execution () 
 rollChannel ourChannel history = 
-    let pid = 
-            case Debug.traceShowId history of 
-                Queue.Added _ v -> v
-                Queue.Removed _ v -> v
+    let participant = 
+            case history of 
+                Queue.Added v _ -> v
+                Queue.Removed v _ -> v
 
         predicate h = 
             case h of 
@@ -122,7 +122,7 @@ rollChannel ourChannel history =
                 MicroOz.Sent { channelName } | channelName == ourChannel -> False
                 _ -> True
     in 
-        rollWhile predicate pid
+        withParticipant participant $ rollWhile predicate
 
 
 {-| roll the thread with the given PID (at most) n times -}
@@ -466,13 +466,6 @@ scheduleThread pid = do
     newState <- lift $ embedThreadScheduleError $ ThreadState.scheduleThread pid state
     setThreadState newState
 
-{-| Schedule a thread for a forwards move: the thread must be active, uninitialized or blocked -}
-scheduleParticipant :: (Has (ThreadState History Program) c, MonadError Error m) => Participant -> StateT c m () 
-scheduleParticipant participant = do
-    state <- extract <$> State.get 
-    newState <- lift $ embedThreadScheduleError $ ThreadState.scheduleParticipant participant state
-    setThreadState newState
-
 
 {-| Schedule a thread for a backwards move: the thread must be active, inactive or blocked -}
 scheduleThreadBackward :: (Has (ThreadState History Program) c, MonadError Error m) => PID -> StateT c m () 
@@ -480,3 +473,14 @@ scheduleThreadBackward pid = do
     state <- extract <$> State.get 
     newState <- lift $ embedThreadScheduleError $ ThreadState.scheduleThreadBackward pid state
     setThreadState newState
+
+
+withParticipant :: (Has (ThreadState History Program) c, MonadError Error m) => Participant -> (PID -> StateT c m a) -> StateT c m a
+withParticipant participant tagger = do
+    state :: ThreadState History Program <- extract <$> State.get 
+    case ThreadState.pidForParticipant participant state of
+        Nothing -> 
+            Except.throwError $ SchedulingError $ ThreadScheduleError PID.nonsense (ParticipantHasNoThread participant)
+
+        Just pid -> 
+            tagger pid

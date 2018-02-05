@@ -25,16 +25,19 @@ import Types
         , ExhaustableZipper(..)
         , GlobalAtom
         , GlobalType
-        , Identifier(..)
+        , Identifier
         , Instruction(..)
         , LocalAtom(..)
         , LocalTypeState
         , PID(..)
         , ReplState
         , ThreadState(..)
-        , unIdentifier
         , unParticipant
         )
+
+
+unIdentifier =
+    identity
 
 
 icon awesome size =
@@ -92,7 +95,7 @@ update msg model =
                 _ =
                     Debug.log "initial error" e
             in
-                ( model, Cmd.none )
+            ( model, Cmd.none )
 
         Step instruction ->
             case model.replState of
@@ -112,7 +115,7 @@ update msg model =
                 _ =
                     Debug.log "decoding error" e
             in
-                ( model, Cmd.none )
+            ( model, Cmd.none )
 
         SwitchExample example ->
             if model.example == example then
@@ -127,7 +130,7 @@ update msg model =
                             AsynchAnd ->
                                 Examples.asynchAnd
                 in
-                    ( { model | example = example }, Http.send InitialState (Api.initialize exampleString) )
+                ( { model | example = example }, Http.send InitialState (Api.initialize exampleString) )
 
 
 
@@ -166,7 +169,7 @@ viewThreadState context state =
                         (Types.PID pid_) =
                             pid
                     in
-                        { others | active = Dict.insert pid_ current others.active }
+                    { others | active = Dict.insert pid_ current others.active }
 
                 Stuck other ->
                     other
@@ -184,9 +187,9 @@ viewThreadState context state =
                     |> Dict.map (\k v -> ( Uninitialized, v ))
                 ]
     in
-        annotatedThreads
-            |> Dict.values
-            |> List.map (uncurry (viewThread context (Dict.size annotatedThreads)))
+    annotatedThreads
+        |> Dict.values
+        |> List.map (uncurry (viewThread context (Dict.size annotatedThreads)))
 
 
 type ThreadActivity
@@ -216,21 +219,21 @@ viewThread context n activity thread =
                 Just { participant } ->
                     "Participating as `" ++ unParticipant participant ++ "`"
     in
-        Element.paragraph (ThreadBlock activity)
-            [ minWidth (px 50), width (percent (1 / toFloat n * 100)) ]
-            [ Element.row None
-                [ width (percent 100), spread ]
-                [ Element.button Button [ onClick (Step (Back thread.pid)), alignLeft ] (el None [] (icon FontAwesome.arrow_left 20))
-                , el None [] (Element.text header)
-                , Element.button Button [ onClick (Step (Forth thread.pid)), alignRight ] (el None [] (icon FontAwesome.arrow_right 20))
-                ]
-            , Element.row None
-                [ spread ]
-                [ lookupTypeState thread.actor context
-                    |> Maybe.map viewLocalTypeState
-                    |> Maybe.withDefault Element.empty
-                ]
+    Element.paragraph (ThreadBlock activity)
+        [ minWidth (px 50), width (percent (1 / toFloat n * 100)) ]
+        [ Element.row None
+            [ width (percent 100), spread ]
+            [ Element.button Button [ onClick (Step (Back thread.pid)), alignLeft ] (el None [] (icon FontAwesome.arrow_left 20))
+            , el None [] (Element.text header)
+            , Element.button Button [ onClick (Step (Forth thread.pid)), alignRight ] (el None [] (icon FontAwesome.arrow_right 20))
             ]
+        , Element.row None
+            [ spread ]
+            [ lookupTypeState thread.actor context
+                |> Maybe.map viewLocalTypeState
+                |> Maybe.withDefault Element.empty
+            ]
+        ]
 
 
 viewContext : Context -> List (Element Style variation Msg)
@@ -246,7 +249,7 @@ viewContext context =
 
 
 lookupTypeState : Actor -> Context -> Maybe Types.LocalTypeState
-lookupTypeState actor { participantMap, localTypeStates } =
+lookupTypeState actor { localTypeStates } =
     List.head actor
         |> Maybe.andThen (\i -> Dict.get (unParticipant i) localTypeStates)
 
@@ -297,8 +300,11 @@ viewExhaustableZipper zipper =
         Empty ->
             text "Empty"
 
-        Exhausted _ ->
-            text "Exhausted"
+        ExhaustedForward _ _ ->
+            text "ExhaustedForward"
+
+        ExhaustedBackward _ _ ->
+            text "ExhaustedBackward"
 
         Zipper ( p, c, n ) ->
             text (viewLocalAtom c)
@@ -348,7 +354,8 @@ stylesheet =
             [ Color.text darkGrey
             , Color.background white
             , Font.size 5
-              -- all units given as px
+
+            -- all units given as px
             ]
         , Style.style (ThreadBlock Active)
             [ Color.background palette.green
@@ -385,4 +392,4 @@ drawTypeState { localTypeStates, globalType } =
         { parameters, atoms } =
             globalType
     in
-        Diagram.drawSegments (List.map unIdentifier parameters) globalType { width = 500, height = 500, headerHeight = 20 }
+    Diagram.drawSegments (List.map unIdentifier parameters) globalType { width = 500, height = 500, headerHeight = 20 }
