@@ -59,6 +59,9 @@ fromLocalType participant localType =
 data ReachedEnd = ReachedEnd deriving (Show, Eq)
 data ReachedBegin = ReachedBegin deriving (Show, Eq) 
 
+{-| Gives the current (i.e. next to execute) operation, and the typestate 
+ reached after executing that operation
+-} 
 forward :: LocalTypeState t -> Either ReachedEnd (LocalAtom t, LocalTypeState t)
 forward typeState@LocalTypeState{state} = 
     case state of
@@ -77,7 +80,9 @@ forward typeState@LocalTypeState{state} =
         Zipper (previous, current, []) -> 
             pure (current, typeState { state = ExhaustedForward previous current })
 
-
+{-| Give the previous (i.e. last executed) operation, and the typestate 
+ with that operation as it's current (next to execute).
+-}
 backward :: LocalTypeState t -> Either ReachedBegin (LocalAtom t, LocalTypeState t)
 backward typeState@LocalTypeState{state} = 
     case state of
@@ -85,16 +90,25 @@ backward typeState@LocalTypeState{state} =
             Except.throwError ReachedBegin
 
         ExhaustedForward previous current -> 
-            backward (typeState { state = Zipper (previous, current, []) } )
+            pure (current, typeState { state = Zipper (previous, current, []) } )
 
         ExhaustedBackward _ _ -> 
             Except.throwError ReachedBegin 
 
         Zipper (next:previous, current, remaining) -> 
-            pure (current, typeState { state = Zipper (previous, next, current:remaining)})
+            pure (next, typeState { state = Zipper (previous, next, current:remaining)})
 
         Zipper ([], current, remaining) -> 
-            pure (current, typeState)
+            Except.throwError ReachedBegin 
+
+previous :: LocalTypeState t -> Either ReachedBegin (LocalAtom t, LocalTypeState t)
+previous typeState@LocalTypeState{state} = do
+    backward typeState
+
+next :: LocalTypeState t -> Either ReachedEnd (LocalAtom t, LocalTypeState t)
+next typeState@LocalTypeState{state} = do
+    forward typeState 
+
 
 
 data GlobalAtom = Transaction { sender :: Participant, receiver :: Participant, tipe :: String } deriving (Show, Eq, Generic, ElmType, ToJSON, FromJSON)

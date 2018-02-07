@@ -6,16 +6,14 @@ import Api
 import Color exposing (..)
 import Diagram
 import Dict exposing (Dict)
-import Element exposing (Element, column, el, row, text)
-import Element.Attributes exposing (..)
-import Element.Events exposing (..)
+import Element exposing (..)
+import Element.Background as Background
+import Element.Font as Font
+import Element.Input
 import Examples
 import FontAwesome
 import Html exposing (Html)
 import Http
-import Style
-import Style.Color as Color
-import Style.Font as Font
 import Svg exposing (Svg)
 import Svg.Attributes as Svg
 import Types
@@ -30,6 +28,7 @@ import Types
         , LocalAtom(..)
         , LocalTypeState
         , PID(..)
+        , Participant(..)
         , ReplState
         , ThreadState(..)
         , unParticipant
@@ -139,27 +138,31 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    Element.layout stylesheet <|
+    Element.layout [] <|
         case model.replState of
             Nothing ->
                 Element.empty
 
             Just { context, threadState } ->
-                row None
-                    []
-                    [ column ThreadStateBlock
-                        [ width (percent 70) ]
-                        [ Element.button None [ onClick (Step SkipLets) ] (text "Normalize!")
-                        , row None [] (viewThreadState context threadState)
-                        , row None [] [ Element.html (Svg.svg [ Svg.width "500", Svg.height "600" ] [ drawTypeState context ]) ]
+                row
+                    [ width fill, height fill ]
+                    [ column
+                        [ width (fillPortion 7) ]
+                        [ Element.Input.button [] <|
+                            { onPress = Just (Step SkipLets)
+                            , label = text "Normalize!"
+                            }
+                        , row [] (viewThreadState context threadState)
+                        , row [] [ Element.html (Svg.svg [ Svg.width "500", Svg.height "600" ] [ drawTypeState context ]) ]
+                        , row [] [ viewLocalTypeState <| Maybe.withDefault { participant = Participant "", state = Empty } <| Dict.get "Alice" context.localTypeStates ]
                         ]
-                    , column ContextBlock
-                        [ width (percent 30) ]
+                    , column
+                        [ width (fillPortion 3) ]
                         (viewContext context)
                     ]
 
 
-viewThreadState : Context -> ThreadState -> List (Element Style variation Msg)
+viewThreadState : Context -> ThreadState -> List (Element Msg)
 viewThreadState context state =
     let
         threads =
@@ -199,7 +202,7 @@ type ThreadActivity
     | Uninitialized
 
 
-viewThread : Context -> Int -> ThreadActivity -> Types.Thread -> Element Style variation Msg
+viewThread : Context -> Int -> ThreadActivity -> Types.Thread -> Element Msg
 viewThread context n activity thread =
     let
         (PID pid) =
@@ -212,39 +215,47 @@ viewThread context n activity thread =
             lookupTypeState thread.actor context
 
         header =
-            case localTypeState of
-                Nothing ->
-                    "Not a protocol member"
+            Element.el [ width fill, threadActivityToColor activity ]
+                (text <|
+                    case localTypeState of
+                        Nothing ->
+                            "Not a protocol member"
 
-                Just { participant } ->
-                    "Participating as `" ++ unParticipant participant ++ "`"
+                        Just { participant } ->
+                            "Participating as `" ++ unParticipant participant ++ "`"
+                )
     in
-    Element.paragraph (ThreadBlock activity)
-        [ minWidth (px 50), width (percent (1 / toFloat n * 100)) ]
-        [ Element.row None
-            [ width (percent 100), spread ]
-            [ Element.button Button [ onClick (Step (Back thread.pid)), alignLeft ] (el None [] (icon FontAwesome.arrow_left 20))
-            , el None [] (Element.text header)
-            , Element.button Button [ onClick (Step (Forth thread.pid)), alignRight ] (el None [] (icon FontAwesome.arrow_right 20))
+    Element.paragraph
+        [ width (fillPortion 1) ]
+        [ Element.row
+            [ width fill, height (px 20) ]
+            [ Element.Input.button [ alignLeft, Background.color palette.grey ]
+                { onPress = Just (Step (Back thread.pid)), label = icon FontAwesome.arrow_left 20 }
+            , header
+            , Element.Input.button [ alignRight, Background.color palette.grey ]
+                { onPress = Just (Step (Forth thread.pid)), label = icon FontAwesome.arrow_right 20 }
             ]
-        , Element.row None
-            [ spread ]
+        , Element.row
+            [ width shrink ]
             [ lookupTypeState thread.actor context
-                |> Maybe.map viewLocalTypeState
+                |> Maybe.map viewLocalTypeState_
                 |> Maybe.withDefault Element.empty
             ]
         ]
 
 
-viewContext : Context -> List (Element Style variation Msg)
+bold content =
+    Element.el [ Font.bold ] (text content)
+
+
+viewContext : Context -> List (Element Msg)
 viewContext context =
-    [ Element.bold <| "Variable Count: " ++ toString context.variableCount
-    , Element.bold "Variables"
+    [ bold <| "Variable Count: " ++ toString context.variableCount
+    , bold "Variables"
     , viewBindings context.bindings
-    , Element.bold "Channels"
+    , bold "Channels"
     , viewChannels context.channels
-    , Element.bold "LocalTypeState"
-    , Element.text (toString context.localTypeStates)
+    , bold "LocalTypeState"
     ]
 
 
@@ -263,38 +274,95 @@ lookupTypeState actor { localTypeStates } =
 -}
 
 
-viewBindings : Dict String a -> Element Style variation msg
+viewBindings : Dict String a -> Element msg
 viewBindings bindings =
     bindings
         |> Dict.toList
         |> List.map (uncurry (viewBinding (\v -> text (toString v))))
-        |> Element.textLayout None []
+        |> Element.paragraph []
 
 
-viewBinding : (value -> Element Style variation msg) -> String -> value -> Element Style variation msg
+viewBinding : (value -> Element msg) -> String -> value -> Element msg
 viewBinding viewValue key value =
-    Element.paragraph None
+    Element.paragraph
         []
-        [ Element.bold key
-        , Element.bold " => "
+        [ bold key
+        , bold " => "
         , viewValue value
         ]
 
 
-viewChannels : Dict String a -> Element Style variation msg
+viewChannels : Dict String a -> Element msg
 viewChannels channles =
     channles
         |> Dict.toList
         |> List.map (uncurry (viewBinding (\v -> text (toString v))))
-        |> Element.textLayout None []
+        |> Element.paragraph []
 
 
-viewLocalTypeState : LocalTypeState -> Element Style variation msg
+viewLocalTypeState : LocalTypeState -> Element msg
 viewLocalTypeState { participant, state } =
+    viewCarousel state
+
+
+emptySet =
+    "∅"
+
+
+viewCarousel zipper =
+    case zipper of
+        Empty ->
+            Element.row
+                [ center, width fill ]
+                [ Element.column [ width (fillPortion 3) ] []
+                , Element.column [ width (fillPortion 1) ] [ text emptySet ]
+                , Element.column [ width (fillPortion 3) ] []
+                ]
+
+        ExhaustedForward previous current ->
+            Element.row
+                [ center ]
+                [ Element.column [ width (fillPortion 3) ] []
+                , Element.column [ width (fillPortion 1) ] [ text emptySet ]
+                , Element.column [ width (fillPortion 3) ] []
+                ]
+
+        ExhaustedBackward current next ->
+            Element.row
+                [ center ]
+                [ Element.column [ width (fillPortion 3) ] []
+                , Element.column [ width (fillPortion 1) ] [ text emptySet ]
+                , Element.column [ width (fillPortion 3) ] []
+                ]
+
+        Zipper ( p, c, n ) ->
+            Element.row
+                [ center, width fill ]
+                [ Element.column
+                    [ width (fillPortion 3), alignRight ]
+                    [ Element.row [] (List.map viewAtom <| List.reverse p) ]
+                , Element.column [ width (fillPortion 1), center ] [ viewAtom c ]
+                , Element.column
+                    [ width (fillPortion 3), alignLeft, spacing 10 ]
+                    [ Element.row [] (List.map viewAtom n) ]
+                ]
+
+
+viewAtom atom =
+    case atom of
+        LocalAtomReceive { sender, type_ } ->
+            text "receive"
+
+        LocalAtomSend { receiver, type_ } ->
+            text "send"
+
+
+viewLocalTypeState_ : LocalTypeState -> Element msg
+viewLocalTypeState_ { participant, state } =
     viewExhaustableZipper state
 
 
-viewExhaustableZipper : ExhaustableZipper (LocalAtom String) -> Element Style variation msg
+viewExhaustableZipper : ExhaustableZipper (LocalAtom String) -> Element msg
 viewExhaustableZipper zipper =
     case zipper of
         Empty ->
@@ -344,32 +412,48 @@ type Style
     | None
 
 
+threadActivityToColor : ThreadActivity -> Attribute msg
+threadActivityToColor typeState =
+    case typeState of
+        Active ->
+            Background.color palette.green
+
+        Blocked ->
+            Background.color palette.orange
+
+        Inactive ->
+            Background.color palette.blue
+
+        Uninitialized ->
+            Background.color palette.yellow
+
+
 
 -- We define our stylesheet
+{-
+   stylesheet =
+       Style.styleSheet
+           [ Style.style Title
+               [ Color.text darkGrey
+               , Color.background white
+               , Font.size 5
 
-
-stylesheet =
-    Style.styleSheet
-        [ Style.style Title
-            [ Color.text darkGrey
-            , Color.background white
-            , Font.size 5
-
-            -- all units given as px
-            ]
-        , Style.style (ThreadBlock Active)
-            [ Color.background palette.green
-            ]
-        , Style.style (ThreadBlock Blocked)
-            [ Color.background palette.orange
-            ]
-        , Style.style (ThreadBlock Inactive)
-            [ Color.background palette.blue
-            ]
-        , Style.style (ThreadBlock Uninitialized)
-            [ Color.background palette.yellow
-            ]
-        ]
+               -- all units given as px
+               ]
+           , Style.style (ThreadBlock Active)
+               [ Color.background palette.green
+               ]
+           , Style.style (ThreadBlock Blocked)
+               [ Color.background palette.orange
+               ]
+           , Style.style (ThreadBlock Inactive)
+               [ Color.background palette.blue
+               ]
+           , Style.style (ThreadBlock Uninitialized)
+               [ Color.background palette.yellow
+               ]
+           ]
+-}
 
 
 palette =
@@ -378,6 +462,7 @@ palette =
     , yellow = Color.rgb 255 255 186
     , green = Color.rgb 186 255 201
     , blue = Color.rgb 186 225 255
+    , grey = Color.grey
     }
 
 

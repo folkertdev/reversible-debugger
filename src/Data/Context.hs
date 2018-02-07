@@ -375,7 +375,7 @@ performUndoSend :: (Show t, Eq t, Show a)
             ->  Queue t a 
             ->  Either QueueError (a, SessionType.LocalTypeState t, Queue t a)
 performUndoSend sender typeState queue = do 
-    ( localAtom, newLocalTypeState ) <- Result.mapError ReachedBegin $ SessionType.backward typeState
+    ( localAtom, newLocalTypeState ) <- Result.mapError ReachedBegin $ SessionType.previous typeState
     case localAtom of 
         SessionType.Send receiver valueType -> do
             let transaction = Transaction { sender = sender, receiver = receiver, valueType = valueType } 
@@ -383,8 +383,9 @@ performUndoSend sender typeState queue = do
             (newQueue, Queue.Item{payload}) <- Result.mapError QueueRollError $ Queue.rollPush transaction queue
             pure ( payload, newLocalTypeState, newQueue )
 
-        SessionType.Receive {} ->
-            Except.throwError undefined
+        SessionType.Receive sender valueType ->
+            -- Except.throwError undefined
+            error $ "wants to roll send but session type says: Receive " ++ show sender ++ " of type " ++ show valueType 
 
 
 performUndoReceive :: (Eq t, Show t, Show a)
@@ -394,7 +395,7 @@ performUndoReceive :: (Eq t, Show t, Show a)
                ->  Queue t a 
                ->  Either QueueError (SessionType.LocalTypeState t, Queue t a)
 performUndoReceive receiver typeState payload queue = do 
-    ( localAtom, newLocalTypeState ) <- Result.mapError ReachedBegin $ SessionType.backward typeState
+    ( localAtom, newLocalTypeState ) <- Result.mapError ReachedBegin $ SessionType.previous typeState
     case localAtom of 
         SessionType.Receive sender valueType -> do
             let transaction = Transaction { sender = sender, receiver = receiver, valueType = valueType } 
