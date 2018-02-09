@@ -37,5 +37,5 @@ windows:
 
   - processes:
       panes:
-        - stack build && stack exec server 
+        - export PORT=8000 && stack build && stack exec server 
         - cd frontend && git ls-tree -r master --name-only | entr elm-make src/Main.elm

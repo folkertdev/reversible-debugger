@@ -4,15 +4,18 @@ module Main exposing (..)
 
 import Api
 import Color exposing (..)
+import Color.Manipulate as Manipulate
 import Diagram
 import Dict exposing (Dict)
 import Element exposing (..)
 import Element.Background as Background
+import Element.Border as Border
 import Element.Font as Font
 import Element.Input
 import Examples
 import FontAwesome
 import Html exposing (Html)
+import Html.Attributes
 import Http
 import Svg exposing (Svg)
 import Svg.Attributes as Svg
@@ -144,20 +147,36 @@ view model =
                 Element.empty
 
             Just { context, threadState } ->
+                let
+                    typeStateUI =
+                        Dict.toList context.localTypeStates
+                            |> List.concatMap
+                                (\( name, state ) ->
+                                    [ row [] [ text name ]
+                                    , row [] [ viewLocalTypeState state ]
+                                    ]
+                                )
+                in
                 row
                     [ width fill, height fill ]
                     [ column
-                        [ width (fillPortion 7) ]
+                        [ width (fillPortion 7)
+                        ]
+                      <|
                         [ Element.Input.button [] <|
                             { onPress = Just (Step SkipLets)
                             , label = text "Normalize!"
                             }
                         , row [] (viewThreadState context threadState)
-                        , row [] [ Element.html (Svg.svg [ Svg.width "500", Svg.height "600" ] [ drawTypeState context ]) ]
-                        , row [] [ viewLocalTypeState <| Maybe.withDefault { participant = Participant "", state = Empty } <| Dict.get "Alice" context.localTypeStates ]
+                        , row []
+                            [ Element.html (Svg.svg [ Svg.width "500", Svg.height "600" ] [ drawTypeState context ]) ]
                         ]
+                            ++ typeStateUI
                     , column
-                        [ width (fillPortion 3) ]
+                        [ width (fillPortion 3)
+                        , Border.color (Manipulate.darken 0.2 palette.grey)
+                        , Border.widthEach { bottom = 0, left = 2, right = 0, top = 0 }
+                        ]
                         (viewContext context)
                     ]
 
@@ -235,15 +254,10 @@ viewThread context n activity thread =
             , Element.Input.button [ alignRight, Background.color palette.grey ]
                 { onPress = Just (Step (Forth thread.pid)), label = icon FontAwesome.arrow_right 20 }
             ]
-        , Element.row
-            [ width shrink ]
-            [ lookupTypeState thread.actor context
-                |> Maybe.map viewLocalTypeState_
-                |> Maybe.withDefault Element.empty
-            ]
         ]
 
 
+bold : String -> Element msg
 bold content =
     Element.el [ Font.bold ] (text content)
 
@@ -320,41 +334,70 @@ viewCarousel zipper =
                 ]
 
         ExhaustedForward previous current ->
-            Element.row
-                [ center ]
-                [ Element.column [ width (fillPortion 3) ] []
-                , Element.column [ width (fillPortion 1) ] [ text emptySet ]
-                , Element.column [ width (fillPortion 3) ] []
-                ]
+            text ""
 
         ExhaustedBackward current next ->
-            Element.row
-                [ center ]
-                [ Element.column [ width (fillPortion 3) ] []
-                , Element.column [ width (fillPortion 1) ] [ text emptySet ]
-                , Element.column [ width (fillPortion 3) ] []
-                ]
+            text ""
 
         Zipper ( p, c, n ) ->
             Element.row
-                [ center, width fill ]
-                [ Element.column
-                    [ width (fillPortion 3), alignRight ]
-                    [ Element.row [] (List.map viewAtom <| List.reverse p) ]
-                , Element.column [ width (fillPortion 1), center ] [ viewAtom c ]
-                , Element.column
-                    [ width (fillPortion 3), alignLeft, spacing 10 ]
-                    [ Element.row [] (List.map viewAtom n) ]
+                [ width fill ]
+                [ Element.el
+                    [ width (fillPortion 3) ]
+                    (Element.row [ spacing 10 ] (List.map (viewAtom Right) <| List.reverse p))
+                , Element.el
+                    [ width (fillPortion 1)
+                    ]
+                    (viewAtom Center c)
+                , Element.el
+                    [ width (fillPortion 3) ]
+                    (Element.row [ spacing 10 ] (List.map (viewAtom Left) n))
                 ]
 
 
-viewAtom atom =
+type Alignment
+    = Left
+    | Right
+    | Center
+
+
+viewAtom alignment atom =
+    let
+        textAlignMiddle =
+            Element.attribute (Html.Attributes.style [ ( "text-align", "middle" ) ])
+
+        shared =
+            [ height <|
+                case alignment of
+                    Center ->
+                        px 40
+
+                    _ ->
+                        px 30
+            , case alignment of
+                Left ->
+                    alignLeft
+
+                Right ->
+                    alignRight
+
+                Center ->
+                    center
+            , width (px 70)
+            , Background.color palette.grey
+            , Border.color (Manipulate.darken 0.2 palette.grey)
+            , Border.width 2
+            , Font.center
+            ]
+    in
     case atom of
         LocalAtomReceive { sender, type_ } ->
-            text "receive"
+            el shared
+                (el [ textAlignMiddle ] (text "receive"))
 
         LocalAtomSend { receiver, type_ } ->
-            text "send"
+            el shared
+                (el [ textAlignMiddle ] (text "send"))
 
 
 viewLocalTypeState_ : LocalTypeState -> Element msg
@@ -462,7 +505,9 @@ palette =
     , yellow = Color.rgb 255 255 186
     , green = Color.rgb 186 255 201
     , blue = Color.rgb 186 225 255
-    , grey = Color.grey
+    , grey = Color.rgb 132 141 130
+    , navy = Color.rgb 44 59 99
+    , midnight = Color.rgb 37 3 82
     }
 
 
