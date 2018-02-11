@@ -21,17 +21,17 @@ import Data.Context as Context (Context, localTypeStates)
 import Data.Identifier (Identifier)
 
 import qualified Repl 
-import DebuggerParser (Instruction)
+import DebuggerParser (Instruction(SkipLets))
 
 {-| the API described as a type -}
 type UserAPI = 
     "initialize" :> ReqBody '[JSON] String :> Post '[JSON] ReplState
-        :<|> "step" :> ReqBody '[JSON] (Instruction, ReplState) :> Post '[JSON] ReplState
+        :<|> "step" :> ReqBody '[JSON] (Instruction, Bool, ReplState) :> Post '[JSON] ReplState
         :<|> Raw
         
  
 server :: Server UserAPI
-server = initialize :<|> uncurry step :<|> serveDirectoryFileServer "frontend/" 
+server = initialize :<|> step :<|> serveDirectoryFileServer "frontend/" 
   where initialize :: String -> Handler ReplState
         initialize input = 
             case MicroOz.Parser.programWithTypes input of
@@ -41,11 +41,18 @@ server = initialize :<|> uncurry step :<|> serveDirectoryFileServer "frontend/"
                     let ( context, thread ) = MicroOz.init globalType types program 
                     in return $ ReplState context (ThreadState.singleton thread) 
 
-        step :: Instruction -> ReplState -> Handler ReplState
-        step instruction replState =
+        step :: (Instruction, Bool, ReplState) -> Handler ReplState
+        step (instruction, fastForward, replState) =
             case Repl.interpretInstruction instruction replState of
                 Left e -> error (show e)
-                Right newState -> return newState
+                Right newState -> 
+                    if fastForward then
+                        case Repl.interpretInstruction SkipLets newState of 
+                            Left e -> error (show e)
+                            Right newer -> return newer
+                    else
+                        return newState
+
 
 userAPI :: Proxy UserAPI
 userAPI = Proxy

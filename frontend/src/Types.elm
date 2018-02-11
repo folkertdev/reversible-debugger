@@ -26,8 +26,8 @@ tupleDict decodeValue =
         tuple2 value =
             Decode.map2 (,) (index 0 string) (index 1 value)
     in
-    Decode.list (tuple2 decodeValue)
-        |> Decode.map Dict.fromList
+        Decode.list (tuple2 decodeValue)
+            |> Decode.map Dict.fromList
 
 
 dict =
@@ -923,8 +923,7 @@ encodeValue x =
         VUnit ->
             Json.Encode.object
                 [ ( "tag", Json.Encode.string "VUnit" )
-
-                -- , ( "contents", encodeBoolExpr y0 )
+                  -- , ( "contents", encodeBoolExpr y0 )
                 ]
 
 
@@ -1314,10 +1313,10 @@ encodeExhaustableZipper encodeValue x =
                 encodeList decodeV =
                     Json.Encode.list << List.map decodeV
             in
-            Json.Encode.object
-                [ ( "tag", Json.Encode.string "Zipper" )
-                , ( "contents", encodeTuple3 ( encodeList encodeValue a, encodeValue b, encodeList encodeValue c ) )
-                ]
+                Json.Encode.object
+                    [ ( "tag", Json.Encode.string "Zipper" )
+                    , ( "contents", encodeTuple3 ( encodeList encodeValue a, encodeValue b, encodeList encodeValue c ) )
+                    ]
 
         ExhaustedForward previous current ->
             Json.Encode.object
@@ -1341,6 +1340,9 @@ type LocalAtom a
         { sender : Identifier
         , type_ : a
         }
+    | Choice (LocalAtom a) (LocalAtom a)
+    | Select (LocalAtom a) (LocalAtom a)
+    | End
 
 
 decodeLocalAtom : Decoder a -> Decoder (LocalAtom a)
@@ -1358,6 +1360,19 @@ decodeLocalAtom decodeType =
                         decode (\sender type_ -> LocalAtomReceive { sender = sender, type_ = type_ })
                             |> required "sender" decodeIdentifier
                             |> required "type_" decodeType
+
+                    "Choice" ->
+                        decode Choice
+                            |> required "content" (index 0 (lazy (\_ -> decodeLocalAtom decodeType)))
+                            |> required "content" (index 1 (lazy (\_ -> decodeLocalAtom decodeType)))
+
+                    "Select" ->
+                        decode Select
+                            |> required "content" (index 0 (lazy (\_ -> decodeLocalAtom decodeType)))
+                            |> required "content" (index 1 (lazy (\_ -> decodeLocalAtom decodeType)))
+
+                    "End" ->
+                        decode End
 
                     _ ->
                         fail <| "Constructor not matched, got " ++ x
@@ -1380,6 +1395,22 @@ encodeLocalAtom encodeType x =
                 , ( "sender", encodeIdentifier x.sender )
                 , ( "type_", encodeType x.type_ )
                 ]
+
+        Choice left right ->
+            Json.Encode.object
+                [ ( "tag", Json.Encode.string "Choice" )
+                , ( "contents", Json.Encode.list [ encodeLocalAtom encodeType left, encodeLocalAtom encodeType right ] )
+                ]
+
+        Select left right ->
+            Json.Encode.object
+                [ ( "tag", Json.Encode.string "Select" )
+                , ( "contents", Json.Encode.list [ encodeLocalAtom encodeType left, encodeLocalAtom encodeType right ] )
+                ]
+
+        End ->
+            Json.Encode.object
+                [ ( "tag", Json.Encode.string "End" ) ]
 
 
 type Participant

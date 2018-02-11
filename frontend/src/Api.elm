@@ -21,7 +21,7 @@ initialize programString =
         url =
             baseURL ++ "initialize"
     in
-    Http.post url (Http.jsonBody (Encode.string programString)) Types.decodeReplState
+        Http.post url (Http.jsonBody (Encode.string programString)) Types.decodeReplState
 
 
 step : (Result Http.Error ReplState -> msg) -> Instruction -> ReplState -> Cmd msg
@@ -33,7 +33,8 @@ step toMsg instruction replState =
         body =
             Encode.list
                 [ Types.encodeInstruction instruction
+                , Encode.bool True
                 , Types.encodeReplState replState
                 ]
     in
-    Http.send toMsg <| Http.post url (Http.jsonBody body) Types.decodeReplState
+        Http.send toMsg <| Http.post url (Http.jsonBody body) Types.decodeReplState

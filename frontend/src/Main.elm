@@ -3,6 +3,7 @@ module Main exposing (..)
 --
 
 import Api
+import SidePane
 import Color exposing (..)
 import Color.Manipulate as Manipulate
 import Diagram
@@ -36,6 +37,7 @@ import Types
         , ThreadState(..)
         , unParticipant
         )
+import MappingTable exposing (State(Open, Closed), view, toggle, Msg)
 
 
 unIdentifier =
@@ -65,12 +67,24 @@ type Example
 
 
 type alias Model =
-    { replState : Maybe Types.ReplState, example : Example }
+    { replState : Maybe Types.ReplState
+    , example : Example
+    , variables : MappingTable.State
+    , channels : MappingTable.State
+    , controls : MappingTable.State
+    , localTypeStates : MappingTable.State
+    }
 
 
 init : String -> ( Model, Cmd Msg )
 init topic =
-    ( { replState = Nothing, example = ThreeBuyer }
+    ( { replState = Nothing
+      , example = ThreeBuyer
+      , variables = MappingTable.Open
+      , channels = MappingTable.Closed
+      , localTypeStates = MappingTable.Closed
+      , controls = MappingTable.Open
+      }
     , Http.send InitialState (Api.initialize Examples.threeBuyer)
     )
 
@@ -84,11 +98,22 @@ type Msg
     | Step Instruction
     | Stepped (Result Http.Error Types.ReplState)
     | SwitchExample Example
+    | Toggle SidePane.DropDown MappingTable.Msg
+
+
+sidePaneConfig : SidePane.Config Msg
+sidePaneConfig =
+    { toggle = Toggle
+    , instruction = Step
+    }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        Toggle dropdown msg ->
+            ( SidePane.update dropdown model, Cmd.none )
+
         InitialState (Ok newUrl) ->
             ( { model | replState = Just newUrl }, Cmd.none )
 
@@ -97,7 +122,7 @@ update msg model =
                 _ =
                     Debug.log "initial error" e
             in
-            ( model, Cmd.none )
+                ( model, Cmd.none )
 
         Step instruction ->
             case model.replState of
@@ -117,7 +142,7 @@ update msg model =
                 _ =
                     Debug.log "decoding error" e
             in
-            ( model, Cmd.none )
+                ( model, Cmd.none )
 
         SwitchExample example ->
             if model.example == example then
@@ -132,7 +157,7 @@ update msg model =
                             AsynchAnd ->
                                 Examples.asynchAnd
                 in
-                ( { model | example = example }, Http.send InitialState (Api.initialize exampleString) )
+                    ( { model | example = example }, Http.send InitialState (Api.initialize exampleString) )
 
 
 
@@ -157,28 +182,24 @@ view model =
                                     ]
                                 )
                 in
-                row
-                    [ width fill, height fill ]
-                    [ column
-                        [ width (fillPortion 7)
+                    row
+                        [ width fill, height fill ]
+                        [ column
+                            [ width (fillPortion 7)
+                            ]
+                          <|
+                            [ row [] (viewThreadState context threadState)
+                            , row []
+                                [ Element.html (Svg.svg [ Svg.width "500", Svg.height "600" ] [ drawTypeState context ]) ]
+                            ]
+                                ++ typeStateUI
+                        , column
+                            [ width (fillPortion 3)
+                            , Border.color (Manipulate.darken 0.2 palette.grey)
+                            , Border.widthEach { bottom = 0, left = 2, right = 0, top = 0 }
+                            ]
+                            (SidePane.sidepane sidePaneConfig model context)
                         ]
-                      <|
-                        [ Element.Input.button [] <|
-                            { onPress = Just (Step SkipLets)
-                            , label = text "Normalize!"
-                            }
-                        , row [] (viewThreadState context threadState)
-                        , row []
-                            [ Element.html (Svg.svg [ Svg.width "500", Svg.height "600" ] [ drawTypeState context ]) ]
-                        ]
-                            ++ typeStateUI
-                    , column
-                        [ width (fillPortion 3)
-                        , Border.color (Manipulate.darken 0.2 palette.grey)
-                        , Border.widthEach { bottom = 0, left = 2, right = 0, top = 0 }
-                        ]
-                        (viewContext context)
-                    ]
 
 
 viewThreadState : Context -> ThreadState -> List (Element Msg)
@@ -191,7 +212,7 @@ viewThreadState context state =
                         (Types.PID pid_) =
                             pid
                     in
-                    { others | active = Dict.insert pid_ current others.active }
+                        { others | active = Dict.insert pid_ current others.active }
 
                 Stuck other ->
                     other
@@ -209,9 +230,9 @@ viewThreadState context state =
                     |> Dict.map (\k v -> ( Uninitialized, v ))
                 ]
     in
-    annotatedThreads
-        |> Dict.values
-        |> List.map (uncurry (viewThread context (Dict.size annotatedThreads)))
+        annotatedThreads
+            |> Dict.values
+            |> List.map (uncurry (viewThread context (Dict.size annotatedThreads)))
 
 
 type ThreadActivity
@@ -244,33 +265,22 @@ viewThread context n activity thread =
                             "Participating as `" ++ unParticipant participant ++ "`"
                 )
     in
-    Element.paragraph
-        [ width (fillPortion 1) ]
-        [ Element.row
-            [ width fill, height (px 20) ]
-            [ Element.Input.button [ alignLeft, Background.color palette.grey ]
-                { onPress = Just (Step (Back thread.pid)), label = icon FontAwesome.arrow_left 20 }
-            , header
-            , Element.Input.button [ alignRight, Background.color palette.grey ]
-                { onPress = Just (Step (Forth thread.pid)), label = icon FontAwesome.arrow_right 20 }
+        Element.paragraph
+            [ width (fillPortion 1) ]
+            [ Element.row
+                [ width fill, height (px 20) ]
+                [ Element.Input.button [ alignLeft, Background.color palette.grey ]
+                    { onPress = Just (Step (Back thread.pid)), label = icon FontAwesome.arrow_left 20 }
+                , header
+                , Element.Input.button [ alignRight, Background.color palette.grey ]
+                    { onPress = Just (Step (Forth thread.pid)), label = icon FontAwesome.arrow_right 20 }
+                ]
             ]
-        ]
 
 
 bold : String -> Element msg
 bold content =
     Element.el [ Font.bold ] (text content)
-
-
-viewContext : Context -> List (Element Msg)
-viewContext context =
-    [ bold <| "Variable Count: " ++ toString context.variableCount
-    , bold "Variables"
-    , viewBindings context.bindings
-    , bold "Channels"
-    , viewChannels context.channels
-    , bold "LocalTypeState"
-    ]
 
 
 lookupTypeState : Actor -> Context -> Maybe Types.LocalTypeState
@@ -389,15 +399,26 @@ viewAtom alignment atom =
             , Border.width 2
             , Font.center
             ]
-    in
-    case atom of
-        LocalAtomReceive { sender, type_ } ->
-            el shared
-                (el [ textAlignMiddle ] (text "receive"))
 
-        LocalAtomSend { receiver, type_ } ->
-            el shared
-                (el [ textAlignMiddle ] (text "send"))
+        label =
+            case atom of
+                LocalAtomReceive { sender, type_ } ->
+                    "receive"
+
+                LocalAtomSend { receiver, type_ } ->
+                    "send"
+
+                Choice _ _ ->
+                    "choice"
+
+                Select _ _ ->
+                    "select"
+
+                End ->
+                    "end"
+    in
+        el shared
+            (el [ textAlignMiddle ] (text label))
 
 
 viewLocalTypeState_ : LocalTypeState -> Element msg
@@ -429,6 +450,15 @@ viewLocalAtom atom =
 
         LocalAtomReceive { sender, type_ } ->
             "Receive from " ++ unIdentifier sender ++ " of type " ++ type_
+
+        Choice left right ->
+            "Choice between " ++ viewLocalAtom left ++ " and " ++ viewLocalAtom right
+
+        Select left right ->
+            "Selection of " ++ viewLocalAtom left ++ " and " ++ viewLocalAtom right
+
+        End ->
+            "End"
 
 
 
@@ -522,4 +552,4 @@ drawTypeState { localTypeStates, globalType } =
         { parameters, atoms } =
             globalType
     in
-    Diagram.drawSegments (List.map unIdentifier parameters) globalType { width = 500, height = 500, headerHeight = 20 }
+        Diagram.drawSegments (List.map unIdentifier parameters) globalType { width = 500, height = 500, headerHeight = 20 }

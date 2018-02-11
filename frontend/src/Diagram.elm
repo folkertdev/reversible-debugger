@@ -2,11 +2,68 @@ module Diagram exposing (..)
 
 import Svg exposing (Svg)
 import Svg.Attributes exposing (..)
-import Types exposing (GlobalAtom, GlobalType)
+import Types exposing (GlobalAtom, GlobalType, LocalAtom(..), Identifier, Participant, ExhaustableZipper)
+import Dict exposing (Dict)
+import List.Extra as List
 
 
 unIdentifier =
     identity
+
+
+type alias Connection =
+    { sender : Participant, receiver : Participant, type_ : String }
+
+
+ordered : Dict Identifier (ExhaustableZipper (LocalAtom String)) -> ( List Connection, List Connection, List Connection )
+ordered states =
+    ( [], [], [] )
+
+
+popSends :
+    comparable
+    -> List (LocalAtom String)
+    -> ( Dict comparable (List (LocalAtom String)), List (LocalAtom String) )
+    -> ( Dict comparable (List (LocalAtom String)), List (LocalAtom String) )
+popSends key value ( accumDict, accumSends ) =
+    let
+        ( sends, rest ) =
+            ( List.takeWhile isSend value, List.dropWhile isSend value )
+
+        isSend atom =
+            case atom of
+                LocalAtomSend _ ->
+                    True
+
+                _ ->
+                    False
+    in
+        ( Dict.insert key rest accumDict, sends ++ accumSends )
+
+
+type alias State =
+    { done : List (LocalAtom String)
+    , sentButNotReceived : List (LocalAtom String)
+    , remaining : Dict Identifier (List (LocalAtom String))
+    }
+
+
+performSends : State -> State
+performSends ({ sentButNotReceived, remaining } as state) =
+    let
+        ( newRemaining, newSent ) =
+            Dict.foldr popSends ( remaining, [] ) remaining
+    in
+        { state | sentButNotReceived = [] ++ sentButNotReceived, remaining = Dict.empty }
+
+
+helper : Dict Identifier (List (LocalAtom String)) -> List Connection
+helper states =
+    let
+        state =
+            { done = [], sentButNotReceived = [], remaining = states }
+    in
+        []
 
 
 type alias Canvas =
@@ -31,13 +88,13 @@ drawSegments markers global ({ width, height, headerHeight } as canvas) =
                 [ Svg.path [ d "M0,0 L0,6 L9,3 z", fill "#f00" ] []
                 ]
     in
-    Svg.g []
-        [ Svg.defs [] [ arrowHead ]
-        , drawMarkers (toFloat headerHeight) (List.map2 (,) segmentXs markers)
-        , Svg.g [ class "thread-lines" ] (List.map (flip drawSegmentLine ( toFloat headerHeight + 5, toFloat height )) segmentXs)
-        , drawPhantomTransactionLines (List.length global.atoms) (segmentWidth / 2) canvas
-        , drawGlobalType global canvas
-        ]
+        Svg.g []
+            [ Svg.defs [] [ arrowHead ]
+            , drawMarkers (toFloat headerHeight) (List.map2 (,) segmentXs markers)
+            , Svg.g [ class "thread-lines" ] (List.map (flip drawSegmentLine ( toFloat headerHeight + 5, toFloat height )) segmentXs)
+            , drawPhantomTransactionLines (List.length global.atoms) (segmentWidth / 2) canvas
+            , drawGlobalType global canvas
+            ]
 
 
 drawMarkers : Float -> List ( Float, String ) -> Svg msg
@@ -87,9 +144,9 @@ drawPhantomTransactionLines n padding { height, width, headerHeight } =
                 ]
                 []
     in
-    List.range 1 n
-        |> List.map (\x -> draw (toFloat x * segmentHeight + toFloat headerHeight))
-        |> Svg.g [ class "phantom-transaction-lines" ]
+        List.range 1 n
+            |> List.map (\x -> draw (toFloat x * segmentHeight + toFloat headerHeight))
+            |> Svg.g [ class "phantom-transaction-lines" ]
 
 
 index : a -> List a -> Int
@@ -106,7 +163,7 @@ index needle haystack =
                     else
                         go (n + 1) xs
     in
-    go 0 haystack
+        go 0 haystack
 
 
 type Direction
@@ -126,10 +183,10 @@ drawGlobalType ({ atoms } as global) canvas =
         segmentHeight =
             toFloat (canvas.height - canvas.headerHeight) / toFloat (List.length atoms)
     in
-    List.range 1 (List.length atoms)
-        |> List.map (\x -> toFloat x * segmentHeight + toFloat canvas.headerHeight)
-        |> List.map2 (\atom height -> drawGlobalAtom height segmentWidth atom global.parameters canvas) atoms
-        |> Svg.g []
+        List.range 1 (List.length atoms)
+            |> List.map (\x -> toFloat x * segmentHeight + toFloat canvas.headerHeight)
+            |> List.map2 (\atom height -> drawGlobalAtom height segmentWidth atom global.parameters canvas) atoms
+            |> Svg.g []
 
 
 drawGlobalAtom : Float -> Float -> GlobalAtom -> List Types.Identifier -> Canvas -> Svg msg
@@ -144,30 +201,30 @@ drawGlobalAtom height segmentWidth { sender, receiver, tipe } parameters canvas 
         idName =
             toString height ++ unIdentifier sender ++ unIdentifier receiver ++ tipe
     in
-    Svg.g []
-        [ Svg.defs []
-            [ Svg.marker [ id idName, markerWidth "10", markerHeight "10", refX "0", refY "3", markerUnits "strokeWidth", overflow "visible" ]
-                [ Svg.text_ [ textAnchor "middle" ] [ Svg.text tipe ] ]
+        Svg.g []
+            [ Svg.defs []
+                [ Svg.marker [ id idName, markerWidth "10", markerHeight "10", refX "0", refY "3", markerUnits "strokeWidth", overflow "visible" ]
+                    [ Svg.text_ [ textAnchor "middle" ] [ Svg.text tipe ] ]
+                ]
+            , lineWithMidpoint
+                ( (toFloat start + 0.5) * segmentWidth
+                , height
+                )
+                ( (toFloat end + 0.5)
+                    * segmentWidth
+                    + (if start > end then
+                        15
+                       else
+                        -15
+                      )
+                , height
+                )
+                [ strokeWidth "2"
+                , stroke "red"
+                , markerEnd "url(#arrowHead)"
+                , markerMid ("url(#" ++ idName ++ ")")
+                ]
             ]
-        , lineWithMidpoint
-            ( (toFloat start + 0.5) * segmentWidth
-            , height
-            )
-            ( (toFloat end + 0.5)
-                * segmentWidth
-                + (if start > end then
-                    15
-                   else
-                    -15
-                  )
-            , height
-            )
-            [ strokeWidth "2"
-            , stroke "red"
-            , markerEnd "url(#arrowHead)"
-            , markerMid ("url(#" ++ idName ++ ")")
-            ]
-        ]
 
 
 lineWithMidpoint : ( Float, Float ) -> ( Float, Float ) -> List (Svg.Attribute msg) -> Svg msg
@@ -184,4 +241,4 @@ lineWithMidpoint (( px1, py1 ) as p1) (( px2, py2 ) as p2) attributes =
         p =
             "M" ++ toStringPoint p1 ++ "L" ++ toStringPoint midpoint ++ toStringPoint p2
     in
-    Svg.path (d p :: attributes) []
+        Svg.path (d p :: attributes) []

@@ -17,12 +17,21 @@ import Elm
 import Data.Aeson
 
 
-data LocalAtom t = Send { receiver :: Participant, type_ :: t } | Receive { sender :: Participant, type_ :: t  } deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
+data LocalAtom t 
+    = Send { receiver :: Participant, type_ :: t } 
+    | Receive { sender :: Participant, type_ :: t  } 
+    | Choice (LocalAtom t) (LocalAtom t)
+    | Select (LocalAtom t) (LocalAtom t)
+    | End
+    deriving (Eq, Generic, ElmType, ToJSON, FromJSON)
 
 
 instance Show t => Show (LocalAtom t) where
     show Send { receiver, type_ } = Participant.unParticipant receiver ++ "!" ++ ": <" ++ show type_ ++ "> "
     show Receive { sender, type_ } = Participant.unParticipant sender ++ "?" ++ ": <" ++ show type_ ++ "> "
+    show (Choice left right) = "(" ++ show left ++ ") ⊕ (" ++ show right ++ ")"
+    show (Select left right) = "(" ++ show left ++ ") ⊗ (" ++ show right ++ ")"
+    show End = "End"
 
 
 type LocalType t = List (LocalAtom t)
@@ -145,7 +154,7 @@ go atom@Transaction{ sender, receiver, tipe } =
             . inserter receiver [ Receive { sender = sender, type_ = tipe } ]
 
 
-data ParserGlobalTypeAtom = Action { sender :: Participant, receiver :: Participant, tipe :: String, continuation :: ParserGlobalTypeAtom} | End
+data ParserGlobalTypeAtom = Action { sender :: Participant, receiver :: Participant, tipe :: String, continuation :: ParserGlobalTypeAtom} | GlobalEnd
 
 identifier :: Parser Participant
 identifier = do
