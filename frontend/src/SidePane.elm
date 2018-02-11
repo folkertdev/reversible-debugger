@@ -20,6 +20,7 @@ import Types
         , ReplState
         , ThreadState(..)
         , unParticipant
+        , Direction(Forward)
         )
 import MappingTable exposing (State(Open, Closed), view, toggle, Msg)
 
@@ -156,7 +157,7 @@ controls state =
     MappingTable.toggleableCustom state "Controls" <|
         Element.column []
             [ Element.Input.button [] <|
-                { onPress = Just SkipLets
+                { onPress = Just (SendReceiveNormalForm Forward)
                 , label = text "Fast Forward to Send/Receive"
                 }
             ]
