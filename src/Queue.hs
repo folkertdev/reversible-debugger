@@ -21,7 +21,7 @@ module Queue
     , lastNReceives
     , lastNSends
     , Item(..)
-    , QueueError(ItemMismatch)
+    , QueueError(ItemMismatch, QueueEmpty)
     ) where
 
 import Types ((|>), List)

@@ -18,10 +18,12 @@ import qualified MicroOz.Parser
 import qualified Data.ThreadState as ThreadState
 import Data.ReplState
 import Data.Context as Context (Context, localTypeStates)
+import qualified Data.Direction as Direction (forward)
 import Data.Identifier (Identifier)
 
 import qualified Repl 
-import DebuggerParser (Instruction(SkipLets))
+import DebuggerParser (Instruction(SendReceiveNormalForm))
+import Types (Error(..), ThreadScheduleError(..), ThreadScheduleErrorCause(ThreadIsFinished))
 
 {-| the API described as a type -}
 type UserAPI = 
@@ -44,10 +46,13 @@ server = initialize :<|> step :<|> serveDirectoryFileServer "frontend/"
         step :: (Instruction, Bool, ReplState) -> Handler ReplState
         step (instruction, fastForward, replState) =
             case Repl.interpretInstruction instruction replState of
+                Left (SchedulingError (ThreadScheduleError _ ThreadIsFinished)) -> 
+                    return replState 
+
                 Left e -> error (show e)
                 Right newState -> 
-                    if fastForward then
-                        case Repl.interpretInstruction SkipLets newState of 
+                    if fastForward && Repl.instructionDirection instruction == Just Direction.forward then
+                        case Repl.interpretInstruction (SendReceiveNormalForm Direction.forward) newState of 
                             Left e -> error (show e)
                             Right newer -> return newer
                     else

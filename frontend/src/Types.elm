@@ -2,9 +2,11 @@ module Types exposing (..)
 
 import Dict exposing (Dict)
 import Exts.Json.Encode
+import Exts.Json.Encode as Encode
 import Json.Decode as Decode exposing (..)
 import Json.Decode.Pipeline exposing (..)
 import Json.Encode exposing (encode)
+import Json.Encode as Encode
 import Result
 
 
@@ -162,7 +164,39 @@ type Instruction
     | History (Result PID Identifier)
     | Help
     | Quit
-    | SkipLets
+    | SendReceiveNormalForm Direction
+
+
+type Direction
+    = Forward
+    | Backward
+
+
+decodeDirection : Decoder Direction
+decodeDirection =
+    string
+        |> andThen
+            (\x ->
+                case x of
+                    "Forward" ->
+                        decode Forward
+
+                    "Backward" ->
+                        decode Backward
+
+                    _ ->
+                        fail <| "Constructor not matched, got " ++ x
+            )
+
+
+encodeDirection : Encoder Direction
+encodeDirection direction =
+    case direction of
+        Forward ->
+            Encode.string "Forward"
+
+        Backward ->
+            Encode.string "Backward"
 
 
 decodeInstruction : Decoder Instruction
@@ -225,8 +259,9 @@ decodeInstruction =
                     "Quit" ->
                         decode Quit
 
-                    "SkipLets" ->
-                        decode SkipLets
+                    "SendReceiveNormalForm" ->
+                        decode SendReceiveNormalForm
+                            |> required "contents" decodeDirection
 
                     _ ->
                         fail <| "Constructor not matched, got " ++ x
@@ -320,10 +355,10 @@ encodeInstruction x =
                 , ( "contents", Json.Encode.list [] )
                 ]
 
-        SkipLets ->
+        SendReceiveNormalForm direction ->
             Json.Encode.object
-                [ ( "tag", Json.Encode.string "SkipLets" )
-                , ( "contents", Json.Encode.list [] )
+                [ ( "tag", Json.Encode.string "SendReceiveNormalForm" )
+                , ( "contents", Json.Encode.list [ encodeDirection direction ] )
                 ]
 
 

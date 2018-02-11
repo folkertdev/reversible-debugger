@@ -25,6 +25,7 @@ library
                      , Data.PID
                      , Data.Actor
                      , Data.Identifier
+                     , Data.Direction
                      , Cmd
                      , Repl
                      , MicroOz

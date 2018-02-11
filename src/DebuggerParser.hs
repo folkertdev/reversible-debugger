@@ -7,6 +7,7 @@ import Data.List (intercalate)
 import Data.Functor (($>))
 import Data.Either
 import Data.PID as PID (PID, create)
+import qualified Data.Direction as Direction
 
 import Text.ParserCombinators.Parsec as Parsec
 
@@ -38,7 +39,7 @@ parser =
         , store
         , DebuggerParser.print
         , history
-        , skipLets
+        , sendReceiveNormalForm
         , help
         , quit 
         ]
@@ -66,9 +67,9 @@ data Instruction
     | History (Result PID Identifier)
     | Help 
     | Quit
-    | SkipLets
+    | SendReceiveNormalForm Direction.Direction
     deriving (Eq, Show, Generic, ElmType, ToJSON, FromJSON)
-        
+
 forth :: Parser Instruction
 forth = do
     try $ char 'f'
@@ -144,10 +145,10 @@ history = do
     id <- threadOrIdentifier
     return $ History $ fromEither id
 
-skipLets :: Parser Instruction
-skipLets = do
-    string "skiplets" 
-    return SkipLets 
+sendReceiveNormalForm :: Parser Instruction
+sendReceiveNormalForm = do
+    string "normalize" 
+    return (SendReceiveNormalForm Direction.forward)
 
 
 threadOrIdentifier :: Parser (Either PID Identifier) 

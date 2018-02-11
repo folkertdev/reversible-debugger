@@ -14,6 +14,7 @@ import Data.Thread as Thread
 import Data.Context as Context 
 import Data.PID as PID (PID, create, parent, child, nonsense)
 import Data.Actor as Actor (Participant)
+import qualified Data.Direction as Direction 
 import Data.Identifier as Identifier (Identifier, ChannelName)
 import Data.ThreadState (Progress(..) , ThreadState(..) , OtherThreads)
 import qualified Data.ThreadState as ThreadState
@@ -179,15 +180,18 @@ skipLets_ =
         skipHelper predicate []
 
 
-skipLets :: Execution ()  
-skipLets = 
+sendReceiveNormalForm :: Direction.Direction -> Execution ()  
+sendReceiveNormalForm direction = 
     let predicate Thread{program} = 
             case program of 
                 (MicroOz.Send {} : _) -> False
                 (MicroOz.Let  _ Receive {} _ : _) -> False
                 _ -> True
+
+        helper = 
+            Direction.directed direction skipHelper skipHelperBackward
     in
-        skipHelper predicate []
+        helper predicate []
 
 
 
@@ -211,6 +215,26 @@ skipHelper predicate filtered = do
                 setThreadState (Stuck rest)
                 skipHelper predicate (current : filtered)  
 
+
+skipHelperBackward :: (Thread History Program -> Bool) -> List (Thread History Program) -> Execution ()
+skipHelperBackward predicate filtered = do
+    state <- extract <$> State.get
+    case ThreadState.rescheduleBackward state of
+        Nothing -> 
+            -- no thread can be scheduled, we're done
+            setThreadState $ foldr ThreadState.add state filtered
+
+        Just (Stuck rest) -> 
+            error "reschedule cannot return a stuck"
+
+        Just (Running current rest) -> 
+            if predicate current then do
+                backward
+                skipHelperBackward predicate filtered
+
+            else do
+                setThreadState (Stuck rest)
+                skipHelperBackward predicate (current : filtered)  
 
 -- HANDLE EFFECTS
 

@@ -309,7 +309,10 @@ readChannel receiver channelName = do
             putLocalTypeState receiver newTypeState
             return value
 
-        Left (QueueError (Queue.ItemMismatch {})) -> 
+        Left (QueueError Queue.ItemMismatch {}) -> 
+            Except.throwError (BlockedOnReceive receiver)
+
+        Left (QueueError Queue.QueueEmpty) -> 
             Except.throwError (BlockedOnReceive receiver)
 
         Left e -> 

@@ -1,4 +1,4 @@
-module Repl (interpretInstruction) where 
+module Repl (interpretInstruction, instructionDirection) where 
 
 import DebuggerParser (Instruction(..), parse)
 import qualified Interpreter
@@ -13,6 +13,7 @@ import Data.ThreadState as ThreadState
 import Data.Context as Context
 import Data.PID as PID
 import Data.ReplState as ReplState
+import qualified Data.Direction as Direction
 
 import Control.Monad
 import Control.Monad.Except as Except
@@ -21,14 +22,32 @@ import Data.Maybe (fromMaybe, maybe)
 import qualified Data.Map as Map
 
 
-interpretInstruction :: Instruction -> ReplState -> Either String ReplState 
+instructionDirection :: Instruction -> Maybe Direction.Direction 
+instructionDirection instruction = 
+    case instruction of 
+        Forth _ -> 
+            Just Direction.forward 
+
+        Run -> 
+            Just Direction.forward 
+
+        Back _ -> Just Direction.backward
+        RollVariable _ -> Just  Direction.backward
+        RollThread _ -> Just  Direction.backward
+        RollSend channelName n -> Just   Direction.backward
+        RollReceive channelName n -> Just   Direction.backward 
+
+        _ -> 
+            Nothing
+
+interpretInstruction :: Instruction -> ReplState -> Either Error ReplState 
 interpretInstruction instruction (ReplState context state) =  
     let 
-        evaluate :: StateT (Context Value, ThreadState History Program) (Either Error) a -> Either String ReplState 
+        evaluate :: StateT (Context Value, ThreadState History Program) (Either Error) a -> Either Error ReplState 
         evaluate computation = 
             case State.runStateT computation (context, state) of
                 Left e -> 
-                    Except.throwError (show e)
+                    Except.throwError e
 
                 Right (_, ( newContext, newState)) -> 
                     return $ ReplState newContext newState  
@@ -48,7 +67,7 @@ interpretInstruction instruction (ReplState context state) =
         Roll pid n ->
             case runStateT (Interpreter.scheduleThreadBackward pid >> Interpreter.backward) (context, state) of 
                 Left e -> 
-                    Except.throwError (show e)
+                    Except.throwError e
                 
                 Right ((), (newContext, newState)) -> 
                     interpretInstruction (Roll pid (n - 1)) (ReplState newContext newState) 
@@ -70,8 +89,8 @@ interpretInstruction instruction (ReplState context state) =
         Run -> 
             undefined -- evaluate runner 
 
-        SkipLets -> 
-            evaluate Interpreter.skipLets
+        SendReceiveNormalForm direction -> 
+            evaluate (Interpreter.sendReceiveNormalForm direction)
  
         ListThreads ->
             undefined

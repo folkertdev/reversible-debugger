@@ -136,8 +136,8 @@ interpretInstruction instruction (ReplState context state) =
         Run -> 
             evaluate run 
 
-        SkipLets -> 
-            evaluate Interpreter.skipLets
+        SendReceiveNormalForm direction -> 
+            evaluate (Interpreter.sendReceiveNormalForm direction) 
  
         ListThreads -> do
             print $ Context.threads context
