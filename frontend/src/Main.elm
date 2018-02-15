@@ -3,7 +3,6 @@ module Main exposing (..)
 --
 
 import Api
-import SidePane
 import Color exposing (..)
 import Color.Manipulate as Manipulate
 import Diagram
@@ -18,6 +17,8 @@ import FontAwesome
 import Html exposing (Html)
 import Html.Attributes
 import Http
+import MappingTable exposing (Msg, State(Closed, Open), toggle, view)
+import SidePane
 import Svg exposing (Svg)
 import Svg.Attributes as Svg
 import Types
@@ -37,7 +38,6 @@ import Types
         , ThreadState(..)
         , unParticipant
         )
-import MappingTable exposing (State(Open, Closed), view, toggle, Msg)
 
 
 unIdentifier =
@@ -122,7 +122,7 @@ update msg model =
                 _ =
                     Debug.log "initial error" e
             in
-                ( model, Cmd.none )
+            ( model, Cmd.none )
 
         Step instruction ->
             case model.replState of
@@ -142,7 +142,7 @@ update msg model =
                 _ =
                     Debug.log "decoding error" e
             in
-                ( model, Cmd.none )
+            ( model, Cmd.none )
 
         SwitchExample example ->
             if model.example == example then
@@ -157,7 +157,7 @@ update msg model =
                             AsynchAnd ->
                                 Examples.asynchAnd
                 in
-                    ( { model | example = example }, Http.send InitialState (Api.initialize exampleString) )
+                ( { model | example = example }, Http.send InitialState (Api.initialize exampleString) )
 
 
 
@@ -182,24 +182,24 @@ view model =
                                     ]
                                 )
                 in
-                    row
-                        [ width fill, height fill ]
-                        [ column
-                            [ width (fillPortion 7)
-                            ]
-                          <|
-                            [ row [] (viewThreadState context threadState)
-                            , row []
-                                [ Element.html (Svg.svg [ Svg.width "500", Svg.height "600" ] [ drawTypeState context ]) ]
-                            ]
-                                ++ typeStateUI
-                        , column
-                            [ width (fillPortion 3)
-                            , Border.color (Manipulate.darken 0.2 palette.grey)
-                            , Border.widthEach { bottom = 0, left = 2, right = 0, top = 0 }
-                            ]
-                            (SidePane.sidepane sidePaneConfig model context)
+                row
+                    [ width fill, height fill ]
+                    [ column
+                        [ width (fillPortion 7)
                         ]
+                      <|
+                        [ row [] (viewThreadState context threadState)
+                        , row []
+                            [ Element.html (Svg.svg [ Svg.width "500", Svg.height "600" ] [ drawTypeState context ]) ]
+                        ]
+                            ++ typeStateUI
+                    , column
+                        [ width (fillPortion 3)
+                        , Border.color (Manipulate.darken 0.2 palette.grey)
+                        , Border.widthEach { bottom = 0, left = 2, right = 0, top = 0 }
+                        ]
+                        (SidePane.sidepane sidePaneConfig model context)
+                    ]
 
 
 viewThreadState : Context -> ThreadState -> List (Element Msg)
@@ -212,7 +212,7 @@ viewThreadState context state =
                         (Types.PID pid_) =
                             pid
                     in
-                        { others | active = Dict.insert pid_ current others.active }
+                    { others | active = Dict.insert pid_ current others.active }
 
                 Stuck other ->
                     other
@@ -230,9 +230,9 @@ viewThreadState context state =
                     |> Dict.map (\k v -> ( Uninitialized, v ))
                 ]
     in
-        annotatedThreads
-            |> Dict.values
-            |> List.map (uncurry (viewThread context (Dict.size annotatedThreads)))
+    annotatedThreads
+        |> Dict.values
+        |> List.map (uncurry (viewThread context (Dict.size annotatedThreads)))
 
 
 type ThreadActivity
@@ -255,27 +255,28 @@ viewThread context n activity thread =
             lookupTypeState thread.actor context
 
         header =
-            Element.el [ width fill, threadActivityToColor activity ]
-                (text <|
-                    case localTypeState of
-                        Nothing ->
-                            "Not a protocol member"
+            text <|
+                case localTypeState of
+                    Nothing ->
+                        "Not a protocol member"
 
-                        Just { participant } ->
-                            "Participating as `" ++ unParticipant participant ++ "`"
-                )
+                    Just { participant } ->
+                        "Participating as `" ++ unParticipant participant ++ "`"
     in
-        Element.paragraph
-            [ width (fillPortion 1) ]
-            [ Element.row
-                [ width fill, height (px 20) ]
-                [ Element.Input.button [ alignLeft, Background.color palette.grey ]
-                    { onPress = Just (Step (Back thread.pid)), label = icon FontAwesome.arrow_left 20 }
-                , header
-                , Element.Input.button [ alignRight, Background.color palette.grey ]
-                    { onPress = Just (Step (Forth thread.pid)), label = icon FontAwesome.arrow_right 20 }
-                ]
-            ]
+    Element.paragraph
+        [ width fill
+        , height (px 20)
+        , Border.widthEach { bottom = 0, left = 0, right = 0, top = 5 }
+        , Border.color (threadActivityToColor activity)
+        , Font.center
+        , center
+        ]
+        [ Element.Input.button [ alignLeft, Background.color palette.grey, width shrink ]
+            { onPress = Just (Step (Back thread.pid)), label = icon FontAwesome.arrow_left 20 }
+        , Element.el [ width fill ] header
+        , Element.Input.button [ alignRight, Background.color palette.grey, width shrink ]
+            { onPress = Just (Step (Forth thread.pid)), label = icon FontAwesome.arrow_right 20 }
+        ]
 
 
 bold : String -> Element msg
@@ -417,8 +418,8 @@ viewAtom alignment atom =
                 End ->
                     "end"
     in
-        el shared
-            (el [ textAlignMiddle ] (text label))
+    el shared
+        (el [ textAlignMiddle ] (text label))
 
 
 viewLocalTypeState_ : LocalTypeState -> Element msg
@@ -485,20 +486,20 @@ type Style
     | None
 
 
-threadActivityToColor : ThreadActivity -> Attribute msg
+threadActivityToColor : ThreadActivity -> Color
 threadActivityToColor typeState =
     case typeState of
         Active ->
-            Background.color palette.green
+            palette.green
 
         Blocked ->
-            Background.color palette.orange
+            palette.orange
 
         Inactive ->
-            Background.color palette.blue
+            palette.blue
 
         Uninitialized ->
-            Background.color palette.yellow
+            palette.yellow
 
 
 
@@ -552,4 +553,4 @@ drawTypeState { localTypeStates, globalType } =
         { parameters, atoms } =
             globalType
     in
-        Diagram.drawSegments (List.map unIdentifier parameters) globalType { width = 500, height = 500, headerHeight = 20 }
+    Diagram.drawSegments (List.map unIdentifier parameters) globalType { width = 500, height = 500, headerHeight = 20 }
