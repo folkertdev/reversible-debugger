@@ -45,6 +45,7 @@ library
                      , parsec
                      , text
                      , aeson
+                     , data-fix
 
 
 
