@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, DeriveGeneric, DeriveFunctor, DeriveTraversable #-}
+{-# LANGUAGE ScopedTypeVariables, DuplicateRecordFields, DeriveGeneric, DeriveFunctor, DeriveTraversable #-}
 module GlobalType where 
 
 import GHC.Generics 
@@ -10,6 +10,7 @@ import Data.Monoid ((<>))
 import Data.Fix
 
 import Types ((|>))
+import TypeState (Crumb(..))
 
 type Participant = String
 
@@ -21,17 +22,10 @@ data GlobalTypeF u f
     | End
     deriving (Generic, Functor, Foldable, Traversable)
 
-data StateF f 
-    = Before f 
-    | BeforeSend f
-    | AfterSend f
-    | AfterReceive f
-    deriving (Generic, Functor, Foldable, Traversable)
-
-type Crumb u = StateF (GlobalTypeF u ())
+type Crumb u = TypeState.Crumb (GlobalTypeF u ())
 
 
-unCrumb :: GlobalType u -> Crumb u -> GlobalType u
+unCrumb :: GlobalType u -> GlobalType.Crumb u -> GlobalType u
 unCrumb global crumb = 
     let levelUp = foldl1 const crumb
     in
@@ -41,6 +35,7 @@ type List = []
 
 
 type GlobalType u = Fix (GlobalTypeF u)
+
 
 participants :: GlobalType u -> Set Participant
 participants = 
@@ -62,7 +57,7 @@ participants =
                 Set.empty
 
 
-type GlobalTypeState u =  (List (Crumb u), GlobalType u)
+type GlobalTypeState u =  (List (GlobalType.Crumb u), GlobalType u)
 
 
 forgetState :: GlobalTypeState u -> GlobalType u 
@@ -73,7 +68,7 @@ nested = Foldable.toList . unFix
 
 end = Fix End
 
-crumble :: GlobalType u -> ( Crumb u, GlobalType u ) 
+crumble :: GlobalType u -> ( GlobalType.Crumb u, GlobalType u ) 
 crumble global = 
     case unFix global of 
         Transaction p1 p2 tipe cont -> 
@@ -120,6 +115,12 @@ forward (crumbs, left) =
         (AfterReceive s : rest ) -> 
             standard
 
+        ( Chosen _ _ : _ ) -> 
+            standard
+
+        ( Offered _ _ : _ ) -> 
+            standard
+
 
   where standard = 
             let ( crumb, cont ) = crumble left 
@@ -144,4 +145,9 @@ backward ( crumbs, left ) =
         (AfterSend s : rest ) -> 
             ( Before s : rest, left )
 
+        ( Chosen p q : rest ) -> 
+            ( rest, unCrumb left (Chosen p q) ) 
+
+        ( Offered p q : rest ) -> 
+            ( rest, unCrumb left (Offered p q) ) 
         

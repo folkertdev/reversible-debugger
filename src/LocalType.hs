@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, DeriveGeneric, DeriveFunctor, DeriveTraversable #-}
+{-# LANGUAGE ScopedTypeVariables, DeriveGeneric, DeriveFunctor, DeriveTraversable, PatternSynonyms #-}
 module LocalType where 
 
 import GHC.Generics
@@ -11,6 +11,7 @@ import Data.Map.Merge.Strict as Merge
 
 import GlobalType (GlobalType)
 import qualified GlobalType
+import TypeState (Crumb(..))
 
 type Participant = String
 
@@ -19,10 +20,15 @@ data Atom f = R f | V | Wk f | End
 
 
 data Transaction u f 
-    = Send Participant u f 
-    | Receive Participant u f 
+    = TSend Participant u f 
+    | TReceive Participant u f 
     deriving (Generic, Functor, Foldable, Traversable)
 
+pattern BackwardSend participant tipe continuation = SendOrReceive (Transaction (TSend participant tipe ())) continuation
+pattern BackwardReceive participant tipe continuation = SendOrReceive (Transaction (TReceive participant tipe ())) continuation
+
+pattern Send participant tipe continuation = Transaction (TSend participant tipe continuation)
+pattern Receive participant tipe continuation = Transaction (TReceive participant tipe continuation)
 
 data LocalTypeF u f 
     = Transaction (Transaction u f)
@@ -33,15 +39,43 @@ data LocalTypeF u f
 
 type LocalType u = Fix (LocalTypeF u)
 
+
+type Crumb u = LocalTypeF u ()
+
+type Identifier = String
+type Location = String
+
+-- T, S = hole | a.T | k.T | (l, l1, l2).T
+data TypeContextF a f 
+    = Hole 
+    | SendOrReceive (LocalTypeF a ()) f 
+    | Application Identifier f 
+    | Spawning Location Location Location f
+    deriving (Generic, Functor, Foldable, Traversable)
+
+
+type TypeContext a = Fix (TypeContextF a)
+
+
+
+
+unCrumb :: LocalType u -> LocalType.Crumb u -> LocalType u
+unCrumb global crumb = 
+    let levelUp = crumb 
+    in
+        Fix $ fmap (const global) levelUp
+
+type LocalTypeState u =  ( TypeContext u, LocalType u ) -- ([LocalType.Crumb u], LocalType u)
+
 projection :: GlobalType u -> Map Participant (LocalType u)
 projection = undefined 
 
 
 sendTransaction :: Participant -> u -> LocalType u -> LocalType u 
-sendTransaction sender tipe = Fix . Transaction . Send sender tipe
+sendTransaction sender tipe = Fix . Transaction . TSend sender tipe
 
 receiveTransaction :: Participant -> u -> LocalType u -> LocalType u 
-receiveTransaction receiver tipe = Fix . Transaction . Receive receiver tipe
+receiveTransaction receiver tipe = Fix . Transaction . TReceive receiver tipe
 
 end :: LocalType u
 end = Fix . Atom $ End
