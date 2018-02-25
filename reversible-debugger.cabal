@@ -32,6 +32,9 @@ library
                      , MicroOz.Parser
                      , DebuggerParser
                      , SessionType
+                     , GlobalType
+                     , LocalType
+                     , Semantics
                      , Queue
   other-modules:       Utils
                      , Utils.Maybe

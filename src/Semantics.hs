@@ -1,24 +1,25 @@
-{-# LANGUAGE DuplicateRecordFields, NamedFieldPuns #-}
+{-# LANGUAGE ScopedTypeVariables, DeriveGeneric, DeriveFunctor, DeriveTraversable, DuplicateRecordFields, NamedFieldPuns, DeriveAnyClass, StandaloneDeriving, UndecidableInstances  #-}
 module Semantics where 
 
 import Control.Monad.State as State
 import Control.Monad.Except as Except
 
-import LocalType (LocalType, LocalTypeState, Location, Participant)
+import LocalType (LocalType, LocalTypeState, Location, Participant, Identifier)
 import qualified LocalType
 
+import GHC.Generics
+import Data.Maybe (fromMaybe)
 import Data.Map as Map (Map)
 import qualified Data.Map as Map
 import Data.Fix as Fix
 
-import TypeState
-
 import Types ((|>))
 
-type List = []
+import Elm
+import Data.Proxy
+import Data.Aeson (ToJSON, FromJSON, toJSON, fromJSON, (.=), (.:), object)
 
-type Identifier = String
-type ChannelName = String
+type List = []
 
 type Session value a = StateT (ExecutionState value) (Either Error) a
 
@@ -127,19 +128,19 @@ data Error
     | InvalidQueueItem
     | InvalidBackwardQueueItem 
  
-forward :: Location -> Participant -> Program value -> Monitor value String -> Session value ()  
+forward :: Location -> Participant -> Program Value -> Monitor Value String -> Session Value ()  
 forward location participant program monitor = 
     let (previous, fixedLocal) = _localType monitor
         localType = unFix fixedLocal
     in
-    case ( program, localType) of 
+    case ( unFix program, localType) of 
         (Send payload continuation, LocalType.Send target tipe continuationType) -> do
-            -- value <- lookupVariable participant payload 
+            value <- evaluateValue participant payload 
             let newLocalTypeState = 
                     ( Fix $ LocalType.BackwardSend target tipe previous 
                     , continuationType
                     ) 
-            push ( participant, target, payload )
+            push ( participant, target, value )
             setParticipant location participant (monitor { _localType = newLocalTypeState }, continuation)
 
         (Receive continuation, LocalType.Receive sender tipe continuationType) -> do
@@ -183,14 +184,38 @@ forward location participant program monitor =
                     Map.empty
                         |> Map.insert l1 p
                         |> Map.insert l2 q
-                        |> Map.insert location NoOp 
+                        |> Map.insert location (Fix NoOp) 
 
             let ( previous, next ) = _localType monitor 
                 newMonitor = monitor { _localType = ( Fix $ LocalType.Spawning location l1 l2 previous, next ) } 
 
-            setParticipant location participant ( newMonitor, NoOp )
+            setParticipant location participant ( newMonitor, Fix NoOp )
             setParticipant l1 participant ( newMonitor, p )
             setParticipant l2 participant ( newMonitor, q )
+
+        (Let visibleName value continuation, _) -> do
+            variableName <- uniqueVariableName 
+
+            let newLocalType = (Fix $ LocalType.Assignment visibleName variableName previous, fixedLocal) 
+                newMonitor = 
+                    monitor 
+                        { _store = Map.insert variableName value (_store monitor)
+                        , _localType = newLocalType
+                        }  
+            
+            setParticipant location participant ( newMonitor, renameVariable visibleName variableName continuation )
+
+        (Literal lit, _) -> do
+            variableName <- uniqueVariableName 
+
+            let newLocalType = (Fix $ LocalType.Literal variableName previous, fixedLocal) 
+                newMonitor = 
+                    monitor 
+                        { _store = Map.insert variableName lit (_store monitor)
+                        , _localType = newLocalType
+                        }  
+            
+            setParticipant location participant ( newMonitor, Fix NoOp )
 
         (Send _ _, _) ->  
             Except.throwError SessionNotInSync
@@ -201,16 +226,15 @@ forward location participant program monitor =
         ( NoOp, _ ) -> 
             return () 
 
-        ( Abstraction _ _, _ ) -> 
-            error "not implemented"
-
 checkSynchronized :: Participant -> Participant -> Session value ()
 checkSynchronized sender receiver = return () 
 
 
 backward :: Location -> Participant -> Program value -> Monitor value String -> Session value ()  
 backward location participant program monitor = 
-    let (previous, next) = _localType monitor in
+    let (previous, next) = _localType monitor 
+        setParticipant_ l p (m, progF) = setParticipant l p (m, Fix progF)
+    in
     case unFix previous of 
         LocalType.BackwardSend receiver tipe rest -> do
             -- pop from the future! (not history; rolling the receive will put the action into the future)
@@ -220,7 +244,7 @@ backward location participant program monitor =
                 -- check whether the session types line up, before rolling
                 checkSynchronized source target 
 
-                setParticipant location participant 
+                setParticipant_ location participant 
                     ( monitor { _localType = newLocalType } 
                     , Semantics.Send { value = payload, continuation = program } 
                     )
@@ -234,7 +258,7 @@ backward location participant program monitor =
                 -- check whether the session types line up, before rolling
                 checkSynchronized source target 
 
-                setParticipant location participant 
+                setParticipant_ location participant 
                     ( monitor { _localType = newLocalType } 
                     , Semantics.Receive { continuation = program } 
                     )
@@ -249,7 +273,7 @@ backward location participant program monitor =
                 Nothing -> 
                     error "rolling function that does not exist"
                 Just ( function, argument ) -> 
-                    setParticipant location participant 
+                    setParticipant_ location participant 
                         ( monitor { _localType = ( rest, next ), _applicationHistory = Map.delete k (_applicationHistory monitor) } 
                         , Semantics.Application function argument
                         )
@@ -262,26 +286,131 @@ backward location participant program monitor =
             (_, p1) <- getParticipant l1 participant
             (_, p2) <- getParticipant l1 participant
 
-            case program of 
+            case unFix program of 
                 NoOp -> do
                     let newLocalType = ( rest, next )
                     removeLocation l1
                     removeLocation l2
 
-                    setParticipant location participant ( monitor { _localType = newLocalType }, Semantics.Parallel p1 p2 )
+                    setParticipant_ location participant ( monitor { _localType = newLocalType }, Semantics.Parallel p1 p2 )
 
                 _ -> 
                     error "rolling a program that is not NoOp"
 
+        LocalType.Assignment visibleName variableName rest -> do
+            let 
+                store = _store monitor 
+
+                value = 
+                    Map.lookup variableName store
+                        |> fromMaybe (error "undoing assignment to variable that does not exist")
+
+                newMonitor = 
+                    monitor 
+                        { _store = Map.delete variableName store
+                        , _localType = (rest, next)
+                        }  
+            
+            setParticipant_ location participant 
+                ( newMonitor
+                , Semantics.Let visibleName  value program
+                )
+
+        LocalType.Literal variableName rest -> do
+            let 
+                store = _store monitor 
+
+                value = 
+                    Map.lookup variableName store
+                        |> fromMaybe (error "undoing literal that does not exist")
+
+                newMonitor = 
+                    monitor 
+                        { _store = Map.delete variableName store
+                        , _localType = (rest, next)
+                        }  
+            
+            setParticipant_ location participant 
+                ( newMonitor
+                , Semantics.Literal value 
+                )
+
         LocalType.Hole -> 
             return () 
 
-data Program value 
-    = Send { value :: value, continuation :: Program value }
-    | Receive { continuation :: Program value }
-    | Parallel (Program value) (Program value)
+data ProgramF value f 
+    = Send { value :: value, continuation :: f }
+    | Receive { continuation :: f  }
+    | Parallel f f 
     | Application Identifier Identifier
+    | Let Identifier value f 
+    | Literal value -- needed to define multi-parameter functions
     | NoOp
+    deriving (Generic, Functor, Foldable, Traversable, ToJSON, FromJSON)
+
+
+f2 :: Program Value
+f2 = Fix $ Literal $ VFunction "x" $ Fix $ Literal $ VFunction "y" $ Fix NoOp
+
+type Program value = Fix (ProgramF value) 
+
+deriving instance (ToJSON (f (Fix f))) => ToJSON (Fix f)
+deriving instance (FromJSON (f (Fix f))) => FromJSON (Fix f)
+deriving instance (ElmType (f (Fix f))) => ElmType (Fix f)
+
+-- newtype P v = P (Program v) deriving (Generic, ToJSON, FromJSON)
+
+
+data Value 
+    = VBool Bool
+    | VInt Int
+    | VString String
+    | VEnd 
+    | VFunction Identifier (Program Value)
+    | VReference Identifier 
+
+renameVariable :: Identifier -> Identifier -> Program Value -> Program Value
+renameVariable old new program = 
+    let rename v = 
+            if v == old then 
+                new 
+            else    
+                v
+
+        helper instruction = 
+            case instruction of 
+                Application functionName variableName ->
+                    Application (rename functionName) variableName  
+
+                Let variableName value continuation ->  
+                    let newValue = 
+                            case value of 
+                                VReference identifier -> 
+                                    VReference (rename identifier)
+
+                                _ -> 
+                                    value
+                    in
+                        Let variableName newValue continuation
+
+                _ -> 
+                    instruction
+    in
+        Fix.cata (Fix . helper) program 
+
+{-| Evaluate a value until a base type, by dereferencing references -}
+evaluateValue :: Participant -> Value -> Session Value Value 
+evaluateValue participant value = 
+    case value of 
+        VReference identifier -> do 
+            store <- _store <$> lookupParticipant participant
+            case Map.lookup identifier store of
+                Nothing -> error "reference value to undefined variable"
+                Just v -> 
+                    evaluateValue participant v
+            
+        _ -> 
+            return value
 
 data Monitor value tipe = 
     Monitor 

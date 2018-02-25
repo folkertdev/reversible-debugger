@@ -11,7 +11,6 @@ import Data.Map.Merge.Strict as Merge
 
 import GlobalType (GlobalType)
 import qualified GlobalType
-import TypeState (Crumb(..))
 
 type Participant = String
 
@@ -51,6 +50,8 @@ data TypeContextF a f
     | SendOrReceive (LocalTypeF a ()) f 
     | Application Identifier f 
     | Spawning Location Location Location f
+    | Assignment { visibleName :: Identifier, internalName :: Identifier, continuation :: f }
+    | Literal a f
     deriving (Generic, Functor, Foldable, Traversable)
 
 

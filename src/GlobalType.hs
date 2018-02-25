@@ -10,7 +10,7 @@ import Data.Monoid ((<>))
 import Data.Fix
 
 import Types ((|>))
-import TypeState (Crumb(..))
+-- import TypeState (Crumb(..))
 
 type Participant = String
 
@@ -22,7 +22,16 @@ data GlobalTypeF u f
     | End
     deriving (Generic, Functor, Foldable, Traversable)
 
-type Crumb u = TypeState.Crumb (GlobalTypeF u ())
+data CrumbF s 
+    = Before s
+    | BeforeSend s 
+    | AfterSend s 
+    | AfterReceive s 
+    | Chosen s s 
+    | Offered s s
+    deriving (Generic, Functor, Foldable, Traversable)
+
+type Crumb u = CrumbF (GlobalTypeF u ())
 
 
 unCrumb :: GlobalType u -> GlobalType.Crumb u -> GlobalType u
