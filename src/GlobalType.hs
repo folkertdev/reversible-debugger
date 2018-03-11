@@ -20,7 +20,7 @@ data GlobalTypeF u f
     | V
     | Wk f
     | End
-    deriving (Generic, Functor, Foldable, Traversable)
+    deriving (Show, Generic, Functor, Foldable, Traversable)
 
 data CrumbF s 
     = Before s

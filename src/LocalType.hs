@@ -15,26 +15,26 @@ import qualified GlobalType
 type Participant = String
 
 data Atom f = R f | V | Wk f | End
-    deriving (Generic, Functor, Foldable, Traversable)
+    deriving (Show, Generic, Functor, Foldable, Traversable)
 
 
 data Transaction u f 
-    = TSend Participant u f 
-    | TReceive Participant u f 
-    deriving (Generic, Functor, Foldable, Traversable)
+    = TSend Participant Participant u f 
+    | TReceive Participant Participant (Maybe Identifier) u f 
+    deriving (Show, Generic, Functor, Foldable, Traversable)
 
-pattern BackwardSend participant tipe continuation = SendOrReceive (Transaction (TSend participant tipe ())) continuation
-pattern BackwardReceive participant tipe continuation = SendOrReceive (Transaction (TReceive participant tipe ())) continuation
+pattern BackwardSend owner participant tipe continuation = SendOrReceive (Transaction (TSend owner participant tipe ())) continuation
+pattern BackwardReceive owner participant visibleName tipe continuation = SendOrReceive (Transaction (TReceive owner participant (Just visibleName) tipe ())) continuation
 
-pattern Send participant tipe continuation = Transaction (TSend participant tipe continuation)
-pattern Receive participant tipe continuation = Transaction (TReceive participant tipe continuation)
+pattern Send owner participant tipe continuation = Transaction (TSend owner participant tipe continuation)
+pattern Receive owner participant tipe continuation = Transaction (TReceive owner participant Nothing tipe continuation)
 
 data LocalTypeF u f 
     = Transaction (Transaction u f)
     | Choice f f 
     | Offer f f
     | Atom (Atom f)
-    deriving (Generic, Functor, Foldable, Traversable)
+    deriving (Show, Generic, Functor, Foldable, Traversable)
 
 type LocalType u = Fix (LocalTypeF u)
 
@@ -52,7 +52,7 @@ data TypeContextF a f
     | Spawning Location Location Location f
     | Assignment { visibleName :: Identifier, internalName :: Identifier, continuation :: f }
     | Literal a f
-    deriving (Generic, Functor, Foldable, Traversable)
+    deriving (Show, Generic, Functor, Foldable, Traversable)
 
 
 type TypeContext a = Fix (TypeContextF a)
@@ -72,11 +72,11 @@ projection :: GlobalType u -> Map Participant (LocalType u)
 projection = undefined 
 
 
-sendTransaction :: Participant -> u -> LocalType u -> LocalType u 
-sendTransaction sender tipe = Fix . Transaction . TSend sender tipe
+sendTransaction :: Participant ->  Participant -> u -> LocalType u -> LocalType u 
+sendTransaction owner sender tipe = Fix . Transaction . TSend owner sender tipe
 
-receiveTransaction :: Participant -> u -> LocalType u -> LocalType u 
-receiveTransaction receiver tipe = Fix . Transaction . TReceive receiver tipe
+receiveTransaction :: Participant -> Participant -> u -> LocalType u -> LocalType u 
+receiveTransaction owner receiver tipe = Fix . Transaction . TReceive owner receiver Nothing tipe
 
 end :: LocalType u
 end = Fix . Atom $ End
@@ -102,9 +102,9 @@ project participant =
         case global of 
             GlobalType.Transaction sender receiver tipe cont -> 
                 if participant == sender then 
-                     sendTransaction sender tipe cont
+                     sendTransaction sender sender tipe cont
                 else if participant == receiver then 
-                     receiveTransaction receiver tipe cont
+                     receiveTransaction sender receiver tipe cont
                 else 
                     cont 
 

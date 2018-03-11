@@ -6,6 +6,7 @@ import Control.Monad.Except as Except
 
 import LocalType (LocalType, LocalTypeState, Location, Participant, Identifier)
 import qualified LocalType
+import qualified GlobalType
 
 import GHC.Generics
 import Data.Maybe (fromMaybe)
@@ -33,6 +34,9 @@ data ExecutionState value =
         , queue :: Queue value
         , isFunction :: value -> Maybe (Identifier, Program value)
         }
+
+instance Show v => Show (ExecutionState v) where 
+    show state = show (locations state)
 
 lookupParticipant :: Participant -> Session value (Monitor value String)
 lookupParticipant participant = do 
@@ -127,6 +131,14 @@ data Error
     | EmptyQueueHistory
     | InvalidQueueItem
     | InvalidBackwardQueueItem 
+    deriving (Show)
+
+
+ensure condition error = 
+    if condition then 
+        return () 
+    else 
+        Except.throwError error
  
 forward :: Location -> Participant -> Program Value -> Monitor Value String -> Session Value ()  
 forward location participant program monitor = 
@@ -134,33 +146,35 @@ forward location participant program monitor =
         localType = unFix fixedLocal
     in
     case ( unFix program, localType) of 
-        (Send payload continuation, LocalType.Send target tipe continuationType) -> do
+        (Send owner payload continuation, LocalType.Send expectedOwner target tipe continuationType) -> do
+            ensure (owner == expectedOwner) (error $ "Send owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
             value <- evaluateValue participant payload 
             let newLocalTypeState = 
-                    ( Fix $ LocalType.BackwardSend target tipe previous 
+                    ( Fix $ LocalType.BackwardSend owner target tipe previous 
                     , continuationType
                     ) 
             push ( participant, target, value )
             setParticipant location participant (monitor { _localType = newLocalTypeState }, continuation)
 
-        (Receive continuation, LocalType.Receive sender tipe continuationType) -> do
+        (Receive owner visibleName continuation, LocalType.Receive expectedOwner sender tipe continuationType) -> do
+            ensure (owner == expectedOwner) (error $ "Receive owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
             ( s, r, payload ) <- pop
             variableName <- uniqueVariableName
             if s == sender && r == participant then do
                 let newBindings = Map.insert variableName payload $ _store monitor 
                     newLocalTypeState = 
-                        ( Fix $ LocalType.BackwardReceive sender tipe previous 
+                        ( Fix $ LocalType.BackwardReceive owner sender visibleName tipe previous 
                         , continuationType
                         ) 
                     newMonitor = monitor { _store = newBindings, _localType = newLocalTypeState }  
                     
-                setParticipant location participant (newMonitor, continuation)
+                setParticipant location participant (newMonitor, renameVariable visibleName variableName continuation )
             else
                 Except.throwError InvalidQueueItem
         
-        (Application functionName argumentName, _) -> do
+        (Application functionName argument, _) -> do
             functionValue <- lookupVariable participant functionName 
-            argumentValue <- lookupVariable participant argumentName
+            argumentValue <- evaluateValue participant argument 
 
             convertToFunction <- isFunction <$> State.get
             case convertToFunction functionValue of
@@ -172,7 +186,7 @@ forward location participant program monitor =
                             monitor 
                                 { _store = Map.insert variable argumentValue (_store monitor)
                                 , _localType = newLocalType
-                                , _applicationHistory = Map.insert k (functionName, argumentName) (_applicationHistory monitor)
+                                , _applicationHistory = Map.insert k (functionName, argument) (_applicationHistory monitor)
                                 }  
                     setParticipant location participant (newMonitor, body)
 
@@ -217,10 +231,10 @@ forward location participant program monitor =
             
             setParticipant location participant ( newMonitor, Fix NoOp )
 
-        (Send _ _, _) ->  
+        (Send {}, _) ->  
             Except.throwError SessionNotInSync
 
-        (Receive _, _) ->  
+        (Receive {}, _) ->  
             Except.throwError SessionNotInSync
 
         ( NoOp, _ ) -> 
@@ -236,31 +250,31 @@ backward location participant program monitor =
         setParticipant_ l p (m, progF) = setParticipant l p (m, Fix progF)
     in
     case unFix previous of 
-        LocalType.BackwardSend receiver tipe rest -> do
+        LocalType.BackwardSend owner receiver tipe rest -> do
             -- pop from the future! (not history; rolling the receive will put the action into the future)
             (source, target, payload ) <- pop
-            let newLocalType = ( rest, Fix $ LocalType.Send receiver tipe next )
+            let newLocalType = ( rest, Fix $ LocalType.Send owner receiver tipe next )
             if source == participant && target == receiver then do
                 -- check whether the session types line up, before rolling
                 checkSynchronized source target 
 
                 setParticipant_ location participant 
                     ( monitor { _localType = newLocalType } 
-                    , Semantics.Send { value = payload, continuation = program } 
+                    , Semantics.Send { owner = owner, value = payload, continuation = program } 
                     )
             else 
                 Except.throwError InvalidBackwardQueueItem 
     
-        LocalType.BackwardReceive sender tipe rest -> do 
+        LocalType.BackwardReceive owner sender visibleName tipe rest -> do 
             ( source, target, payload ) <- popHistory 
-            let newLocalType = ( rest, Fix $ LocalType.Receive sender tipe next ) 
+            let newLocalType = ( rest, Fix $ LocalType.Receive owner sender tipe next ) 
             if target == participant && source == sender then do
                 -- check whether the session types line up, before rolling
                 checkSynchronized source target 
 
                 setParticipant_ location participant 
                     ( monitor { _localType = newLocalType } 
-                    , Semantics.Receive { continuation = program } 
+                    , Semantics.Receive { owner = owner, variableName = visibleName, continuation = program } 
                     )
             else 
                 Except.throwError InvalidBackwardQueueItem 
@@ -339,14 +353,114 @@ backward location participant program monitor =
             return () 
 
 data ProgramF value f 
-    = Send { value :: value, continuation :: f }
-    | Receive { continuation :: f  }
+    = Send { owner :: Participant, value :: value, continuation :: f }
+    | Receive { owner :: Participant, variableName :: Identifier, continuation :: f  }
     | Parallel f f 
-    | Application Identifier Identifier
+    | Application Identifier Value
     | Let Identifier value f 
     | Literal value -- needed to define multi-parameter functions
     | NoOp
-    deriving (Generic, Functor, Foldable, Traversable, ToJSON, FromJSON)
+    deriving (Show, Generic, Functor, Foldable, Traversable, ToJSON, FromJSON, ElmType)
+
+
+parallel :: List (Program value) -> Program value
+parallel = foldr1 (\a b -> Fix (Parallel a b))
+
+
+send o v c = Fix (Send o v c)
+
+receive o v c = Fix (Receive o v c)
+
+terminate = Fix NoOp 
+
+applyFunction functionName argument = Fix $ Application functionName argument
+
+globalTransaction from to tipe cont = Fix $ GlobalType.Transaction from to tipe cont
+    
+
+globalType :: GlobalType.GlobalType String
+globalType = 
+    globalTransaction "A" "V" "title" 
+        $ globalTransaction "V" "A" "price" 
+        $ globalTransaction "V" "A" "price" 
+        $ globalTransaction "A" "B" "share" 
+        $ globalTransaction "B" "A" "ok" 
+        $ globalTransaction "B" "V" "ok" 
+        $ globalTransaction "B" "C" "share"
+        $ globalTransaction "B" "C" "thunk"
+        $ globalTransaction "B" "V" "address"
+        $ globalTransaction "V" "B" "date"
+        $ Fix GlobalType.End
+
+
+localTypes :: Map Identifier (LocalType.LocalType String)
+localTypes = LocalType.projections globalType
+
+
+alice = 
+    send "A" (VString "Logicomix" )
+        $ receive "A" "p" 
+        $ send "A" (VReference "h")
+        $ receive "A" "ok"
+          terminate 
+
+bob = 
+    let
+        thunk = VFunction "_" (send "B" (VString "Lucca, 55100") $ receive "B" "d" terminate) 
+    in
+        receive "B" "p"
+            $ receive "B" "h"
+            $ send "B" (VReference "ok")
+            $ send "B" (VReference "ok")
+            $ send "B" thunk 
+              terminate 
+
+carol = 
+    receive "C" "h"
+    $ receive "C" "code"
+    $ applyFunction "code" VUnit
+
+vendor = 
+    let price title = VInt 42
+    in
+    receive "V" "t"
+        $ send "V" (price (VReference "t")) 
+        $ send "V" (price (VReference "t")) 
+        $ receive "V" "ok"
+        $ receive "V" "a"
+        $ send "V" (VReference "date")
+          terminate
+program :: Program Value
+program = 
+        alice
+
+
+-- forward :: Location -> Participant -> Program Value -> Monitor Value String -> Session Value ()  
+stepped = 
+    let monitor = Monitor
+            { _localType = (Fix LocalType.Hole, localTypes Map.! "A")
+            , _freeVariables = [] 
+            , _store = Map.empty
+            , _applicationHistory = Map.empty
+            , _reversible = False 
+            }
+        executionState = ExecutionState
+            { variableCount = 0
+            , locationCount = 1 
+            , applicationCount = 0
+            , participants = Map.singleton "A" monitor
+            , locations = Map.singleton "Location1" (Map.singleton "A" alice)
+            , queue = emptyQueue
+            , isFunction = \value -> 
+                case value of 
+                    VFunction arg body -> Just (arg, body)
+                    _ -> Nothing
+
+            }
+    in        
+        forward "Location1" "A" alice monitor
+            |> flip State.runStateT executionState
+
 
 
 f2 :: Program Value
@@ -365,9 +479,10 @@ data Value
     = VBool Bool
     | VInt Int
     | VString String
-    | VEnd 
+    | VUnit
     | VFunction Identifier (Program Value)
     | VReference Identifier 
+    deriving (Show, Generic, ToJSON, FromJSON, ElmType)
 
 renameVariable :: Identifier -> Identifier -> Program Value -> Program Value
 renameVariable old new program = 
@@ -417,12 +532,15 @@ data Monitor value tipe =
         { _localType :: LocalTypeState tipe
         , _freeVariables :: List Identifier
         , _store :: Map Identifier value 
-        , _applicationHistory :: Map Identifier (Identifier, Identifier)
+        , _applicationHistory :: Map Identifier (Identifier, Value)
         , _reversible :: Bool
         }
+        deriving (Show)
 
 
 data Queue a = Queue { history :: List ( Participant, Participant, a), current :: List (Participant, Participant, a) } 
+
+emptyQueue = Queue [] [] 
 
 push :: (Participant, Participant, value) -> Session value ()
 push item = 
