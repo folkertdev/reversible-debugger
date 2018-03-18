@@ -20,6 +20,8 @@ import Elm
 import Data.Proxy
 import Data.Aeson (ToJSON, FromJSON, toJSON, fromJSON, (.=), (.:), object)
 
+import Debug.Trace as Debug
+
 type List = []
 
 type Session value a = StateT (ExecutionState value) (Either Error) a
@@ -36,7 +38,10 @@ data ExecutionState value =
         }
 
 instance Show v => Show (ExecutionState v) where 
-    show state = show (locations state)
+    show state = show (locations state) ++ "\n\n\n" ++ show (participants state)
+
+instance Eq v => Eq (ExecutionState v) where 
+    a == b = locations a == locations b 
 
 lookupParticipant :: Participant -> Session value (Monitor value String)
 lookupParticipant participant = do 
@@ -131,7 +136,7 @@ data Error
     | EmptyQueueHistory
     | InvalidQueueItem
     | InvalidBackwardQueueItem 
-    deriving (Show)
+    deriving (Eq, Show)
 
 
 ensure condition error = 
@@ -153,7 +158,7 @@ forward location participant program monitor =
                     ( Fix $ LocalType.BackwardSend owner target tipe previous 
                     , continuationType
                     ) 
-            push ( participant, target, value )
+            push $ Debug.traceShow localType ( participant, target, value )
             setParticipant location participant (monitor { _localType = newLocalTypeState }, continuation)
 
         (Receive owner visibleName continuation, LocalType.Receive expectedOwner sender tipe continuationType) -> do
@@ -170,7 +175,17 @@ forward location participant program monitor =
                     
                 setParticipant location participant (newMonitor, renameVariable visibleName variableName continuation )
             else
+                let message = 
+                        "Receive: I encountered a mismatch looking at participant `" ++ participant ++ "`: \n\n" 
+                            ++ if s /= sender then 
+                                  "The type expects the sender to be `" ++ sender ++ "`, but the queue has a message with sender `" ++ s ++ "`\n" 
+                               else ""
+                            ++ if r /= participant then 
+                                   "The type expects the receiver to be the current participant `" ++ participant ++ "`, but the queue has a message with receiver `" ++ r ++ "`\n" 
+                               else ""
+                in 
                 Except.throwError InvalidQueueItem
+                    |> Debug.traceShow message 
         
         (Application functionName argument, _) -> do
             functionValue <- lookupVariable participant functionName 
@@ -360,7 +375,7 @@ data ProgramF value f
     | Let Identifier value f 
     | Literal value -- needed to define multi-parameter functions
     | NoOp
-    deriving (Show, Generic, Functor, Foldable, Traversable, ToJSON, FromJSON, ElmType)
+    deriving (Eq, Show, Generic, Functor, Foldable, Traversable, ToJSON, FromJSON, ElmType)
 
 
 parallel :: List (Program value) -> Program value
@@ -382,7 +397,7 @@ globalType :: GlobalType.GlobalType String
 globalType = 
     globalTransaction "A" "V" "title" 
         $ globalTransaction "V" "A" "price" 
-        $ globalTransaction "V" "A" "price" 
+        $ globalTransaction "V" "B" "price" 
         $ globalTransaction "A" "B" "share" 
         $ globalTransaction "B" "A" "ok" 
         $ globalTransaction "B" "V" "ok" 
@@ -398,20 +413,24 @@ localTypes = LocalType.projections globalType
 
 
 alice = 
+    let h = VInt 42 in
     send "A" (VString "Logicomix" )
         $ receive "A" "p" 
-        $ send "A" (VReference "h")
+        $ send "A" h
         $ receive "A" "ok"
           terminate 
 
 bob = 
     let
         thunk = VFunction "_" (send "B" (VString "Lucca, 55100") $ receive "B" "d" terminate) 
+
+        ok = VBool True
     in
         receive "B" "p"
             $ receive "B" "h"
-            $ send "B" (VReference "ok")
-            $ send "B" (VReference "ok")
+            $ send "B" ok 
+            $ send "B" ok 
+            $ send "B" (VInt 1) -- (VReference "h") 
             $ send "B" thunk 
               terminate 
 
@@ -435,21 +454,40 @@ program =
         alice
 
 
--- forward :: Location -> Participant -> Program Value -> Monitor Value String -> Session Value ()  
-stepped = 
-    let monitor = Monitor
-            { _localType = (Fix LocalType.Hole, localTypes Map.! "A")
+forward_ location participant = do
+    state <- State.get
+    case Map.lookup participant (participants state) of 
+        Nothing -> 
+            error "unknown participant"
+        Just monitor -> 
+            case Map.lookup location (locations state) >>= Map.lookup participant of 
+                Just program -> 
+                    forward location participant program monitor
+                Nothing -> 
+                    error $ "location has no participant named " ++ participant
+
+
+
+executionState = 
+
+    let createMonitor participant = Monitor 
+            { _localType = (Fix LocalType.Hole, localTypes Map.! participant)
             , _freeVariables = [] 
             , _store = Map.empty
             , _applicationHistory = Map.empty
             , _reversible = False 
             }
-        executionState = ExecutionState
+    in        
+    
+        ExecutionState
             { variableCount = 0
             , locationCount = 1 
             , applicationCount = 0
-            , participants = Map.singleton "A" monitor
-            , locations = Map.singleton "Location1" (Map.singleton "A" alice)
+            , participants = Map.fromList [ ("A", createMonitor "A"), ("B", createMonitor "B"), ( "C", createMonitor "C"), ("V", createMonitor "V") ]
+            , locations = 
+                [ ("A", alice), ("B", bob), ("C", carol), ("V", vendor) ]
+                    |> Map.fromList
+                    |> Map.singleton "Location1" 
             , queue = emptyQueue
             , isFunction = \value -> 
                 case value of 
@@ -457,8 +495,37 @@ stepped =
                     _ -> Nothing
 
             }
-    in        
-        forward "Location1" "A" alice monitor
+
+-- forward :: Location -> Participant -> Program Value -> Monitor Value String -> Session Value ()  
+stepped = 
+        ( do
+            forward_ "Location1" "A" 
+            forward_ "Location1" "V" 
+
+            forward_ "Location1" "V" 
+            forward_ "Location1" "A" 
+            forward_ "Location1" "V" 
+            forward_ "Location1" "B" 
+
+            forward_ "Location1" "A" 
+            forward_ "Location1" "B" 
+
+            forward_ "Location1" "B" 
+            forward_ "Location1" "A" 
+            forward_ "Location1" "B" 
+            forward_ "Location1" "V" 
+
+            forward_ "Location1" "B" 
+            forward_ "Location1" "C" 
+            
+            forward_ "Location1" "B" 
+            forward_ "Location1" "C" 
+
+            forward_ "Location1" "C" 
+
+            forward_ "Location1" "B" 
+            forward_ "Location1" "V" 
+        )
             |> flip State.runStateT executionState
 
 
@@ -482,7 +549,7 @@ data Value
     | VUnit
     | VFunction Identifier (Program Value)
     | VReference Identifier 
-    deriving (Show, Generic, ToJSON, FromJSON, ElmType)
+    deriving (Eq, Show, Generic, ToJSON, FromJSON, ElmType)
 
 renameVariable :: Identifier -> Identifier -> Program Value -> Program Value
 renameVariable old new program = 
@@ -520,7 +587,10 @@ evaluateValue participant value =
         VReference identifier -> do 
             store <- _store <$> lookupParticipant participant
             case Map.lookup identifier store of
-                Nothing -> error "reference value to undefined variable"
+                Nothing -> 
+                    let message = 
+                            "The variable `" ++ identifier ++ "` is undefined for participant `" ++ participant ++ "`"
+                    in error message 
                 Just v -> 
                     evaluateValue participant v
             
@@ -535,7 +605,7 @@ data Monitor value tipe =
         , _applicationHistory :: Map Identifier (Identifier, Value)
         , _reversible :: Bool
         }
-        deriving (Show)
+        deriving (Show, Eq)
 
 
 data Queue a = Queue { history :: List ( Participant, Participant, a), current :: List (Participant, Participant, a) } 

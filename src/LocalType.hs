@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, DeriveGeneric, DeriveFunctor, DeriveTraversable, PatternSynonyms #-}
+{-# LANGUAGE ScopedTypeVariables, DeriveGeneric, DeriveFunctor, DeriveTraversable, PatternSynonyms, DuplicateRecordFields #-}
 module LocalType where 
 
 import GHC.Generics
@@ -15,13 +15,13 @@ import qualified GlobalType
 type Participant = String
 
 data Atom f = R f | V | Wk f | End
-    deriving (Show, Generic, Functor, Foldable, Traversable)
+    deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 
 data Transaction u f 
-    = TSend Participant Participant u f 
-    | TReceive Participant Participant (Maybe Identifier) u f 
-    deriving (Show, Generic, Functor, Foldable, Traversable)
+    = TSend { owner :: Participant, receiver :: Participant, tipe :: u, continuation :: f } 
+    | TReceive { owner :: Participant, sender :: Participant, variableName :: Maybe Identifier, tipe ::  u, continuation :: f } 
+    deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 pattern BackwardSend owner participant tipe continuation = SendOrReceive (Transaction (TSend owner participant tipe ())) continuation
 pattern BackwardReceive owner participant visibleName tipe continuation = SendOrReceive (Transaction (TReceive owner participant (Just visibleName) tipe ())) continuation
@@ -34,7 +34,7 @@ data LocalTypeF u f
     | Choice f f 
     | Offer f f
     | Atom (Atom f)
-    deriving (Show, Generic, Functor, Foldable, Traversable)
+    deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 type LocalType u = Fix (LocalTypeF u)
 
@@ -52,7 +52,7 @@ data TypeContextF a f
     | Spawning Location Location Location f
     | Assignment { visibleName :: Identifier, internalName :: Identifier, continuation :: f }
     | Literal a f
-    deriving (Show, Generic, Functor, Foldable, Traversable)
+    deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 
 type TypeContext a = Fix (TypeContextF a)
@@ -102,9 +102,9 @@ project participant =
         case global of 
             GlobalType.Transaction sender receiver tipe cont -> 
                 if participant == sender then 
-                     sendTransaction sender sender tipe cont
+                     sendTransaction sender receiver tipe cont
                 else if participant == receiver then 
-                     receiveTransaction sender receiver tipe cont
+                     receiveTransaction receiver sender tipe cont
                 else 
                     cont 
 

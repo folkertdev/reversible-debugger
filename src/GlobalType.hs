@@ -15,7 +15,7 @@ import Types ((|>))
 type Participant = String
 
 data GlobalTypeF u f
-    = Transaction Participant Participant u f
+    = Transaction { from :: Participant, to :: Participant, tipe :: u, continuation ::  f } 
     | R f
     | V
     | Wk f
