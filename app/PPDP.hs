@@ -1,5 +1,6 @@
 module Main where
 
 import Semantics
+import Recursive
 
-main = print $ Semantics.stepped
+main = print $ Recursive.steps

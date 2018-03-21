@@ -29,6 +29,10 @@ pattern BackwardReceive owner participant visibleName tipe continuation = SendOr
 pattern Send owner participant tipe continuation = Transaction (TSend owner participant tipe continuation)
 pattern Receive owner participant tipe continuation = Transaction (TReceive owner participant Nothing tipe continuation)
 
+pattern RecursionPoint rest = Atom (R rest)
+pattern WeakenRecursion rest = Atom (Wk rest)
+pattern RecursionVariable = Atom V
+
 data LocalTypeF u f 
     = Transaction (Transaction u f)
     | Choice f f 

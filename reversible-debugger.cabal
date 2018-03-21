@@ -35,6 +35,8 @@ library
                      , GlobalType
                      , LocalType
                      , Semantics
+                     , ThreeBuyer
+                     , Recursive
                      , Queue
   other-modules:       Utils
                      , Utils.Maybe

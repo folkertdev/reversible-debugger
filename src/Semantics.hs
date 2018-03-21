@@ -151,41 +151,56 @@ forward location participant program monitor =
         localType = unFix fixedLocal
     in
     case ( unFix program, localType) of 
-        (Send owner payload continuation, LocalType.Send expectedOwner target tipe continuationType) -> do
-            ensure (owner == expectedOwner) (error $ "Send owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
-            value <- evaluateValue participant payload 
-            let newLocalTypeState = 
-                    ( Fix $ LocalType.BackwardSend owner target tipe previous 
-                    , continuationType
-                    ) 
-            push $ Debug.traceShow localType ( participant, target, value )
-            setParticipant location participant (monitor { _localType = newLocalTypeState }, continuation)
+        ( _, LocalType.RecursionPoint rest ) ->
+            let 
+                newLocalType = (Fix $ LocalType.SendOrReceive (LocalType.RecursionPoint ()) previous, rest) 
+                newMonitor = 
+                    monitor 
+                        { _recursionPoints = rest : (_recursionPoints monitor) 
+                        , _localType = newLocalType
+                        }  
+                
+            in do
+                setParticipant location participant ( newMonitor, program ) 
+                forward location participant program newMonitor
 
-        (Receive owner visibleName continuation, LocalType.Receive expectedOwner sender tipe continuationType) -> do
-            ensure (owner == expectedOwner) (error $ "Receive owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
-            ( s, r, payload ) <- pop
-            variableName <- uniqueVariableName
-            if s == sender && r == participant then do
-                let newBindings = Map.insert variableName payload $ _store monitor 
-                    newLocalTypeState = 
-                        ( Fix $ LocalType.BackwardReceive owner sender visibleName tipe previous 
-                        , continuationType
-                        ) 
-                    newMonitor = monitor { _store = newBindings, _localType = newLocalTypeState }  
-                    
-                setParticipant location participant (newMonitor, renameVariable visibleName variableName continuation )
-            else
-                let message = 
-                        "Receive: I encountered a mismatch looking at participant `" ++ participant ++ "`: \n\n" 
-                            ++ if s /= sender then 
-                                  "The type expects the sender to be `" ++ sender ++ "`, but the queue has a message with sender `" ++ s ++ "`\n" 
-                               else ""
-                            ++ if r /= participant then 
-                                   "The type expects the receiver to be the current participant `" ++ participant ++ "`, but the queue has a message with receiver `" ++ r ++ "`\n" 
-                               else ""
-                in 
-                Except.throwError InvalidQueueItem
-                    |> Debug.traceShow message 
+        ( _, LocalType.WeakenRecursion rest ) ->
+            let 
+                newLocalType = (Fix $ LocalType.SendOrReceive (LocalType.WeakenRecursion ()) previous, rest) 
+                newMonitor = 
+                    monitor 
+                        { _recursiveVariableNumber = 1 + (_recursiveVariableNumber monitor) 
+                        , _localType = newLocalType
+                        }  
+                
+            in do
+                setParticipant location participant ( newMonitor, program ) 
+                forward location participant program newMonitor
+
+        ( _, LocalType.RecursionVariable ) ->
+            let 
+                continuationType = 
+                    case drop (_recursiveVariableNumber monitor) (_recursionPoints monitor) of 
+                        [] -> error "recursion to nothing"
+                        x:xs -> 
+                            x
+
+                newLocalType = (Fix $ LocalType.SendOrReceive (LocalType.WeakenRecursion ()) previous, continuationType) 
+                newMonitor = 
+                    monitor 
+                        { _localType = newLocalType
+                            , _recursionPoints = take (_recursiveVariableNumber monitor + 1) (_recursionPoints monitor) 
+                        }  
+                
+            in do
+                setParticipant location participant ( newMonitor, program ) 
+                forward location participant program newMonitor
+
+        (Send owner payload continuation, _) -> do
+            checkAndPerformSend location participant monitor owner payload continuation 
+
+        (Receive owner visibleName continuation, _) -> do
+            checkAndPerformReceive location participant monitor owner visibleName continuation 
         
         (Application functionName argument, _) -> do
             functionValue <- lookupVariable participant functionName 
@@ -246,14 +261,85 @@ forward location participant program monitor =
             
             setParticipant location participant ( newMonitor, Fix NoOp )
 
-        (Send {}, _) ->  
-            Except.throwError SessionNotInSync
-
-        (Receive {}, _) ->  
-            Except.throwError SessionNotInSync
-
         ( NoOp, _ ) -> 
             return () 
+
+
+
+checkAndPerformSend :: Location -> Participant -> Monitor Value String -> Participant -> Value -> Program Value -> Session Value ()
+checkAndPerformSend location participant monitor owner payload continuation = 
+    if participant == owner then 
+        let (previous, fixedLocal) = _localType monitor
+            localType = unFix fixedLocal
+        in
+        case localType of 
+            LocalType.Send expectedOwner target tipe continuationType -> do
+                ensure (owner == expectedOwner) (error $ "Send owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
+                value <- evaluateValue participant payload 
+                let newLocalTypeState = 
+                        ( Fix $ LocalType.BackwardSend owner target tipe previous 
+                        , continuationType
+                        ) 
+                push $ Debug.traceShow localType ( participant, target, value )
+                setParticipant location participant (monitor { _localType = newLocalTypeState }, continuation)
+
+            _ -> 
+                error $ "The program wants to perform a send, but its type is " ++ show localType
+    else do
+        state <- State.get
+        case Map.lookup owner (participants state) of 
+            Nothing -> 
+                error "owner does not have a monitor"
+            Just ownerMonitor -> do
+                forward location owner (Fix $ Send owner payload continuation) ownerMonitor
+                setParticipant location participant (monitor, continuation)
+
+
+checkAndPerformReceive :: Location -> Participant -> Monitor Value String -> Participant -> Identifier -> Program Value -> Session Value ()
+checkAndPerformReceive location participant monitor owner visibleName continuation = 
+    if participant == owner then 
+        let (previous, fixedLocal) = _localType monitor
+            localType = unFix fixedLocal
+        in
+        case localType of 
+            LocalType.Receive expectedOwner sender tipe continuationType -> do
+                ensure (owner == expectedOwner) (error $ "Receive owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
+                ( s, r, payload ) <- pop
+                variableName <- uniqueVariableName
+                if s == sender && r == participant then do
+                    let newBindings = Map.insert variableName payload $ _store monitor 
+                        newLocalTypeState = 
+                            ( Fix $ LocalType.BackwardReceive owner sender visibleName tipe previous 
+                            , continuationType
+                            ) 
+                        newMonitor = monitor { _store = newBindings, _localType = newLocalTypeState }  
+                        
+                    setParticipant location participant (newMonitor, renameVariable visibleName variableName continuation )
+                else
+                    let message = 
+                            "Receive: I encountered a mismatch looking at participant `" ++ participant ++ "`: \n\n" 
+                                ++ if s /= sender then 
+                                      "The type expects the sender to be `" ++ sender ++ "`, but the queue has a message with sender `" ++ s ++ "`\n" 
+                                   else ""
+                                ++ if r /= participant then 
+                                       "The type expects the receiver to be the current participant `" ++ participant ++ "`, but the queue has a message with receiver `" ++ r ++ "`\n" 
+                                   else ""
+                    in 
+                    Except.throwError InvalidQueueItem
+                        |> Debug.traceShow message 
+
+            _ -> 
+                error $ "The program wants to perform a send, but its type is " ++ show localType
+    else do
+        state <- State.get
+        case Map.lookup owner (participants state) of 
+            Nothing -> 
+                error "owner does not have a monitor"
+            Just ownerMonitor -> do
+                forward location owner (Fix $ Receive owner visibleName continuation) ownerMonitor
+                setParticipant location participant (monitor, continuation )
+
+
 
 checkSynchronized :: Participant -> Participant -> Session value ()
 checkSynchronized sender receiver = return () 
@@ -378,82 +464,7 @@ data ProgramF value f
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable, ToJSON, FromJSON, ElmType)
 
 
-parallel :: List (Program value) -> Program value
-parallel = foldr1 (\a b -> Fix (Parallel a b))
-
-
-send o v c = Fix (Send o v c)
-
-receive o v c = Fix (Receive o v c)
-
-terminate = Fix NoOp 
-
-applyFunction functionName argument = Fix $ Application functionName argument
-
-globalTransaction from to tipe cont = Fix $ GlobalType.Transaction from to tipe cont
-    
-
-globalType :: GlobalType.GlobalType String
-globalType = 
-    globalTransaction "A" "V" "title" 
-        $ globalTransaction "V" "A" "price" 
-        $ globalTransaction "V" "B" "price" 
-        $ globalTransaction "A" "B" "share" 
-        $ globalTransaction "B" "A" "ok" 
-        $ globalTransaction "B" "V" "ok" 
-        $ globalTransaction "B" "C" "share"
-        $ globalTransaction "B" "C" "thunk"
-        $ globalTransaction "B" "V" "address"
-        $ globalTransaction "V" "B" "date"
-        $ Fix GlobalType.End
-
-
-localTypes :: Map Identifier (LocalType.LocalType String)
-localTypes = LocalType.projections globalType
-
-
-alice = 
-    let h = VInt 42 in
-    send "A" (VString "Logicomix" )
-        $ receive "A" "p" 
-        $ send "A" h
-        $ receive "A" "ok"
-          terminate 
-
-bob = 
-    let
-        thunk = VFunction "_" (send "B" (VString "Lucca, 55100") $ receive "B" "d" terminate) 
-
-        ok = VBool True
-    in
-        receive "B" "p"
-            $ receive "B" "h"
-            $ send "B" ok 
-            $ send "B" ok 
-            $ send "B" (VInt 1) -- (VReference "h") 
-            $ send "B" thunk 
-              terminate 
-
-carol = 
-    receive "C" "h"
-    $ receive "C" "code"
-    $ applyFunction "code" VUnit
-
-vendor = 
-    let price title = VInt 42
-    in
-    receive "V" "t"
-        $ send "V" (price (VReference "t")) 
-        $ send "V" (price (VReference "t")) 
-        $ receive "V" "ok"
-        $ receive "V" "a"
-        $ send "V" (VReference "date")
-          terminate
-program :: Program Value
-program = 
-        alice
-
-
+        
 forward_ location participant = do
     state <- State.get
     case Map.lookup participant (participants state) of 
@@ -467,66 +478,6 @@ forward_ location participant = do
                     error $ "location has no participant named " ++ participant
 
 
-
-executionState = 
-
-    let createMonitor participant = Monitor 
-            { _localType = (Fix LocalType.Hole, localTypes Map.! participant)
-            , _freeVariables = [] 
-            , _store = Map.empty
-            , _applicationHistory = Map.empty
-            , _reversible = False 
-            }
-    in        
-    
-        ExecutionState
-            { variableCount = 0
-            , locationCount = 1 
-            , applicationCount = 0
-            , participants = Map.fromList [ ("A", createMonitor "A"), ("B", createMonitor "B"), ( "C", createMonitor "C"), ("V", createMonitor "V") ]
-            , locations = 
-                [ ("A", alice), ("B", bob), ("C", carol), ("V", vendor) ]
-                    |> Map.fromList
-                    |> Map.singleton "Location1" 
-            , queue = emptyQueue
-            , isFunction = \value -> 
-                case value of 
-                    VFunction arg body -> Just (arg, body)
-                    _ -> Nothing
-
-            }
-
--- forward :: Location -> Participant -> Program Value -> Monitor Value String -> Session Value ()  
-stepped = 
-        ( do
-            forward_ "Location1" "A" 
-            forward_ "Location1" "V" 
-
-            forward_ "Location1" "V" 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "V" 
-            forward_ "Location1" "B" 
-
-            forward_ "Location1" "A" 
-            forward_ "Location1" "B" 
-
-            forward_ "Location1" "B" 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "B" 
-            forward_ "Location1" "V" 
-
-            forward_ "Location1" "B" 
-            forward_ "Location1" "C" 
-            
-            forward_ "Location1" "B" 
-            forward_ "Location1" "C" 
-
-            forward_ "Location1" "C" 
-
-            forward_ "Location1" "B" 
-            forward_ "Location1" "V" 
-        )
-            |> flip State.runStateT executionState
 
 
 
@@ -600,6 +551,8 @@ evaluateValue participant value =
 data Monitor value tipe = 
     Monitor 
         { _localType :: LocalTypeState tipe
+        , _recursiveVariableNumber :: Int
+        , _recursionPoints :: List (LocalType tipe)
         , _freeVariables :: List Identifier
         , _store :: Map Identifier value 
         , _applicationHistory :: Map Identifier (Identifier, Value)
