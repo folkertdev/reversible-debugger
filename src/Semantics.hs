@@ -201,6 +201,33 @@ forward location participant program monitor =
 
         (Receive owner visibleName continuation, _) -> do
             checkAndPerformReceive location participant monitor owner visibleName continuation 
+
+        (IfThenElse condition thenBlock elseBlock, _) -> 
+            case localType of 
+                LocalType.Choice thenType elseType -> do
+                    conditionValue <- evaluateValue participant condition
+                    case conditionValue of 
+                        VBool True -> 
+                            let 
+                                newLocalType = (Fix $ LocalType.Branched condition True (elseBlock, elseType) previous, thenType ) 
+                                newMonitor = 
+                                    monitor { _localType = newLocalType }  
+                            in 
+                                setParticipant location participant ( newMonitor, thenBlock ) 
+
+                        VBool False -> 
+                            let 
+                                newLocalType = (Fix $ LocalType.Branched condition False (thenBlock, thenType) previous, elseType ) 
+                                newMonitor = 
+                                    monitor { _localType = newLocalType }  
+                            in 
+                                setParticipant location participant ( newMonitor, elseBlock ) 
+
+                        _ -> error "condition is not a bool"
+
+                _ -> 
+                    error $ "IfThenElse needs a LocalType.Choice, but got " ++ show localType
+
         
         (Application functionName argument, _) -> do
             functionValue <- lookupVariable participant functionName 
@@ -284,7 +311,7 @@ checkAndPerformSend location participant monitor owner payload continuation =
                 setParticipant location participant (monitor { _localType = newLocalTypeState }, continuation)
 
             _ -> 
-                error $ "The program wants to perform a send, but its type is " ++ show localType
+                error $ "`" ++ participant ++ "`'s program wants to perform a send, but its type is " ++ show localType
     else do
         state <- State.get
         case Map.lookup owner (participants state) of 
@@ -329,7 +356,7 @@ checkAndPerformReceive location participant monitor owner visibleName continuati
                         |> Debug.traceShow message 
 
             _ -> 
-                error $ "The program wants to perform a send, but its type is " ++ show localType
+                error $ "`" ++ participant ++ "`'s program wants to perform a receive, but its type is " ++ show localType
     else do
         state <- State.get
         case Map.lookup owner (participants state) of 
@@ -382,6 +409,21 @@ backward location participant program monitor =
 
         LocalType.SendOrReceive _ _ -> 
             error "satisfy the exhaustiveness checker"
+
+        LocalType.Branched { condition, verdict, otherBranch } -> 
+            let (otherBody, otherType) = otherBranch in
+            setParticipant_ location participant 
+                ( monitor { _localType = ( previous, 
+                  if verdict then 
+                    Fix $ LocalType.Choice next otherType
+                  else
+                    Fix $ LocalType.Choice otherType next 
+                                         )}
+                , if verdict then 
+                             Semantics.IfThenElse condition program otherBody
+                    else
+                             Semantics.IfThenElse condition otherBody program
+                )
 
         LocalType.Application k rest ->
             case Map.lookup k (_applicationHistory monitor) of 
@@ -457,11 +499,40 @@ data ProgramF value f
     = Send { owner :: Participant, value :: value, continuation :: f }
     | Receive { owner :: Participant, variableName :: Identifier, continuation :: f  }
     | Parallel f f 
-    | Application Identifier Value
+    | Application Identifier value
     | Let Identifier value f 
+    | IfThenElse value f f
     | Literal value -- needed to define multi-parameter functions
     | NoOp
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable, ToJSON, FromJSON, ElmType)
+
+run :: List (Program value -> Program value) -> Program value
+run = foldr ($) terminate
+
+
+parallel :: List (Program value) -> Program value
+parallel = foldr1 (\a b -> Fix (Parallel a b))
+
+send :: Participant -> value -> Program value -> Program value
+send o v c = Fix (Send o v c)
+
+receive :: Participant -> Identifier -> Program value -> Program value
+receive o v c = Fix (Receive o v c)
+
+terminate :: Program value
+terminate = Fix NoOp 
+
+applyFunction :: Identifier -> value -> Program value
+applyFunction functionName argument = Fix $ Application functionName argument
+
+literal :: value -> Program value
+literal = Fix . Literal
+
+ifThenElse :: value -> Program value -> Program value -> Program value
+ifThenElse condition thenBranch elseBranch = Fix $ IfThenElse condition thenBranch elseBranch
+
+letBinding :: Identifier -> value -> Program value -> Program value
+letBinding name value cont = Fix $ Let name value cont
 
 
         
@@ -526,6 +597,12 @@ renameVariable old new program =
                     in
                         Let variableName newValue continuation
 
+                Send owner (VReference variableName) cont ->
+                    Send owner (VReference $ rename variableName) cont
+
+                Literal (VReference variableName) ->
+                    Literal (VReference $ rename variableName)
+
                 _ -> 
                     instruction
     in
@@ -548,14 +625,15 @@ evaluateValue participant value =
         _ -> 
             return value
 
+
 data Monitor value tipe = 
     Monitor 
-        { _localType :: LocalTypeState tipe
+        { _localType :: LocalTypeState (Program value) value tipe
         , _recursiveVariableNumber :: Int
         , _recursionPoints :: List (LocalType tipe)
         , _freeVariables :: List Identifier
         , _store :: Map Identifier value 
-        , _applicationHistory :: Map Identifier (Identifier, Value)
+        , _applicationHistory :: Map Identifier (Identifier, value)
         , _reversible :: Bool
         }
         deriving (Show, Eq)

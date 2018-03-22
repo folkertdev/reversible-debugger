@@ -9,10 +9,12 @@ import Data.Monoid ((<>))
 
 import Data.Fix
 
-import Types ((|>))
--- import TypeState (Crumb(..))
+import Types ((|>), List)
 
 type Participant = String
+
+{-| A global type with transaction and recursion -}
+type GlobalType u = Fix (GlobalTypeF u)
 
 data GlobalTypeF u f
     = Transaction { from :: Participant, to :: Participant, tipe :: u, continuation ::  f } 
@@ -22,30 +24,23 @@ data GlobalTypeF u f
     | End
     deriving (Show, Generic, Functor, Foldable, Traversable)
 
-data CrumbF s 
-    = Before s
-    | BeforeSend s 
-    | AfterSend s 
-    | AfterReceive s 
-    | Chosen s s 
-    | Offered s s
-    deriving (Generic, Functor, Foldable, Traversable)
+transaction :: Participant -> Participant -> tipe -> GlobalType tipe -> GlobalType tipe
+transaction from to tipe cont = Fix (Transaction from to tipe cont)
 
-type Crumb u = CrumbF (GlobalTypeF u ())
+recurse :: GlobalType a -> GlobalType a 
+recurse cont = Fix (R cont)
 
+broadenScope :: GlobalType a -> GlobalType a 
+broadenScope cont = Fix (Wk cont)
 
-unCrumb :: GlobalType u -> GlobalType.Crumb u -> GlobalType u
-unCrumb global crumb = 
-    let levelUp = foldl1 const crumb
-    in
-        Fix $ fmap (const global) levelUp
+recursionVariable :: GlobalType a
+recursionVariable = Fix V
 
-type List = []
+end :: GlobalType a
+end = Fix End
 
 
-type GlobalType u = Fix (GlobalTypeF u)
-
-
+{-| enumerate all the participants in a global type -}
 participants :: GlobalType u -> Set Participant
 participants = 
     Data.Fix.cata $ \global ->
@@ -65,8 +60,27 @@ participants =
             End -> 
                 Set.empty
 
-
+{-| A global type state containing information to go back (crumbs) and forward (GlobalType) -}
 type GlobalTypeState u =  (List (GlobalType.Crumb u), GlobalType u)
+
+data CrumbF s 
+    = Before s
+    | BeforeSend s 
+    | AfterSend s 
+    | AfterReceive s 
+    | Chosen s s 
+    | Offered s s
+    deriving (Generic, Functor, Foldable, Traversable)
+
+type Crumb u = CrumbF (GlobalTypeF u ())
+
+
+unCrumb :: GlobalType u -> GlobalType.Crumb u -> GlobalType u
+unCrumb global crumb = 
+    let levelUp = foldl1 const crumb
+    in
+        Fix $ fmap (const global) levelUp
+
 
 
 forgetState :: GlobalTypeState u -> GlobalType u 
@@ -75,7 +89,6 @@ forgetState (crumbs, left) = Foldable.foldr (flip unCrumb) left crumbs
 nested :: GlobalType u -> List (GlobalType u)
 nested = Foldable.toList . unFix
 
-end = Fix End
 
 crumble :: GlobalType u -> ( GlobalType.Crumb u, GlobalType u ) 
 crumble global = 

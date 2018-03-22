@@ -1,6 +1,9 @@
 module Main where
 
 import Semantics
-import Recursive
 
-main = print $ Recursive.steps
+import Recursive
+import ParallelDelegation
+import NestedDelegation
+
+main = print $ NestedDelegation.steps 

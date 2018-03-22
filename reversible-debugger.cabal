@@ -37,6 +37,8 @@ library
                      , Semantics
                      , ThreeBuyer
                      , Recursive
+                     , NestedDelegation
+                     , ParallelDelegation
                      , Queue
   other-modules:       Utils
                      , Utils.Maybe
