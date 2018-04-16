@@ -4,7 +4,7 @@ module Semantics where
 import Control.Monad.State as State
 import Control.Monad.Except as Except
 
-import LocalType (LocalType, LocalTypeState, Location, Participant, Identifier)
+import LocalType (LocalType, LocalTypeState, TypeContextF(Selected, Offered), Location, Participant, Identifier, Choice(..))
 import qualified LocalType
 import qualified GlobalType
 
@@ -38,10 +38,15 @@ data ExecutionState value =
         }
 
 instance Show v => Show (ExecutionState v) where 
-    show state = show (locations state) ++ "\n\n\n" ++ show (participants state)
+    show state = 
+        "locations: " ++ show (locations state) 
+            ++ "\n\n\n" 
+            ++ "participants: " ++ show (participants state)
+            ++ "\n\n\n" 
+            ++ "queue: " ++ show (queue state)
 
 instance Eq v => Eq (ExecutionState v) where 
-    a == b = locations a == locations b 
+    a == b = locations a == locations b && participants a == participants b && queue a == queue b
 
 lookupParticipant :: Participant -> Session value (Monitor value String)
 lookupParticipant participant = do 
@@ -156,7 +161,7 @@ forward location participant program monitor =
                 newLocalType = (Fix $ LocalType.SendOrReceive (LocalType.RecursionPoint ()) previous, rest) 
                 newMonitor = 
                     monitor 
-                        { _recursionPoints = rest : (_recursionPoints monitor) 
+                        { _recursionPoints = rest : _recursionPoints monitor 
                         , _localType = newLocalType
                         }  
                 
@@ -169,7 +174,7 @@ forward location participant program monitor =
                 newLocalType = (Fix $ LocalType.SendOrReceive (LocalType.WeakenRecursion ()) previous, rest) 
                 newMonitor = 
                     monitor 
-                        { _recursiveVariableNumber = 1 + (_recursiveVariableNumber monitor) 
+                        { _recursiveVariableNumber = 1 + _recursiveVariableNumber monitor 
                         , _localType = newLocalType
                         }  
                 
@@ -196,20 +201,20 @@ forward location participant program monitor =
                 setParticipant location participant ( newMonitor, program ) 
                 forward location participant program newMonitor
 
-        (Send owner payload continuation, _) -> do
+        (Send owner payload continuation, _) ->
             checkAndPerformSend location participant monitor owner payload continuation 
 
-        (Receive owner visibleName continuation, _) -> do
+        (Receive owner visibleName continuation, _) ->
             checkAndPerformReceive location participant monitor owner visibleName continuation 
 
         (IfThenElse condition thenBlock elseBlock, _) -> 
             case localType of 
-                LocalType.Choice thenType elseType -> do
+                LocalType.Select thenType elseType -> do
                     conditionValue <- evaluateValue participant condition
                     case conditionValue of 
                         VBool True -> 
                             let 
-                                newLocalType = (Fix $ LocalType.Branched condition True (elseBlock, elseType) previous, thenType ) 
+                                newLocalType = (Fix $ LocalType.Selected condition True (elseBlock, elseType) previous, thenType ) 
                                 newMonitor = 
                                     monitor { _localType = newLocalType }  
                             in 
@@ -217,7 +222,7 @@ forward location participant program monitor =
 
                         VBool False -> 
                             let 
-                                newLocalType = (Fix $ LocalType.Branched condition False (thenBlock, thenType) previous, elseType ) 
+                                newLocalType = (Fix $ LocalType.Selected condition False (thenBlock, thenType) previous, elseType ) 
                                 newMonitor = 
                                     monitor { _localType = newLocalType }  
                             in 
@@ -232,6 +237,7 @@ forward location participant program monitor =
         (Application functionName argument, _) -> do
             functionValue <- lookupVariable participant functionName 
             argumentValue <- evaluateValue participant argument 
+            variableName <- uniqueVariableName 
 
             convertToFunction <- isFunction <$> State.get
             case convertToFunction functionValue of
@@ -241,11 +247,11 @@ forward location participant program monitor =
                     let newLocalType = (Fix $ LocalType.Application k previous, fixedLocal) 
                         newMonitor = 
                             monitor 
-                                { _store = Map.insert variable argumentValue (_store monitor)
+                                { _store = Map.insert variableName argumentValue (_store monitor)
                                 , _localType = newLocalType
                                 , _applicationHistory = Map.insert k (functionName, argument) (_applicationHistory monitor)
                                 }  
-                    setParticipant location participant (newMonitor, body)
+                    setParticipant location participant (newMonitor, renameVariable variable variableName body)
 
         (Parallel p q, _) -> do
             l1 <- uniqueLocation 
@@ -279,14 +285,17 @@ forward location participant program monitor =
         (Literal lit, _) -> do
             variableName <- uniqueVariableName 
 
-            let newLocalType = (Fix $ LocalType.Literal variableName previous, fixedLocal) 
+            {-
+            let  
+                newLocalType = (Fix $ LocalType.Literal variableName previous, fixedLocal) 
                 newMonitor = 
                     monitor 
                         { _store = Map.insert variableName lit (_store monitor)
                         , _localType = newLocalType
                         }  
+            -}
             
-            setParticipant location participant ( newMonitor, Fix NoOp )
+            setParticipant location participant ( monitor, Fix NoOp )
 
         ( NoOp, _ ) -> 
             return () 
@@ -336,7 +345,7 @@ checkAndPerformReceive location participant monitor owner visibleName continuati
                 if s == sender && r == participant then do
                     let newBindings = Map.insert variableName payload $ _store monitor 
                         newLocalTypeState = 
-                            ( Fix $ LocalType.BackwardReceive owner sender visibleName tipe previous 
+                            ( Fix $ LocalType.BackwardReceive owner sender visibleName variableName tipe previous 
                             , continuationType
                             ) 
                         newMonitor = monitor { _store = newBindings, _localType = newLocalTypeState }  
@@ -386,6 +395,9 @@ backward location participant program monitor =
                 -- check whether the session types line up, before rolling
                 checkSynchronized source target 
 
+                -- remove this send/receive combo from the queue
+                queueRemoveHistory
+
                 setParticipant_ location participant 
                     ( monitor { _localType = newLocalType } 
                     , Semantics.Send { owner = owner, value = payload, continuation = program } 
@@ -393,7 +405,7 @@ backward location participant program monitor =
             else 
                 Except.throwError InvalidBackwardQueueItem 
     
-        LocalType.BackwardReceive owner sender visibleName tipe rest -> do 
+        LocalType.BackwardReceive owner sender visibleName variableName tipe rest -> do 
             ( source, target, payload ) <- popHistory 
             let newLocalType = ( rest, Fix $ LocalType.Receive owner sender tipe next ) 
             if target == participant && source == sender then do
@@ -401,7 +413,7 @@ backward location participant program monitor =
                 checkSynchronized source target 
 
                 setParticipant_ location participant 
-                    ( monitor { _localType = newLocalType } 
+                    ( monitor { _localType = newLocalType, _store = Map.delete variableName (_store monitor) } 
                     , Semantics.Receive { owner = owner, variableName = visibleName, continuation = program } 
                     )
             else 
@@ -410,20 +422,23 @@ backward location participant program monitor =
         LocalType.SendOrReceive _ _ -> 
             error "satisfy the exhaustiveness checker"
 
-        LocalType.Branched { condition, verdict, otherBranch } -> 
+        LocalType.Selected { condition, verdict, otherBranch, continuation } -> 
             let (otherBody, otherType) = otherBranch in
             setParticipant_ location participant 
-                ( monitor { _localType = ( previous, 
+                ( monitor { _localType = ( continuation,  
                   if verdict then 
-                    Fix $ LocalType.Choice next otherType
+                        Fix $ LocalType.Select next otherType 
                   else
-                    Fix $ LocalType.Choice otherType next 
+                        Fix $ LocalType.Select otherType next
                                          )}
                 , if verdict then 
                              Semantics.IfThenElse condition program otherBody
                     else
                              Semantics.IfThenElse condition otherBody program
                 )
+
+        LocalType.Offered { otherOption, continuation } -> 
+            setParticipant_ location participant undefined -- TODO fix this
 
         LocalType.Application k rest ->
             case Map.lookup k (_applicationHistory monitor) of 
@@ -454,7 +469,7 @@ backward location participant program monitor =
                 _ -> 
                     error "rolling a program that is not NoOp"
 
-        LocalType.Assignment visibleName variableName rest -> do
+        LocalType.Assignment visibleName variableName rest -> 
             let 
                 store = _store monitor 
 
@@ -467,13 +482,13 @@ backward location participant program monitor =
                         { _store = Map.delete variableName store
                         , _localType = (rest, next)
                         }  
-            
-            setParticipant_ location participant 
-                ( newMonitor
-                , Semantics.Let visibleName  value program
-                )
+            in            
+                setParticipant_ location participant 
+                    ( newMonitor
+                    , Semantics.Let visibleName  value program
+                    )
 
-        LocalType.Literal variableName rest -> do
+        LocalType.Literal variableName rest -> 
             let 
                 store = _store monitor 
 
@@ -486,11 +501,11 @@ backward location participant program monitor =
                         { _store = Map.delete variableName store
                         , _localType = (rest, next)
                         }  
-            
-            setParticipant_ location participant 
-                ( newMonitor
-                , Semantics.Literal value 
-                )
+            in            
+                setParticipant_ location participant 
+                    ( newMonitor
+                    , Semantics.Literal value 
+                    )
 
         LocalType.Hole -> 
             return () 
@@ -535,7 +550,7 @@ letBinding :: Identifier -> value -> Program value -> Program value
 letBinding name value cont = Fix $ Let name value cont
 
 
-        
+forward_ :: Location -> Participant -> Session Value ()        
 forward_ location participant = do
     state <- State.get
     case Map.lookup participant (participants state) of 
@@ -549,6 +564,26 @@ forward_ location participant = do
                     error $ "location has no participant named " ++ participant
 
 
+backward_ :: Location -> Participant -> Session Value ()        
+backward_ location participant = do
+    state <- State.get
+    case Map.lookup participant (participants state) of 
+        Nothing -> 
+            error "unknown participant"
+        Just monitor -> 
+            case Map.lookup location (locations state) >>= Map.lookup participant of 
+                Just program -> 
+                    backward location participant program monitor
+                Nothing -> 
+                    error $ "location has no participant named " ++ participant
+
+forwardTestable :: Location -> Participant -> ExecutionState Value -> Either Error (ExecutionState Value)
+forwardTestable location participant state = 
+    snd <$> State.runStateT (forward_ location participant) state
+
+backwardTestable :: Location -> Participant -> ExecutionState Value -> Either Error (ExecutionState Value)
+backwardTestable location participant state = 
+    snd <$> State.runStateT (backward_ location participant) state
 
 
 
@@ -568,10 +603,46 @@ data Value
     = VBool Bool
     | VInt Int
     | VString String
+    | VIntOperator Value IntOperator Value 
+    | VComparison Value Ordering Value
     | VUnit
     | VFunction Identifier (Program Value)
     | VReference Identifier 
     deriving (Eq, Show, Generic, ToJSON, FromJSON, ElmType)
+
+deriving instance ElmType Ordering
+
+renameValue :: Identifier -> Identifier -> Value -> Value
+renameValue old new value = 
+    case value of 
+        VReference current -> 
+            if current == old then VReference new else VReference current
+
+        VIntOperator a op b -> 
+            VIntOperator (renameValue old new a) op (renameValue old new b) 
+
+        VComparison a op b -> 
+            VComparison (renameValue old new a) op (renameValue old new b) 
+
+        _ -> 
+            value
+
+data IntOperator 
+    = Add
+    deriving (Eq, Show, Generic, ToJSON, FromJSON, ElmType)
+
+instance Ord Value where
+    compare value1 value2 = 
+        case (value1, value2) of 
+            (VInt a, VInt b)  -> Prelude.compare a b
+            (VBool a, VBool b)  -> Prelude.compare a b
+            (VString a, VString b)  -> Prelude.compare a b
+            (VUnit, VUnit)  -> Prelude.compare () () 
+            (VFunction _ _, VFunction _ _)  -> error "cannot compare function values"
+            (VReference a, VReference b)  -> Prelude.compare a b 
+            _ -> error $ "conflicting value types " ++ show (value1, value2)
+    
+
 
 renameVariable :: Identifier -> Identifier -> Program Value -> Program Value
 renameVariable old new program = 
@@ -584,29 +655,81 @@ renameVariable old new program =
         helper instruction = 
             case instruction of 
                 Application functionName variableName ->
-                    Application (rename functionName) variableName  
+                    Application (rename functionName) (renameValue old new variableName)
 
                 Let variableName value continuation ->  
-                    let newValue = 
-                            case value of 
-                                VReference identifier -> 
-                                    VReference (rename identifier)
+                    Let variableName (renameValue old new value) continuation
 
-                                _ -> 
-                                    value
-                    in
-                        Let variableName newValue continuation
+                IfThenElse value thenBlock elseBlock -> 
+                    IfThenElse (renameValue old new value) thenBlock elseBlock 
 
-                Send owner (VReference variableName) cont ->
-                    Send owner (VReference $ rename variableName) cont
+                Send owner variable cont ->
+                    Send owner (renameValue old new variable) cont
 
-                Literal (VReference variableName) ->
-                    Literal (VReference $ rename variableName)
+                Literal literal  ->
+                    Literal (renameValue old new literal)
 
                 _ -> 
                     instruction
     in
         Fix.cata (Fix . helper) program 
+
+
+createClosure :: Participant -> Program Value -> Session Value (Program Value)
+createClosure participant program = 
+    let 
+        helper instruction = 
+            case instruction of 
+                Let variableName value continuation -> do
+                    evaluated <- evaluateValue participant value
+                    pure $ Let variableName evaluated continuation
+
+                Send owner value cont -> do
+                    evaluated <- evaluateValue participant value
+                    pure $ Send owner evaluated cont
+
+                Literal value -> do
+                    evaluated <- evaluateValue participant value
+                    pure $ Literal evaluated
+
+                IfThenElse condition thenBlock elseBlock -> do
+                    evaluated <- evaluateValue participant condition 
+                    pure $ IfThenElse evaluated thenBlock elseBlock
+
+
+                _ -> 
+                    pure instruction
+
+    in 
+        Fix.cataM (fmap Fix . helper) program
+
+
+chaseReference :: Participant -> Value -> Session Value Value 
+chaseReference participant value = 
+    case value of 
+        VReference identifier -> do 
+            store <- _store <$> lookupParticipant participant
+            case Map.lookup identifier store of
+                Nothing -> 
+                    let message = 
+                            "The variable `" ++ identifier ++ "` is undefined for participant `" ++ participant ++ "`"
+                    in error message 
+                Just v -> 
+                    chaseReference participant v
+        
+        VIntOperator a operator b -> do
+            x <- chaseReference participant a
+            y <- chaseReference participant b
+            pure $ VIntOperator x operator y 
+
+
+        VComparison a expected b -> do
+            x <- chaseReference participant a
+            y <- chaseReference participant b
+            pure $ VComparison a expected b
+
+        _ -> 
+            pure value
 
 {-| Evaluate a value until a base type, by dereferencing references -}
 evaluateValue :: Participant -> Value -> Session Value Value 
@@ -621,9 +744,28 @@ evaluateValue participant value =
                     in error message 
                 Just v -> 
                     evaluateValue participant v
+
+        VIntOperator a operator b -> do
+            VInt left <- evaluateValue participant a
+            VInt right <- evaluateValue participant b
+            case operator of 
+                Add -> 
+                    pure $ VInt (left + right)
+
+        VComparison a expected b -> do
+            verdict <- liftM2 compare (evaluateValue participant a) (evaluateValue participant b)
+            pure $ VBool (verdict == expected)
+            
             
         _ -> 
             return value
+
+decrement :: Participant -> Value -> Session Value Value 
+decrement participant value_ = do
+    value <- evaluateValue participant value_
+    case value of 
+        VInt num -> pure $ VInt (num - 1)
+        _ -> error $ "type error in value, decrement on " ++ show value
 
 
 data Monitor value tipe = 
@@ -639,7 +781,7 @@ data Monitor value tipe =
         deriving (Show, Eq)
 
 
-data Queue a = Queue { history :: List ( Participant, Participant, a), current :: List (Participant, Participant, a) } 
+data Queue a = Queue { history :: List ( Participant, Participant, a), current :: List (Participant, Participant, a) }  deriving (Eq, Show)
 
 emptyQueue = Queue [] [] 
 
@@ -659,6 +801,20 @@ pop = do
             return value
 
 
+queueRemoveHistory :: Session value () 
+queueRemoveHistory = do 
+    queue@Queue{ history, current } <- queue <$> State.get
+    case history of 
+        [] -> 
+            Except.throwError EmptyQueueHistory
+
+        (x:xs) -> do
+            let newQueue =  queue { history = xs }
+            State.modify $ \state@ExecutionState { queue } -> 
+                state { queue = newQueue }
+            return ()
+
+
 popHistory :: Session value (Participant, Participant, value)
 popHistory = do
     q <- queue <$> State.get
@@ -671,6 +827,9 @@ popHistory = do
 
 enqueue :: ( Participant, Participant, a ) -> Queue a -> Queue a
 enqueue item (queue@Queue{ current }) = queue { current = current ++ [ item ] }
+
+enqueueHistory :: ( Participant, Participant, a ) -> Queue a -> Queue a
+enqueueHistory item (queue@Queue{ history }) = queue { history = item : history }
 
 dequeue :: Queue a -> Maybe ((Participant, Participant, a), Queue a)
 dequeue queue@Queue{ history, current } = 
@@ -685,5 +844,4 @@ dequeueHistory queue@Queue{ history, current } =
         [] -> Nothing
         (x:xs) -> 
             Just ( x, queue { current = x : current, history = xs } )
-
 
