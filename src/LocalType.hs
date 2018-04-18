@@ -8,6 +8,8 @@ import Data.Map as Map
 import Data.Set as Set 
 import Data.Fix
 import Data.Map.Merge.Strict as Merge
+import Zipper (Zipper)
+import qualified Zipper
 
 import GlobalType (GlobalType)
 import qualified GlobalType
@@ -19,14 +21,14 @@ type Location = String
 {-| A local type with send, receive, recursion, choice and offer -}
 type LocalType u = Fix (LocalTypeF u)
 
-data Choice f 
-    = COffer f f 
-    | CSelect { selectTaken :: f, selectNotTaken :: f }  
+data Choice u f 
+    = COffer { owner :: Participant, selector :: Participant, options :: List (LocalType u) }
+    | CSelect { owner :: Participant, offerer :: Participant, options :: List (LocalType u) }
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 data LocalTypeF u f 
     = Transaction (Transaction u f)
-    | Choice (Choice f)
+    | Choice (Choice u f)
     | Atom (Atom f)
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
@@ -49,18 +51,18 @@ pattern BackwardSend owner participant tipe continuation =
 pattern BackwardReceive owner participant visibleName variableName tipe continuation = 
     SendOrReceive (Transaction (TReceive owner participant (Just (visibleName, variableName)) tipe ())) continuation
 
-pattern Send owner participant tipe continuation = 
-    Transaction (TSend owner participant tipe continuation)
+pattern Send owner receiver tipe continuation = 
+    Transaction (TSend owner receiver tipe continuation)
 
-pattern Receive owner participant tipe continuation = 
-    Transaction (TReceive owner participant Nothing tipe continuation)
+pattern Receive owner sender tipe continuation = 
+    Transaction (TReceive owner sender Nothing tipe continuation)
 
 pattern RecursionPoint rest = Atom (R rest)
 pattern WeakenRecursion rest = Atom (Wk rest)
 pattern RecursionVariable = Atom V
 
-pattern Select taken notTaken = Choice CSelect{ selectTaken = taken, selectNotTaken = notTaken }
-pattern Offer a b = Choice (COffer a b)
+pattern Offer  owner selector options = Choice (COffer owner selector options)
+pattern Select owner offerer  options = Choice (CSelect owner offerer options)
 
 
 {-| Data structure containing the information needed to roll an action -}
@@ -69,8 +71,18 @@ type TypeContext program value a = Fix (TypeContextF program value a)
 data TypeContextF program value a f 
     = Hole 
     | SendOrReceive (LocalTypeF a ()) f 
-    | Selected { condition :: value, verdict :: Bool, otherBranch :: (program, LocalType a), continuation :: f }
-    | Offered { otherOption :: LocalType a, continuation :: f } 
+    | Selected 
+        { owner :: Participant
+        , offerer :: Participant 
+        , selection :: Zipper (value, program, LocalType a)
+        , continuation :: f 
+        }
+    | Offered 
+        { owner :: Participant
+        , selector :: Participant 
+        , picked :: Zipper (program, LocalType a)
+        , continuation :: f 
+        }
     | Application Identifier f 
     | Spawning Location Location Location f
     | Assignment { visibleName :: Identifier, internalName :: Identifier, continuation :: f }
@@ -91,13 +103,21 @@ backwardReceive :: Participant ->  Participant -> u -> Identifier -> Identifier 
 backwardReceive owner sender tipe visibleName variableName base = 
     Fix $ BackwardReceive owner sender visibleName variableName tipe base  
 
-backwardSelect :: v -> Bool -> (p, LocalType u) -> TypeContext p v u -> TypeContext p v u
-backwardSelect condition verdict otherBranch base = 
-    Fix $ Selected condition verdict otherBranch base 
+backwardSelect :: Participant
+               -> Participant
+               -> Zipper (v, p, LocalType u) 
+               -> TypeContext p v u 
+               -> TypeContext p v u
+backwardSelect owner offerer selection continuation =  
+    Fix $ Selected owner offerer selection continuation   
 
-backwardOffer :: LocalType u -> TypeContext p v u -> TypeContext p v u
-backwardOffer otherOption base = 
-    Fix $ Offered otherOption base
+backwardOffer :: Participant 
+              -> Participant
+              -> Zipper (p, LocalType u) 
+              -> TypeContext p v u 
+              -> TypeContext p v u
+backwardOffer owner selector picked continuation = 
+    Fix $ Offered owner selector picked continuation 
 
 
 {-| The state of a local type is 
@@ -125,13 +145,13 @@ send owner sender tipe = Fix . Transaction . TSend owner sender tipe
 receive :: Participant -> Participant -> u -> LocalType u -> LocalType u 
 receive owner receiver tipe = Fix . Transaction . TReceive owner receiver Nothing tipe
 
-offer :: LocalType u -> LocalType u -> LocalType u 
-offer left right = 
-    Fix $ Offer left right
+offer :: Participant -> Participant -> List (LocalType u) -> LocalType u 
+offer owner offerer options = 
+    Fix $ Offer owner offerer options
 
-select :: LocalType u -> LocalType u -> LocalType u 
-select left right = 
-    Fix $ Select left right
+select :: Participant -> Participant -> List (LocalType u) -> LocalType u 
+select owner selector options = 
+    Fix $ Select owner selector options
 
 
 projections :: GlobalType u -> Map Participant (LocalType u)
@@ -152,6 +172,15 @@ project participant =
                      LocalType.receive receiver sender tipe cont
                 else 
                     cont 
+
+            GlobalType.OneOf offerer selector options -> 
+                if participant == offerer then 
+                     LocalType.offer offerer selector options
+                else if participant == selector then 
+                     LocalType.select selector offerer options
+                else 
+                    LocalType.end 
+            
 
             GlobalType.R nestedGlobalType -> 
                 recurse nestedGlobalType 

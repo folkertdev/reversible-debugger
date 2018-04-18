@@ -3,6 +3,7 @@ module Semantics where
 
 import Control.Monad.State as State
 import Control.Monad.Except as Except
+import Control.Arrow (first)
 
 import LocalType (LocalType, LocalTypeState, TypeContextF(Selected, Offered), Location, Participant, Identifier, Choice(..))
 import qualified LocalType
@@ -13,8 +14,10 @@ import Data.Maybe (fromMaybe)
 import Data.Map as Map (Map)
 import qualified Data.Map as Map
 import Data.Fix as Fix
+import Data.List as List
 
 import Types ((|>))
+import qualified Zipper
 
 import Elm
 import Data.Proxy
@@ -207,32 +210,69 @@ forward location participant program monitor =
         (Receive owner visibleName continuation, _) ->
             checkAndPerformReceive location participant monitor owner visibleName continuation 
 
-        (IfThenElse condition thenBlock elseBlock, _) -> 
+        (Select owner options, _) -> 
             case localType of 
-                LocalType.Select thenType elseType -> do
-                    conditionValue <- evaluateValue participant condition
-                    case conditionValue of 
-                        VBool True -> 
+                LocalType.Select expectedOwner offerer types -> do
+                    ensure (owner == expectedOwner) (error $ "Select owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
+
+                    let f :: (Value, Program Value, c) -> Session Value (Bool, Value, Program Value, c) 
+                        f (value, program, c) = do
+                            evaluated <- evaluateValue participant value
+                            return (unsafeCastToBool evaluated, value, program, c) 
+                    
+                        options_ = List.zipWith (\(a,b) c -> (a,b,c)) options types
+
+                    evaluated :: List (Bool, Value, Program Value, LocalType String) <- mapM f options_
+                    case break (\(condition, _, _,_) -> condition) evaluated of 
+                        (notTaken, []) -> 
+                            -- there are no valid options, now what?
+                            undefined
+
+                        (notTaken, taken@(_, _, takenProgram, takenType):alsoNotTaken) -> 
+                            -- v is likely broken, fix later
+
                             let 
-                                newLocalType = (Fix $ LocalType.Selected condition True (elseBlock, elseType) previous, thenType ) 
+                                f (a,b,c,d) = (b,c,d)
+                                selection = Zipper.fromSegments (f <$> notTaken) (f taken) (f <$> alsoNotTaken)
+                                newLocalType = (LocalType.backwardSelect owner offerer selection previous, takenType)
                                 newMonitor = 
                                     monitor { _localType = newLocalType }  
-                            in 
-                                setParticipant location participant ( newMonitor, thenBlock ) 
-
-                        VBool False -> 
-                            let 
-                                newLocalType = (Fix $ LocalType.Selected condition False (thenBlock, thenType) previous, elseType ) 
-                                newMonitor = 
-                                    monitor { _localType = newLocalType }  
-                            in 
-                                setParticipant location participant ( newMonitor, elseBlock ) 
-
-                        _ -> error "condition is not a bool"
+                            in do
+                                push ( participant, offerer, VLabel (length notTaken) )
+                                setParticipant location participant ( newMonitor, takenProgram ) 
 
                 _ -> 
-                    error $ "IfThenElse needs a LocalType.Choice, but got " ++ show localType
+                    error $ "Select needs a LocalType.Select, but got " ++ show localType
 
+        (Offer owner options, _) -> 
+            case localType of 
+                LocalType.Offer expectedOwner selector types -> do
+                    ensure (owner == expectedOwner) (error $ "Offer: owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
+
+                    ( s, r, VLabel index ) <- pop
+
+                    case (,) <$> atIndex index options <*> atIndex index types of  
+                        Nothing ->
+                            -- there are no valid options, now what?
+                            undefined
+
+                        Just (program, tipe) -> 
+                            let 
+                                combined = List.zip options types
+
+                                notChosen = (/= (program, tipe))
+                                selection = Zipper.fromSegments (takeWhile notChosen combined) (program, tipe) (drop 1 $ dropWhile notChosen combined)
+
+                                newLocalType = 
+                                    (LocalType.backwardOffer owner selector selection previous, tipe)
+
+                                newMonitor = 
+                                    monitor { _localType = newLocalType }  
+                            in 
+                                setParticipant location participant ( newMonitor, program ) 
+
+                _ -> 
+                    error $ "Offer needs a LocalType.Offer, but got " ++ show localType
         
         (Application functionName argument, _) -> do
             functionValue <- lookupVariable participant functionName 
@@ -316,7 +356,7 @@ checkAndPerformSend location participant monitor owner payload continuation =
                         ( Fix $ LocalType.BackwardSend owner target tipe previous 
                         , continuationType
                         ) 
-                push $ Debug.traceShow localType ( participant, target, value )
+                push ( participant, target, value )
                 setParticipant location participant (monitor { _localType = newLocalTypeState }, continuation)
 
             _ -> 
@@ -378,7 +418,11 @@ checkAndPerformReceive location participant monitor owner visibleName continuati
 
 
 checkSynchronized :: Participant -> Participant -> Session value ()
-checkSynchronized sender receiver = return () 
+checkSynchronized sender receiver = return ()  -- TODO
+
+
+checkSynchronizedForChoice :: Participant -> Participant -> Session value ()
+checkSynchronizedForChoice offerer selector = return ()  -- TODO
 
 
 backward :: Location -> Participant -> Program value -> Monitor value String -> Session value ()  
@@ -422,23 +466,40 @@ backward location participant program monitor =
         LocalType.SendOrReceive _ _ -> 
             error "satisfy the exhaustiveness checker"
 
-        LocalType.Selected { condition, verdict, otherBranch, continuation } -> 
-            let (otherBody, otherType) = otherBranch in
-            setParticipant_ location participant 
-                ( monitor { _localType = ( continuation,  
-                  if verdict then 
-                        Fix $ LocalType.Select next otherType 
-                  else
-                        Fix $ LocalType.Select otherType next
-                                         )}
-                , if verdict then 
-                             Semantics.IfThenElse condition program otherBody
-                    else
-                             Semantics.IfThenElse condition otherBody program
-                )
+        LocalType.Selected { owner, offerer, selection, continuation } -> do
+            -- pop from the future! (not history; rolling the receive will put the action into the future)
+            (expectedOfferer, expectedSelector, _ ) <- pop
+            if participant == owner && offerer == expectedOfferer && owner == expectedSelector then do 
+                checkSynchronizedForChoice offerer owner 
+                let 
+                    combined = Zipper.toList selection 
+                    types = List.map (\(_,_,t) -> t) combined
+                    options = List.map (\(condition, program, _) -> (condition, program)) combined
 
-        LocalType.Offered { otherOption, continuation } -> 
-            setParticipant_ location participant undefined -- TODO fix this
+                setParticipant_ location participant 
+                    ( monitor { _localType = ( continuation,  LocalType.select owner offerer types )}
+                    , Semantics.Select owner options 
+                    )
+
+            else 
+                Except.throwError InvalidBackwardQueueItem 
+
+        LocalType.Offered { owner, selector, picked, continuation } -> do
+            ( expectedOfferer, expectedSelector, _ ) <- popHistory 
+            if owner == participant && owner == expectedOfferer && selector == expectedSelector then do
+                -- check whether the session types line up, before rolling
+                checkSynchronizedForChoice owner selector 
+                let 
+                    combined = Zipper.toList picked 
+                    (programs, types) = List.unzip combined
+
+                setParticipant_ location participant 
+                    ( monitor { _localType = ( continuation,  LocalType.offer owner selector types )}
+                    , Semantics.Offer owner programs 
+                    )
+
+            else 
+                Except.throwError InvalidBackwardQueueItem 
 
         LocalType.Application k rest ->
             case Map.lookup k (_applicationHistory monitor) of 
@@ -513,10 +574,12 @@ backward location participant program monitor =
 data ProgramF value f 
     = Send { owner :: Participant, value :: value, continuation :: f }
     | Receive { owner :: Participant, variableName :: Identifier, continuation :: f  }
+    | Offer Participant (List f)
+    | Select Participant (List (value, f))
     | Parallel f f 
     | Application Identifier value
     | Let Identifier value f 
-    | IfThenElse value f f
+    -- | IfThenElse value f f
     | Literal value -- needed to define multi-parameter functions
     | NoOp
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable, ToJSON, FromJSON, ElmType)
@@ -543,8 +606,14 @@ applyFunction functionName argument = Fix $ Application functionName argument
 literal :: value -> Program value
 literal = Fix . Literal
 
-ifThenElse :: value -> Program value -> Program value -> Program value
-ifThenElse condition thenBranch elseBranch = Fix $ IfThenElse condition thenBranch elseBranch
+-- ifThenElse :: value -> Program value -> Program value -> Program value
+-- ifThenElse condition thenBranch elseBranch = Fix $ IfThenElse condition thenBranch elseBranch
+
+select :: Participant -> List (value, Program value) -> Program value
+select owner options = Fix $ Select owner options
+
+offer :: Participant -> List (Program value) -> Program value
+offer owner options = Fix $ Offer owner options
 
 letBinding :: Identifier -> value -> Program value -> Program value
 letBinding name value cont = Fix $ Let name value cont
@@ -608,9 +677,15 @@ data Value
     | VUnit
     | VFunction Identifier (Program Value)
     | VReference Identifier 
+    | VLabel Int
     deriving (Eq, Show, Generic, ToJSON, FromJSON, ElmType)
 
 deriving instance ElmType Ordering
+
+unsafeCastToBool value = 
+    case value of 
+        VBool b -> b
+        _ -> error "value is not a bool"
 
 renameValue :: Identifier -> Identifier -> Value -> Value
 renameValue old new value = 
@@ -660,8 +735,8 @@ renameVariable old new program =
                 Let variableName value continuation ->  
                     Let variableName (renameValue old new value) continuation
 
-                IfThenElse value thenBlock elseBlock -> 
-                    IfThenElse (renameValue old new value) thenBlock elseBlock 
+                Select owner options -> 
+                    Select owner $ List.map (\(condition, program) -> (renameValue old new condition, program)) options
 
                 Send owner variable cont ->
                     Send owner (renameValue old new variable) cont
@@ -673,35 +748,6 @@ renameVariable old new program =
                     instruction
     in
         Fix.cata (Fix . helper) program 
-
-
-createClosure :: Participant -> Program Value -> Session Value (Program Value)
-createClosure participant program = 
-    let 
-        helper instruction = 
-            case instruction of 
-                Let variableName value continuation -> do
-                    evaluated <- evaluateValue participant value
-                    pure $ Let variableName evaluated continuation
-
-                Send owner value cont -> do
-                    evaluated <- evaluateValue participant value
-                    pure $ Send owner evaluated cont
-
-                Literal value -> do
-                    evaluated <- evaluateValue participant value
-                    pure $ Literal evaluated
-
-                IfThenElse condition thenBlock elseBlock -> do
-                    evaluated <- evaluateValue participant condition 
-                    pure $ IfThenElse evaluated thenBlock elseBlock
-
-
-                _ -> 
-                    pure instruction
-
-    in 
-        Fix.cataM (fmap Fix . helper) program
 
 
 chaseReference :: Participant -> Value -> Session Value Value 
@@ -845,3 +891,8 @@ dequeueHistory queue@Queue{ history, current } =
         (x:xs) -> 
             Just ( x, queue { current = x : current, history = xs } )
 
+atIndex :: Int -> List a -> Maybe a
+atIndex 0 (x:xs) = Just x
+atIndex n (x:xs) = atIndex (n - 1) xs
+atIndex _ [] = Nothing 
+        

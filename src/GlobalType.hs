@@ -18,6 +18,7 @@ type GlobalType u = Fix (GlobalTypeF u)
 
 data GlobalTypeF u f
     = Transaction { from :: Participant, to :: Participant, tipe :: u, continuation ::  f } 
+    | OneOf { from :: Participant, to :: Participant, options :: List f }
     | R f
     | V
     | Wk f
@@ -26,6 +27,9 @@ data GlobalTypeF u f
 
 transaction :: Participant -> Participant -> tipe -> GlobalType tipe -> GlobalType tipe
 transaction from to tipe cont = Fix (Transaction from to tipe cont)
+
+oneOf :: Participant -> Participant -> List (GlobalType tipe) -> GlobalType tipe
+oneOf from to options = Fix (OneOf from to options)
 
 recurse :: GlobalType a -> GlobalType a 
 recurse cont = Fix (R cont)
@@ -47,6 +51,9 @@ participants =
         case global of 
             Transaction p1 p2 _ cont -> 
                 Set.fromList [ p1, p2 ] <> cont
+
+            OneOf p1 p2 conts -> 
+                Set.fromList [ p1, p2 ] <> mconcat conts
 
             R cont -> 
                 cont
@@ -89,7 +96,7 @@ forgetState (crumbs, left) = Foldable.foldr (flip unCrumb) left crumbs
 nested :: GlobalType u -> List (GlobalType u)
 nested = Foldable.toList . unFix
 
-
+{-
 crumble :: GlobalType u -> ( GlobalType.Crumb u, GlobalType u ) 
 crumble global = 
     case unFix global of 
@@ -97,6 +104,12 @@ crumble global =
             ( Before (Transaction p1 p2 tipe ())
             , cont 
             )
+
+        OneOf p1 p2 conts -> 
+            ( Before (OneOf p1 p2 conts) 
+            , cont 
+            )
+
 
         R cont -> 
             ( Before (R ())
@@ -172,4 +185,4 @@ backward ( crumbs, left ) =
 
         ( Offered p q : rest ) -> 
             ( rest, unCrumb left (Offered p q) ) 
-        
+ -}       
