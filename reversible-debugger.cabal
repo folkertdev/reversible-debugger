@@ -39,6 +39,7 @@ library
                      , Recursive
                      , NestedDelegation
                      , ParallelDelegation
+                     , Zipper
                      , Queue
   other-modules:       Utils
                      , Utils.Maybe

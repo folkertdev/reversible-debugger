@@ -316,7 +316,7 @@ forward location participant program monitor =
             let newLocalType = (Fix $ LocalType.Assignment visibleName variableName previous, fixedLocal) 
                 newMonitor = 
                     monitor 
-                        { _store = Map.insert variableName value (_store monitor)
+                        { _store = Map.insert variableName (renameValue visibleName variableName value) (_store monitor)
                         , _localType = newLocalType
                         }  
             
@@ -698,6 +698,14 @@ renameValue old new value =
 
         VComparison a op b -> 
             VComparison (renameValue old new a) op (renameValue old new b) 
+
+        VFunction argumentName program -> 
+            if old == argumentName then
+                -- variable shadowing
+                VFunction argumentName program
+
+            else
+                VFunction argumentName (renameVariable old new program)
 
         _ -> 
             value

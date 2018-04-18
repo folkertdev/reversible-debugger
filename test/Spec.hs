@@ -61,7 +61,7 @@ testBackward = describe "backward" $ do
         in do
             forwardN ["A", "B"] state `shouldBe` Right newState
             (backwardN [ "B", "A" ] =<< forwardN ["A", "B"] state) `shouldBe` Right state
-
+    {- 
     it "IfThenElse behaves for then" $ 
         let thenType = LocalType.send "A" "B" "unit" LocalType.end
             elseType = LocalType.send "A" "C" "unit" LocalType.end
@@ -86,6 +86,7 @@ testBackward = describe "backward" $ do
         in do
             forwardN ["A"] state `shouldBe` Right newState
             (backwardN [ "A" ] =<< forwardN ["A"] state) `shouldBe` Right state
+       -}
 
 
 
@@ -109,6 +110,18 @@ testForward = describe "forward_" $ do
             state = executionState emptyQueue [("A", monitor, Semantics.literal VUnit)]
 
             newState = executionState emptyQueue [("A", monitor, Semantics.terminate)]
+        in
+            forwarder state `shouldBe` Right newState 
+
+    it "let renames in function bodies" $ 
+        let monitor = createMonitor (id, LocalType.end) Map.empty
+            newMonitor = createMonitor (Fix . LocalType.Assignment "x" "v0" , LocalType.end) (Map.singleton "v0" (VFunction "_" (Fix (Application "v0" VUnit))))
+
+            program = letBinding "x" (VFunction "_" $ applyFunction "x" VUnit) $ applyFunction "x" VUnit 
+
+            state = executionState emptyQueue [("A", monitor, program)] 
+
+            newState = executionState emptyQueue [("A", newMonitor, applyFunction "v0" VUnit )]
         in
             forwarder state `shouldBe` Right newState 
 
@@ -145,6 +158,7 @@ testForward = describe "forward_" $ do
         in
             forwarderN [ "A", "B" ] state `shouldBe` Right newState 
 
+    {-
     it "IfThenElse behaves for then" $ 
         let thenType = LocalType.send "A" "B" "unit" LocalType.end
             elseType = LocalType.send "A" "C" "unit" LocalType.end
@@ -167,7 +181,7 @@ testForward = describe "forward_" $ do
                 ]
         in
             forwarderN [ "A" ] state `shouldBe` Right newState 
-
+    -}
 testRenameVariable = describe "renameVariable" $ do
     let renamer = renameVariable "x" "y" 
 
@@ -178,6 +192,8 @@ testRenameVariable = describe "renameVariable" $ do
         renamer (Semantics.applyFunction "f" (VReference "x")) 
             `shouldBe` Semantics.applyFunction "f" (VReference "y")
 
+
+
     it "renames in assignment right-hand side" $
         renamer (Semantics.letBinding "v" (VReference "x") Semantics.terminate)
             `shouldBe` Semantics.letBinding "v" (VReference "y") Semantics.terminate
@@ -185,20 +201,23 @@ testRenameVariable = describe "renameVariable" $ do
     it "renames in send payload right-hand side" $
         renamer (Semantics.send "owner" (VReference "x") Semantics.terminate)
             `shouldBe` Semantics.send "owner" (VReference "y") Semantics.terminate
-
+    {-
     it "renames in IfThenElse condition" $
         renamer (Semantics.ifThenElse (VReference "x") Semantics.terminate Semantics.terminate)
             `shouldBe` Semantics.ifThenElse (VReference "y") Semantics.terminate Semantics.terminate
+    -}
 
     it "renames in literal" $
         renamer (Semantics.literal (VReference "x")) 
             `shouldBe` Semantics.literal (VReference "y") 
 
+    {-
     it "renames in nested condition" $
         let lit = Semantics.literal . VReference
         in
         renamer (Semantics.ifThenElse (VReference "q") (lit "x") (lit "x"))
             `shouldBe` Semantics.ifThenElse (VReference "q") (lit "y") (lit "y") 
+    -}
 
 createMonitor :: ( TypeContext (Program Value) Value String -> TypeContext (Program Value) Value  String
                  , LocalType String

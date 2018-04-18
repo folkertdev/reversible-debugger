@@ -46,7 +46,7 @@ alice =
             VFunction "x" 
                 $ send "A" (VReference "x")
                 $ Semantics.offer "A"
-                    [  applyFunction "v0" decremented 
+                    [  applyFunction "thunk" decremented 
                     , Semantics.terminate
                     ]
     in 
@@ -61,7 +61,7 @@ bob =
         thunk = VFunction "x" 
             $ Semantics.receive "B" "received"
             $ Semantics.select "B"
-                [ (comparison, applyFunction "v2" VUnit) 
+                [ (comparison, applyFunction "thunk" VUnit) 
                 , (VBool True, Semantics.terminate)
                 ]
     in 
