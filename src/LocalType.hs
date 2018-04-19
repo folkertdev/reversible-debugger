@@ -22,8 +22,8 @@ type Location = String
 type LocalType u = Fix (LocalTypeF u)
 
 data Choice u f 
-    = COffer { owner :: Participant, selector :: Participant, options :: List (LocalType u) }
-    | CSelect { owner :: Participant, offerer :: Participant, options :: List (LocalType u) }
+    = COffer { owner :: Participant, selector :: Participant, options :: Map String (LocalType u) }
+    | CSelect { owner :: Participant, offerer :: Participant, options :: Map String (LocalType u) }
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 data LocalTypeF u f 
@@ -61,6 +61,10 @@ pattern RecursionPoint rest = Atom (R rest)
 pattern WeakenRecursion rest = Atom (Wk rest)
 pattern RecursionVariable = Atom V
 
+pattern BackwardRecursionPoint rest = SendOrReceive (Atom (R ())) rest
+pattern BackwardWeakenRecursion rest = SendOrReceive (Atom (Wk ())) rest
+pattern BackwardRecursionVariable rest = SendOrReceive (Atom V) rest
+
 pattern Offer  owner selector options = Choice (COffer owner selector options)
 pattern Select owner offerer  options = Choice (CSelect owner offerer options)
 
@@ -74,13 +78,13 @@ data TypeContextF program value a f
     | Selected 
         { owner :: Participant
         , offerer :: Participant 
-        , selection :: Zipper (value, program, LocalType a)
+        , selection :: Zipper (String, value, program, LocalType a)
         , continuation :: f 
         }
     | Offered 
         { owner :: Participant
         , selector :: Participant 
-        , picked :: Zipper (program, LocalType a)
+        , picked :: Zipper (String, program, LocalType a)
         , continuation :: f 
         }
     | Application Identifier f 
@@ -105,7 +109,7 @@ backwardReceive owner sender tipe visibleName variableName base =
 
 backwardSelect :: Participant
                -> Participant
-               -> Zipper (v, p, LocalType u) 
+               -> Zipper (String, v, p, LocalType u) 
                -> TypeContext p v u 
                -> TypeContext p v u
 backwardSelect owner offerer selection continuation =  
@@ -113,7 +117,7 @@ backwardSelect owner offerer selection continuation =
 
 backwardOffer :: Participant 
               -> Participant
-              -> Zipper (p, LocalType u) 
+              -> Zipper (String, p, LocalType u) 
               -> TypeContext p v u 
               -> TypeContext p v u
 backwardOffer owner selector picked continuation = 
@@ -145,13 +149,13 @@ send owner sender tipe = Fix . Transaction . TSend owner sender tipe
 receive :: Participant -> Participant -> u -> LocalType u -> LocalType u 
 receive owner receiver tipe = Fix . Transaction . TReceive owner receiver Nothing tipe
 
-offer :: Participant -> Participant -> List (LocalType u) -> LocalType u 
+offer :: Participant -> Participant -> List (String, LocalType u) -> LocalType u 
 offer owner offerer options = 
-    Fix $ Offer owner offerer options
+    Fix $ Offer owner offerer (Map.fromList options)
 
-select :: Participant -> Participant -> List (LocalType u) -> LocalType u 
+select :: Participant -> Participant -> List (String, LocalType u) -> LocalType u 
 select owner selector options = 
-    Fix $ Select owner selector options
+    Fix $ Select owner selector (Map.fromList options)
 
 
 projections :: GlobalType u -> Map Participant (LocalType u)
@@ -175,9 +179,9 @@ project participant =
 
             GlobalType.OneOf offerer selector options -> 
                 if participant == offerer then 
-                     LocalType.offer offerer selector options
+                    LocalType.offer offerer selector (Map.toList options)
                 else if participant == selector then 
-                     LocalType.select selector offerer options
+                    LocalType.select selector offerer (Map.toList options)
                 else 
                     LocalType.end 
             

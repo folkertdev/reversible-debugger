@@ -37,6 +37,7 @@ library
                      , Semantics
                      , ThreeBuyer
                      , Recursive
+                     , RecursiveChoice
                      , NestedDelegation
                      , ParallelDelegation
                      , Zipper

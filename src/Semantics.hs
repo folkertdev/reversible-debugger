@@ -15,6 +15,7 @@ import Data.Map as Map (Map)
 import qualified Data.Map as Map
 import Data.Fix as Fix
 import Data.List as List
+import Data.Maybe as Maybe
 
 import Types ((|>))
 import qualified Zipper
@@ -143,7 +144,7 @@ data Error
     | EmptyQueue
     | EmptyQueueHistory
     | InvalidQueueItem
-    | InvalidBackwardQueueItem 
+    | InvalidBackwardQueueItem String
     deriving (Eq, Show)
 
 
@@ -193,7 +194,7 @@ forward location participant program monitor =
                         x:xs -> 
                             x
 
-                newLocalType = (Fix $ LocalType.SendOrReceive (LocalType.WeakenRecursion ()) previous, continuationType) 
+                newLocalType = (Fix $ LocalType.BackwardRecursionVariable previous, continuationType) 
                 newMonitor = 
                     monitor 
                         { _localType = newLocalType
@@ -215,30 +216,33 @@ forward location participant program monitor =
                 LocalType.Select expectedOwner offerer types -> do
                     ensure (owner == expectedOwner) (error $ "Select owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
 
-                    let f :: (Value, Program Value, c) -> Session Value (Bool, Value, Program Value, c) 
-                        f (value, program, c) = do
+                    let f :: (String, Value, Program Value, c) -> Session Value (String, Bool, Value, Program Value, c) 
+                        f (label, value, program, c) = do
                             evaluated <- evaluateValue participant value
-                            return (unsafeCastToBool evaluated, value, program, c) 
+                            return (label, unsafeCastToBool evaluated, value, program, c) 
                     
-                        options_ = List.zipWith (\(a,b) c -> (a,b,c)) options types
+                        options_ = -- List.zipWith (\(a,b) c -> (a,b,c)) options types
+                            options
+                                |> List.map (\(l, v, p) -> (\t -> (l, v,p,t)) <$> Map.lookup l types)
+                                |> Maybe.catMaybes
 
-                    evaluated :: List (Bool, Value, Program Value, LocalType String) <- mapM f options_
-                    case break (\(condition, _, _,_) -> condition) evaluated of 
+                    evaluated :: List (String, Bool, Value, Program Value, LocalType String) <- mapM f options_
+                    case break (\(_, condition, _, _,_) -> condition) evaluated of 
                         (notTaken, []) -> 
                             -- there are no valid options, now what?
                             undefined
 
-                        (notTaken, taken@(_, _, takenProgram, takenType):alsoNotTaken) -> 
+                        (notTaken, taken@(takenLabel, _, takenCondition, takenProgram, takenType):alsoNotTaken) -> 
                             -- v is likely broken, fix later
 
                             let 
-                                f (a,b,c,d) = (b,c,d)
+                                f (l, a,b,c,d) = (l, b,c,d)
                                 selection = Zipper.fromSegments (f <$> notTaken) (f taken) (f <$> alsoNotTaken)
                                 newLocalType = (LocalType.backwardSelect owner offerer selection previous, takenType)
                                 newMonitor = 
                                     monitor { _localType = newLocalType }  
                             in do
-                                push ( participant, offerer, VLabel (length notTaken) )
+                                push ( offerer, participant, VLabel takenLabel )
                                 setParticipant location participant ( newMonitor, takenProgram ) 
 
                 _ -> 
@@ -249,19 +253,22 @@ forward location participant program monitor =
                 LocalType.Offer expectedOwner selector types -> do
                     ensure (owner == expectedOwner) (error $ "Offer: owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
 
-                    ( s, r, VLabel index ) <- pop
+                    ( s, r, VLabel label ) <- pop
 
-                    case (,) <$> atIndex index options <*> atIndex index types of  
+                    case (,) <$> Map.lookup label (Map.fromList options) <*> Map.lookup label types of  
                         Nothing ->
                             -- there are no valid options, now what?
                             undefined
 
                         Just (program, tipe) -> 
                             let 
-                                combined = List.zip options types
+                                combined = 
+                                    options
+                                        |> List.map (\(l, p) -> (\t -> (l, p, t)) <$> Map.lookup l types)
+                                        |> Maybe.catMaybes
 
-                                notChosen = (/= (program, tipe))
-                                selection = Zipper.fromSegments (takeWhile notChosen combined) (program, tipe) (drop 1 $ dropWhile notChosen combined)
+                                notChosen (l, _,_) = l /= label
+                                selection = Zipper.fromSegments (takeWhile notChosen combined) (label, program, tipe) (drop 1 $ dropWhile notChosen combined)
 
                                 newLocalType = 
                                     (LocalType.backwardOffer owner selector selection previous, tipe)
@@ -447,7 +454,7 @@ backward location participant program monitor =
                     , Semantics.Send { owner = owner, value = payload, continuation = program } 
                     )
             else 
-                Except.throwError InvalidBackwardQueueItem 
+                Except.throwError $ InvalidBackwardQueueItem "in BackwardSend"
     
         LocalType.BackwardReceive owner sender visibleName variableName tipe rest -> do 
             ( source, target, payload ) <- popHistory 
@@ -461,7 +468,7 @@ backward location participant program monitor =
                     , Semantics.Receive { owner = owner, variableName = visibleName, continuation = program } 
                     )
             else 
-                Except.throwError InvalidBackwardQueueItem 
+                Except.throwError $ InvalidBackwardQueueItem "in BackwardReceive"
 
         LocalType.SendOrReceive _ _ -> 
             error "satisfy the exhaustiveness checker"
@@ -473,8 +480,11 @@ backward location participant program monitor =
                 checkSynchronizedForChoice offerer owner 
                 let 
                     combined = Zipper.toList selection 
-                    types = List.map (\(_,_,t) -> t) combined
-                    options = List.map (\(condition, program, _) -> (condition, program)) combined
+                    types = List.map (\(l, _,_,t) -> (l, t)) combined 
+                    options = List.map (\(label, condition, program, _) -> (label, condition, program)) combined
+
+                -- remove this offer/select combo from the queue
+                queueRemoveHistory
 
                 setParticipant_ location participant 
                     ( monitor { _localType = ( continuation,  LocalType.select owner offerer types )}
@@ -482,7 +492,7 @@ backward location participant program monitor =
                     )
 
             else 
-                Except.throwError InvalidBackwardQueueItem 
+                Except.throwError $ InvalidBackwardQueueItem "in Selected" 
 
         LocalType.Offered { owner, selector, picked, continuation } -> do
             ( expectedOfferer, expectedSelector, _ ) <- popHistory 
@@ -491,7 +501,10 @@ backward location participant program monitor =
                 checkSynchronizedForChoice owner selector 
                 let 
                     combined = Zipper.toList picked 
-                    (programs, types) = List.unzip combined
+                    (programs, types) =
+                       combined
+                            |> List.map (\(label, program, tipe) -> ((label, program), (label, tipe)))
+                            |> List.unzip
 
                 setParticipant_ location participant 
                     ( monitor { _localType = ( continuation,  LocalType.offer owner selector types )}
@@ -499,7 +512,7 @@ backward location participant program monitor =
                     )
 
             else 
-                Except.throwError InvalidBackwardQueueItem 
+                Except.throwError $ InvalidBackwardQueueItem $ "in Offered" ++ show ((owner, participant), (owner, expectedOfferer) , (selector, expectedSelector))
 
         LocalType.Application k rest ->
             case Map.lookup k (_applicationHistory monitor) of 
@@ -568,14 +581,51 @@ backward location participant program monitor =
                     , Semantics.Literal value 
                     )
 
+        LocalType.BackwardRecursionPoint rest -> 
+            let
+                newMonitor = 
+                    monitor 
+                        { _localType = (rest, next)
+                        }  
+            in
+                setParticipant_ location participant 
+                    ( newMonitor
+                    , unFix program 
+                    )
+
+        LocalType.BackwardWeakenRecursion rest -> 
+            let
+                newMonitor = 
+                    monitor 
+                        { _localType = (rest, next)
+                        }  
+            in
+                setParticipant_ location participant 
+                    ( newMonitor
+                    , unFix program 
+                    )
+
+        LocalType.BackwardRecursionVariable rest -> 
+            let
+                Just newType = atIndex (_recursiveVariableNumber monitor) (_recursionPoints monitor) 
+                newMonitor = 
+                    monitor 
+                        { _localType = (rest, newType)
+                        }  
+            in
+                setParticipant_ location participant 
+                    ( newMonitor
+                    , unFix program 
+                    )
+
         LocalType.Hole -> 
             return () 
 
 data ProgramF value f 
     = Send { owner :: Participant, value :: value, continuation :: f }
     | Receive { owner :: Participant, variableName :: Identifier, continuation :: f  }
-    | Offer Participant (List f)
-    | Select Participant (List (value, f))
+    | Offer Participant (List (String, f))
+    | Select Participant (List (String, value, f))
     | Parallel f f 
     | Application Identifier value
     | Let Identifier value f 
@@ -583,6 +633,8 @@ data ProgramF value f
     | Literal value -- needed to define multi-parameter functions
     | NoOp
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable, ToJSON, FromJSON, ElmType)
+
+deriving instance (ElmType a, ElmType b, ElmType c) => ElmType (a,b,c)
 
 run :: List (Program value -> Program value) -> Program value
 run = foldr ($) terminate
@@ -609,10 +661,10 @@ literal = Fix . Literal
 -- ifThenElse :: value -> Program value -> Program value -> Program value
 -- ifThenElse condition thenBranch elseBranch = Fix $ IfThenElse condition thenBranch elseBranch
 
-select :: Participant -> List (value, Program value) -> Program value
+select :: Participant -> List (String, value, Program value) -> Program value
 select owner options = Fix $ Select owner options
 
-offer :: Participant -> List (Program value) -> Program value
+offer :: Participant -> List (String, Program value) -> Program value
 offer owner options = Fix $ Offer owner options
 
 letBinding :: Identifier -> value -> Program value -> Program value
@@ -677,7 +729,7 @@ data Value
     | VUnit
     | VFunction Identifier (Program Value)
     | VReference Identifier 
-    | VLabel Int
+    | VLabel String
     deriving (Eq, Show, Generic, ToJSON, FromJSON, ElmType)
 
 deriving instance ElmType Ordering
@@ -744,7 +796,7 @@ renameVariable old new program =
                     Let variableName (renameValue old new value) continuation
 
                 Select owner options -> 
-                    Select owner $ List.map (\(condition, program) -> (renameValue old new condition, program)) options
+                    Select owner $ List.map (\(label, condition, program) -> (label, renameValue old new condition, program)) options
 
                 Send owner variable cont ->
                     Send owner (renameValue old new variable) cont

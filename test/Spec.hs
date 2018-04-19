@@ -14,10 +14,13 @@ import Semantics (Monitor(..), ExecutionState(..), Program, ProgramF(..), Value(
 import qualified Semantics
 import LocalType (LocalType, TypeContext) 
 import qualified LocalType 
+import qualified GlobalType 
 
 import qualified Data.Map as Map
 import Data.List as List
 import Data.Fix
+
+import qualified RecursiveChoice
 
 main :: IO ()
 main = hspec $ describe "all" $ do 
@@ -41,7 +44,8 @@ testBackward = describe "backward" $ do
                 Right v -> backwardN ps v
 
     it "send/receive behaves" $ 
-        let monitor1 = createMonitor (id, LocalType.send    "A" "B" "unit" LocalType.end) Map.empty
+        let 
+            monitor1 = createMonitor (id, LocalType.send    "A" "B" "unit" LocalType.end) Map.empty
             monitor2 = createMonitor (id, LocalType.receive "B" "A" "unit" LocalType.end) Map.empty
             state = executionState emptyQueue
                 [("A", monitor1, Semantics.send "A" VUnit Semantics.terminate)
@@ -88,7 +92,64 @@ testBackward = describe "backward" $ do
             (backwardN [ "A" ] =<< forwardN ["A"] state) `shouldBe` Right state
        -}
 
+    it "choise behaves" $ 
+        let 
+            monitor1 = createMonitor (id, RecursiveChoice.localTypes Map.! "A") Map.empty
+            monitor2 = createMonitor (id, RecursiveChoice.localTypes Map.! "B") Map.empty
 
+            state = executionState emptyQueue
+                [ ("A", monitor1, RecursiveChoice.alice)
+                , ("B", monitor2, RecursiveChoice.bob) 
+                ]
+
+        in do
+            let Right base = forwardN [ "A", "A", "A", "B", "B", "B" ] state
+            (backwardN [ "A", "B" ] =<< forwardN ["B", "A" ] base) `shouldBe` Right base
+
+    it "recursion behaves" $ 
+        let 
+            monitor1 = createMonitor (id, RecursiveChoice.localTypes Map.! "A") Map.empty
+            monitor2 = createMonitor (id, RecursiveChoice.localTypes Map.! "B") Map.empty
+
+            state = executionState emptyQueue
+                [ ("A", monitor1, RecursiveChoice.alice)
+                , ("B", monitor2, RecursiveChoice.bob) 
+                ]
+
+        in do
+            let Right base = forwardN [ "A", "A", "A", "B", "B", "B", "B", "A"] state
+            (backwardN [ "A" ] =<< forwardN [ "A" ] base) `shouldBe` Right base
+
+
+    it "recursion behaves 2" $ 
+        let 
+            monitor1 = createMonitor (id, RecursiveChoice.localTypes Map.! "A") Map.empty
+            monitor2 = createMonitor (id, RecursiveChoice.localTypes Map.! "B") Map.empty
+
+            state = executionState emptyQueue
+                [ ("A", monitor1, RecursiveChoice.alice)
+                , ("B", monitor2, RecursiveChoice.bob) 
+                ]
+
+        in do
+            let Right base = forwardN [ "A", "A", "A", "B", "B", "B", "B", "A"] state
+            (backwardN [ ] =<< forwardN [ "A" ] base) `shouldBe` Right base
+
+    it "assignment behaves" $ 
+        let 
+            monitor = createMonitor (id, LocalType.end) Map.empty
+            newMonitor = createMonitor (Fix . LocalType.Assignment "x" "v0", LocalType.end) (Map.singleton "v0" VUnit) 
+
+            state = executionState emptyQueue
+                [("A", monitor, Semantics.letBinding "x" VUnit Semantics.terminate)
+                ]
+
+            newState = executionState emptyQueue
+                [("A", newMonitor, Semantics.terminate)
+                ]
+        in do
+            forwardN ["A"] state `shouldBe` Right newState
+            (backwardN [ "A" ] =<< forwardN [ "A" ] state) `shouldBe` Right state
 
 testForward = describe "forward_" $ do 
     let forwarder = Semantics.forwardTestable "L1" "A" 
@@ -256,3 +317,5 @@ executionState queue values =
                     _ -> Nothing
 
             }
+
+

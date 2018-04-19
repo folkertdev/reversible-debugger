@@ -5,6 +5,7 @@ import GHC.Generics
 
 import qualified Data.Foldable as Foldable
 import Data.Set as Set
+import Data.Map as Map (Map, elems, fromList)
 import Data.Monoid ((<>))
 
 import Data.Fix
@@ -18,7 +19,7 @@ type GlobalType u = Fix (GlobalTypeF u)
 
 data GlobalTypeF u f
     = Transaction { from :: Participant, to :: Participant, tipe :: u, continuation ::  f } 
-    | OneOf { from :: Participant, to :: Participant, options :: List f }
+    | OneOf { from :: Participant, to :: Participant, options :: Map String f }
     | R f
     | V
     | Wk f
@@ -28,8 +29,8 @@ data GlobalTypeF u f
 transaction :: Participant -> Participant -> tipe -> GlobalType tipe -> GlobalType tipe
 transaction from to tipe cont = Fix (Transaction from to tipe cont)
 
-oneOf :: Participant -> Participant -> List (GlobalType tipe) -> GlobalType tipe
-oneOf from to options = Fix (OneOf from to options)
+oneOf :: Participant -> Participant -> List (String, GlobalType tipe) -> GlobalType tipe
+oneOf from to options = Fix (OneOf from to (Map.fromList options))
 
 recurse :: GlobalType a -> GlobalType a 
 recurse cont = Fix (R cont)
@@ -53,7 +54,7 @@ participants =
                 Set.fromList [ p1, p2 ] <> cont
 
             OneOf p1 p2 conts -> 
-                Set.fromList [ p1, p2 ] <> mconcat conts
+                Set.fromList [ p1, p2 ] <> mconcat (Map.elems conts)
 
             R cont -> 
                 cont

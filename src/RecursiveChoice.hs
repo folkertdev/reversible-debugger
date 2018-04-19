@@ -25,14 +25,17 @@ import Semantics (Monitor(..), ExecutionState(..), Program, ProgramF(..), Value(
     , Session, List, forward_, emptyQueue, letBinding, send, run, applyFunction)
 import qualified Semantics
 
+
+
 recursiveGlobalType :: GlobalType.GlobalType String
 recursiveGlobalType = 
     GlobalType.recurse $
         GlobalType.transaction "A" "B" "number" $
             GlobalType.oneOf "A" "B" 
-                [ GlobalType.recursionVariable 
-                , GlobalType.end
+                [ (,) "recurse"  GlobalType.recursionVariable 
+                , (,) "end" GlobalType.end
                 ]
+
 
 localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections recursiveGlobalType 
@@ -46,8 +49,8 @@ alice =
             VFunction "x" 
                 $ send "A" (VReference "x")
                 $ Semantics.offer "A"
-                    [  applyFunction "thunk" decremented 
-                    , Semantics.terminate
+                    [ ("recurse", applyFunction "thunk" decremented)
+                    , ("end", Semantics.terminate)
                     ]
     in 
         letBinding "thunk" thunk $ applyFunction "thunk" (VInt 1)
@@ -61,8 +64,8 @@ bob =
         thunk = VFunction "x" 
             $ Semantics.receive "B" "received"
             $ Semantics.select "B"
-                [ (comparison, applyFunction "thunk" VUnit) 
-                , (VBool True, Semantics.terminate)
+                [ ("recurse", comparison, applyFunction "thunk" VUnit) 
+                , ("end", VBool True, Semantics.terminate)
                 ]
     in 
         letBinding "thunk" thunk $ applyFunction "thunk" VUnit 
@@ -112,10 +115,11 @@ steps =
             forward_ "Location1" "B" 
             forward_ "Location1" "B" 
             forward_ "Location1" "B" 
-            forward_ "Location1" "B" 
 
+            forward_ "Location1" "B" 
             forward_ "Location1" "A" 
 
+            {-
             -- round 2
             forward_ "Location1" "A" 
             forward_ "Location1" "B" 
@@ -130,6 +134,7 @@ steps =
             -- terminate
             forward_ "Location1" "A" 
             forward_ "Location1" "B" 
+            -}
         )
             |> flip State.runStateT executionState
 
