@@ -162,7 +162,7 @@ forward location participant program monitor =
     case ( unFix program, localType) of 
         ( _, LocalType.RecursionPoint rest ) ->
             let 
-                newLocalType = (Fix $ LocalType.SendOrReceive (LocalType.RecursionPoint ()) previous, rest) 
+                newLocalType = (Fix $ LocalType.BackwardRecursionPoint previous, rest) 
                 newMonitor = 
                     monitor 
                         { _recursionPoints = rest : _recursionPoints monitor 
@@ -175,7 +175,7 @@ forward location participant program monitor =
 
         ( _, LocalType.WeakenRecursion rest ) ->
             let 
-                newLocalType = (Fix $ LocalType.SendOrReceive (LocalType.WeakenRecursion ()) previous, rest) 
+                newLocalType = (Fix $ LocalType.BackwardWeakenRecursion previous, rest) 
                 newMonitor = 
                     monitor 
                         { _recursiveVariableNumber = 1 + _recursiveVariableNumber monitor 
@@ -195,6 +195,7 @@ forward location participant program monitor =
                             x
 
                 newLocalType = (Fix $ LocalType.BackwardRecursionVariable previous, continuationType) 
+                -- newLocalType = (previous, continuationType) 
                 newMonitor = 
                     monitor 
                         { _localType = newLocalType
@@ -291,7 +292,7 @@ forward location participant program monitor =
                 Nothing -> error "function is not defined" 
                 Just (variable, body) -> do
                     k <- uniqueApplicationName
-                    let newLocalType = (Fix $ LocalType.Application k previous, fixedLocal) 
+                    let newLocalType = (Fix $ LocalType.Application variableName k previous, fixedLocal) 
                         newMonitor = 
                             monitor 
                                 { _store = Map.insert variableName argumentValue (_store monitor)
@@ -432,7 +433,7 @@ checkSynchronizedForChoice :: Participant -> Participant -> Session value ()
 checkSynchronizedForChoice offerer selector = return ()  -- TODO
 
 
-backward :: Location -> Participant -> Program value -> Monitor value String -> Session value ()  
+backward :: Show value => Location -> Participant -> Program value -> Monitor value String -> Session value ()  
 backward location participant program monitor = 
     let (previous, next) = _localType monitor 
         setParticipant_ l p (m, progF) = setParticipant l p (m, Fix progF)
@@ -470,8 +471,6 @@ backward location participant program monitor =
             else 
                 Except.throwError $ InvalidBackwardQueueItem "in BackwardReceive"
 
-        LocalType.SendOrReceive _ _ -> 
-            error "satisfy the exhaustiveness checker"
 
         LocalType.Selected { owner, offerer, selection, continuation } -> do
             -- pop from the future! (not history; rolling the receive will put the action into the future)
@@ -514,13 +513,17 @@ backward location participant program monitor =
             else 
                 Except.throwError $ InvalidBackwardQueueItem $ "in Offered" ++ show ((owner, participant), (owner, expectedOfferer) , (selector, expectedSelector))
 
-        LocalType.Application k rest ->
+        LocalType.Application variableName k rest ->
             case Map.lookup k (_applicationHistory monitor) of 
                 Nothing -> 
                     error "rolling function that does not exist"
                 Just ( function, argument ) -> 
                     setParticipant_ location participant 
-                        ( monitor { _localType = ( rest, next ), _applicationHistory = Map.delete k (_applicationHistory monitor) } 
+                        ( monitor 
+                            { _localType = ( rest, next )
+                            , _store = Map.delete variableName (_store monitor)
+                            , _applicationHistory = Map.delete k (_applicationHistory monitor) 
+                            } 
                         , Semantics.Application function argument
                         )
 
@@ -585,7 +588,7 @@ backward location participant program monitor =
             let
                 newMonitor = 
                     monitor 
-                        { _localType = (rest, next)
+                        { _localType = (rest, LocalType.recurse next)
                         }  
             in
                 setParticipant_ location participant 
@@ -597,7 +600,7 @@ backward location participant program monitor =
             let
                 newMonitor = 
                     monitor 
-                        { _localType = (rest, next)
+                        { _localType = (rest, LocalType.broadenScope next)
                         }  
             in
                 setParticipant_ location participant 
@@ -607,10 +610,9 @@ backward location participant program monitor =
 
         LocalType.BackwardRecursionVariable rest -> 
             let
-                Just newType = atIndex (_recursiveVariableNumber monitor) (_recursionPoints monitor) 
                 newMonitor = 
                     monitor 
-                        { _localType = (rest, newType)
+                        { _localType = (rest, LocalType.recursionVariable)
                         }  
             in
                 setParticipant_ location participant 
@@ -620,6 +622,9 @@ backward location participant program monitor =
 
         LocalType.Hole -> 
             return () 
+
+        LocalType.SendOrReceive _ _ -> 
+            error $ "satisfy the exhaustiveness checker" ++ show (unFix previous)
 
 data ProgramF value f 
     = Send { owner :: Participant, value :: value, continuation :: f }
@@ -956,3 +961,16 @@ atIndex 0 (x:xs) = Just x
 atIndex n (x:xs) = atIndex (n - 1) xs
 atIndex _ [] = Nothing 
         
+
+{-
+x = 
+    fromList [("A",
+        Monitor 
+            { _localType = (Fix (Transaction (TSend {owner = "A", receiver = "B", tipe = "number", continuation = Fix (Choice (COffer {owner = "A", selector = "B", options = fromList [("end",Fix (Atom End)),("recurse",Fix (Atom V))]}))})))
+            , _recursiveVariableNumber = 0
+            , _recursionPoints = [Fix (Transaction (TSend {owner = "A", receiver = "B", tipe = "number", continuation = Fix (Choice (COffer {owner = "A", selector = "B", options = fromList [("end",Fix (Atom End)),("recurse",Fix (Atom V))]}))}))]
+            , _freeVariables = []
+            , _store = fromList [("v1",VInt 1),("v5",VInt 0)]
+            , _applicationHistory = fromList [("k0",("v0",VInt 1))], _reversible = False})
+             ]
+-}

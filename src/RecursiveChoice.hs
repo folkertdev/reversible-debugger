@@ -117,7 +117,7 @@ steps =
             forward_ "Location1" "B" 
 
             forward_ "Location1" "B" 
-            forward_ "Location1" "A" 
+            -- forward_ "Location1" "A" 
 
             {-
             -- round 2

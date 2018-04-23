@@ -63,7 +63,7 @@ pattern RecursionVariable = Atom V
 
 pattern BackwardRecursionPoint rest = SendOrReceive (Atom (R ())) rest
 pattern BackwardWeakenRecursion rest = SendOrReceive (Atom (Wk ())) rest
-pattern BackwardRecursionVariable rest = SendOrReceive (Atom V) rest
+pattern BackwardRecursionVariable rest = SendOrReceive (Atom V) rest 
 
 pattern Offer  owner selector options = Choice (COffer owner selector options)
 pattern Select owner offerer  options = Choice (CSelect owner offerer options)
@@ -87,7 +87,7 @@ data TypeContextF program value a f
         , picked :: Zipper (String, program, LocalType a)
         , continuation :: f 
         }
-    | Application Identifier f 
+    | Application Identifier Identifier f 
     | Spawning Location Location Location f
     | Assignment { visibleName :: Identifier, internalName :: Identifier, continuation :: f }
     | Literal a f
