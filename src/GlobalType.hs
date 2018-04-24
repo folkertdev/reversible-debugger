@@ -38,6 +38,9 @@ recurse cont = Fix (R cont)
 broadenScope :: GlobalType a -> GlobalType a 
 broadenScope cont = Fix (Wk cont)
 
+weakenRecursion :: GlobalType a -> GlobalType a 
+weakenRecursion cont = Fix (Wk cont)
+
 recursionVariable :: GlobalType a
 recursionVariable = Fix V
 

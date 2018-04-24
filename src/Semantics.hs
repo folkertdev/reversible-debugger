@@ -188,9 +188,11 @@ forward location participant program monitor =
 
         ( _, LocalType.RecursionVariable ) ->
             let 
+                index = _recursiveVariableNumber monitor
+                options = _recursionPoints monitor
                 continuationType = 
-                    case drop (_recursiveVariableNumber monitor) (_recursionPoints monitor) of 
-                        [] -> error "recursion to nothing"
+                    case drop index options of 
+                        [] -> error $ "recursion to nothing, looking for index " ++ show index ++ " in " ++ show options
                         x:xs -> 
                             x
 
@@ -199,7 +201,7 @@ forward location participant program monitor =
                 newMonitor = 
                     monitor 
                         { _localType = newLocalType
-                            , _recursionPoints = take (_recursiveVariableNumber monitor + 1) (_recursionPoints monitor) 
+                        -- , _recursionPoints = take (_recursiveVariableNumber monitor + 1) (_recursionPoints monitor) 
                         }  
                 
             in do
@@ -589,6 +591,7 @@ backward location participant program monitor =
                 newMonitor = 
                     monitor 
                         { _localType = (rest, LocalType.recurse next)
+                        , _recursionPoints = drop 1 (_recursionPoints monitor)
                         }  
             in
                 setParticipant_ location participant 
@@ -600,7 +603,8 @@ backward location participant program monitor =
             let
                 newMonitor = 
                     monitor 
-                        { _localType = (rest, LocalType.broadenScope next)
+                        { _localType = (rest, LocalType.broadenScope next) 
+                        , _recursiveVariableNumber = _recursiveVariableNumber monitor - 1
                         }  
             in
                 setParticipant_ location participant 
@@ -974,3 +978,4 @@ x =
             , _applicationHistory = fromList [("k0",("v0",VInt 1))], _reversible = False})
              ]
 -}
+

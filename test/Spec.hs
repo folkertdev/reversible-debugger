@@ -21,6 +21,7 @@ import Data.List as List
 import Data.Fix
 
 import qualified RecursiveChoice
+import qualified NestedRecursion
 
 main :: IO ()
 main = hspec $ describe "all" Main.all
@@ -146,6 +147,67 @@ testBackward = describe "backward" $ do
             -} 
             let Right base = forwardN [ "A", "A", "A", "B", "B", "B", "B", "A"] state
             (backwardN [ "A", "A" ] =<< forwardN [ "A" ] base) `shouldBe` Right base
+
+    it "nested recursion behaves" $ 
+        let 
+            monitor1 = createMonitor (id, NestedRecursion.localTypes Map.! "A") Map.empty
+            monitor2 = createMonitor (id, NestedRecursion.localTypes Map.! "B") Map.empty
+
+            state = executionState emptyQueue
+                [ ("A", monitor1, NestedRecursion.alice)
+                , ("B", monitor2, NestedRecursion.bob) 
+                ]
+
+        in do
+            {- The forward action on A produces two history items: 
+                    * an application history 
+                    * a history for V, the recursion variable
+                    in that order - which might be wrong. anyway, we have to thus move backward twice
+            -} 
+            let init = ["A", "B" ]  
+                unwrap = [ "A", "A", "B", "B" ] 
+                nested = unwrap ++ [  "B", "A" ]  
+                Right base = forwardN (concat [ init, unwrap, nested, nested, nested, nested ]) state
+            (backwardN [ "A", "A", "A", "A" ] =<< forwardN [ "A"  ] base) `shouldBe` Right base
+            -- (backwardN [ "A", "A" ] =<< forwardN [ "A", "A"  ] base) `shouldBe` Right base
+            -- print base
+
+    it "nested recursion behaves 2" $ 
+        let 
+            globalType = 
+                GlobalType.recurse $
+                    GlobalType.recurse $
+                        GlobalType.transaction "A" "B" "number" $
+                            GlobalType.oneOf "A" "B" 
+                                [ (,) "continue"  GlobalType.recursionVariable 
+                                , (,) "end" GlobalType.end
+                                ]
+                        
+            localTypes = LocalType.projections globalType
+            monitorA = createMonitor (id, localTypes Map.! "A") Map.empty
+            monitorB = createMonitor (id, localTypes Map.! "B") Map.empty
+
+            alice = 
+                Semantics.send "A" VUnit $ 
+                    Semantics.offer "A" [ ("continue", Semantics.send "A" VUnit Semantics.terminate), ("end", Semantics.terminate) ]
+            bob = 
+                Semantics.receive "B" "y" $ 
+                    Semantics.select "B" [ ("continue", VBool True, Semantics.receive "B" "x" Semantics.terminate), ("end", VBool False, Semantics.terminate) ]
+
+            state = executionState emptyQueue
+                [ ("A", monitorA, alice)
+                , ("B", monitorB, bob) 
+                ]
+
+        in do
+            {- The forward action on A produces two history items: 
+                    * an application history 
+                    * a history for V, the recursion variable
+                    in that order - which might be wrong. anyway, we have to thus move backward twice
+            -} 
+            let Right base = forwardN [ "A", "B", "B", "A"] state
+            -- (backwardN [ "A", "A" ] =<< forwardN [ "A" ] base) `shouldBe` Right base
+            (backwardN [ "A", "A" ] =<< forwardN [ "A", "A" ] base) `shouldBe` Right base
 
 testForward = describe "forward_" $ do 
     let forwarder = Semantics.forwardTestable "L1" "A" 
@@ -313,5 +375,3 @@ executionState queue values =
                     _ -> Nothing
 
             }
-
-

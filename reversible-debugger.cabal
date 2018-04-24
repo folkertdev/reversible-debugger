@@ -39,6 +39,7 @@ library
                      , Recursive
                      , RecursiveChoice
                      , NestedDelegation
+                     , NestedRecursion
                      , ParallelDelegation
                      , Zipper
                      , Queue
@@ -134,7 +135,12 @@ test-suite reversible-debugger-test
                      , QuickCheck
                      , transformers
                      , parsec
+                     , elm-export
+                     , mtl
                      , containers >= 0.5.9
+                     , parsec
+                     , text
+                     , aeson
                      , data-fix
 
 
