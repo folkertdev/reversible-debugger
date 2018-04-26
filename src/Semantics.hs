@@ -694,6 +694,52 @@ validate location participant = do
                 Nothing -> 
                     error $ "location has no participant named " ++ participant
 
+type Id = (Location, Participant)
+type Type = String
+
+wrapLocalType :: (LocalType u -> LocalType u) -> Monitor Value u -> Monitor Value u
+wrapLocalType tagger monitor = 
+    let (past, future) = _localType monitor
+    in
+        monitor { _localType = ( past, tagger future ) }
+
+forwardChoice :: Id -> Id -> Map String (GlobalType.GlobalType String) -> Session Value String
+forwardChoice (l1, offerer) (l2, selector) options = do
+    -- validate both parties
+    (program1, monitor1_) <- validate l1 offerer
+    (program2, monitor2_) <- validate l2 selector
+
+    -- augment their types
+    let monitor1 = wrapLocalType (\_ -> Fix $ LocalType.Offer  offerer selector (fmap (LocalType.project offerer)  options)) monitor1_
+        monitor2 = wrapLocalType (\_ -> Fix $ LocalType.Select offerer selector (fmap (LocalType.project selector) options)) monitor2_
+
+    -- move actors forward
+    forward l2 selector program2 monitor2
+    forward l1 offerer  program1 monitor1
+    
+    -- inspect local type context to know which label was picked
+    localTypeHistory <- fst . _localType . snd <$> validate l2 selector
+    case unFix localTypeHistory of 
+        LocalType.Selected _ _ selection _ -> do 
+            let (label, _, _, _) = Zipper.current selection
+            return label 
+
+        _ -> 
+            error "could not unpack label"
+
+forwardTransaction :: Id -> Id -> Type -> Session Value ()
+forwardTransaction (l1, sender) (l2, receiver) tipe = do 
+    -- validate both parties
+    (program1, monitor1_) <- validate l1 sender
+    (program2, monitor2_) <- validate l2 receiver
+
+    -- augment their types
+    let monitor1 = wrapLocalType (Fix . LocalType.Send    sender receiver tipe) monitor1_
+        monitor2 = wrapLocalType (Fix . LocalType.Receive receiver sender tipe) monitor2_
+
+    forward l1 sender   program1 monitor1
+    forward l2 receiver program2 monitor2
+
 untilTypeDecision :: (Location -> Participant -> Program Value -> Monitor Value String -> Session Value ()) 
                   -> Location -> Participant -> Session Value ()
 untilTypeDecision mover location participant = do

@@ -10,3 +10,6 @@ toList (Zipper (a,b,c)) = a ++ (b:c)
 
 fromSegments :: List a -> a -> List a -> Zipper a
 fromSegments a b c = Zipper (a,b,c)
+
+current :: Zipper a -> a
+current (Zipper (_, v, _)) = v

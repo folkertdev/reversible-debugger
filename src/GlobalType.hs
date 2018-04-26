@@ -5,7 +5,7 @@ import GHC.Generics
 
 import qualified Data.Foldable as Foldable
 import Data.Set as Set
-import Data.Map as Map (Map, elems, fromList)
+import Data.Map as Map (Map, elems, fromList, lookup)
 import Data.Monoid ((<>))
 
 import Data.Fix
@@ -70,6 +70,9 @@ participants =
 
             End -> 
                 Set.empty
+
+
+
 
 {-| A global type state containing information to go back (crumbs) and forward (GlobalType) -}
 type GlobalTypeState u =  (List (GlobalType.Crumb u), GlobalType u)

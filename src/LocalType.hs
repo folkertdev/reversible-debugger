@@ -11,7 +11,7 @@ import Data.Map.Merge.Strict as Merge
 import Zipper (Zipper)
 import qualified Zipper
 
-import GlobalType (GlobalType)
+import GlobalType (GlobalType, GlobalTypeF)
 import qualified GlobalType
 
 type Participant = String
@@ -67,6 +67,7 @@ pattern BackwardRecursionVariable rest = SendOrReceive (Atom V) rest
 
 pattern Offer  owner selector options = Choice (COffer owner selector options)
 pattern Select owner offerer  options = Choice (CSelect owner offerer options)
+
 
 
 {-| Data structure containing the information needed to roll an action -}
@@ -162,6 +163,11 @@ projections :: GlobalType u -> Map Participant (LocalType u)
 projections global = 
     GlobalType.participants global
         |> Set.foldr (\participant -> Map.insert participant (project participant global)) Map.empty 
+
+
+partialProjection :: Participant -> GlobalTypeF u f -> Either (LocalType u) (LocalType u -> LocalType u, f)
+partialProjection participant = 
+    undefined
 
 
 {-| Project a global type into a local one for a particular participant -}
