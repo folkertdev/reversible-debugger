@@ -2,8 +2,11 @@
 module Semantics where 
 
 import Control.Monad.State as State
+import Control.Monad.Reader as Reader
 import Control.Monad.Except as Except
+import Control.Monad.Cont as Cont
 import Control.Arrow (first)
+import Control.Monad.Free as Free
 
 import LocalType (LocalType, LocalTypeState, TypeContextF(Selected, Offered), Location, Participant, Identifier, Choice(..))
 import qualified LocalType
@@ -17,7 +20,7 @@ import Data.Fix as Fix
 import Data.List as List
 import Data.Maybe as Maybe
 
-import Types ((|>))
+import Utils ((|>))
 import qualified Zipper
 
 import Elm
@@ -29,6 +32,27 @@ import Debug.Trace as Debug
 type List = []
 
 type Session value a = StateT (ExecutionState value) (Either Error) a
+
+
+
+{-
+validate :: MyProgram (Location, Participant, Program Value, Monitor Value String) 
+validate = do
+    ( location, participant) <- Reader.ask
+    executionState <- lift State.get
+    case Map.lookup participant (participants executionState) of 
+        Nothing -> 
+            error "unknown participant"
+        Just monitor -> 
+            case Map.lookup location (locations executionState) >>= Map.lookup participant of 
+                Just program -> 
+                    return (location, participant, program, monitor)
+
+                Nothing -> 
+                    error $ "location has no participant named " ++ participant
+-}
+
+
 
 data ExecutionState value = 
     ExecutionState 
@@ -70,6 +94,14 @@ setParticipant location participant (monitor, program) =
         state 
             { participants = Map.insert participant monitor participants
             , locations = Map.update (Just . Map.insert participant program) location locations
+            }
+
+setMonitor :: Location -> Participant -> Monitor value String -> Session value ()
+setMonitor location participant monitor = 
+    State.modify $ \state@ExecutionState { participants, locations } -> 
+        state 
+            { participants = Map.insert participant monitor participants
+            , locations = Map.update (Just . Map.insert participant Semantics.terminate) location locations
             }
 
 getParticipant :: Location -> Participant -> Session value (Monitor value String, Program value)
@@ -905,11 +937,11 @@ push item =
     State.modify $ \state@ExecutionState { queue } -> 
         state { queue = enqueue item queue }
 
-pop :: Session value (Participant, Participant, value)
+pop :: Show value => Session value (Participant, Participant, value)
 pop = do
     q <- queue <$> State.get
     case dequeue q of 
-        Nothing -> Except.throwError EmptyQueue
+        Nothing -> Except.throwError $ Debug.traceShow q EmptyQueue
         Just (value, newQueue ) -> do 
             State.modify $ \state@ExecutionState { queue } -> 
                 state { queue = newQueue }

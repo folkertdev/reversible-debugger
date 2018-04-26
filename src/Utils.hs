@@ -4,6 +4,12 @@ import Data.Map as Map (Map, toList, null)
 import Data.Monoid ((<>)) 
 import Data.List
 
+infixl 0 |>
+(|>) :: a -> (a -> b) -> b
+x |> f = f x
+
+type List a = [a]
+
 showMap :: (Show k, Show v) => String -> Map k v -> String
 showMap title values = 
     title 

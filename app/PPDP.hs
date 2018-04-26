@@ -2,8 +2,8 @@ module Main where
 
 import Semantics
 
-import Recursive
-import ParallelDelegation
-import NestedDelegation
+import Examples.Recursive
+import Examples.ParallelDelegation
+import Examples.NestedDelegation
 
-main = print $ NestedDelegation.steps 
+main = print $ Examples.NestedDelegation.steps 

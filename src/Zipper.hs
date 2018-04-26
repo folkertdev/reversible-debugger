@@ -1,6 +1,6 @@
 module Zipper where 
 
-import Types (List)
+import Utils (List)
 
 newtype Zipper a = Zipper (List a, a, List a)
     deriving (Eq, Show)

@@ -10,7 +10,7 @@ import Data.Monoid ((<>))
 
 import Data.Fix
 
-import Types ((|>), List)
+import Utils ((|>), List)
 
 type Participant = String
 

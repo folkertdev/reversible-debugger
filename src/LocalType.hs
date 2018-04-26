@@ -3,7 +3,7 @@ module LocalType where
 
 import GHC.Generics
 
-import Types ((|>), List)
+import Utils ((|>), List)
 import Data.Map as Map 
 import Data.Set as Set 
 import Data.Fix
@@ -170,12 +170,18 @@ project participant =
     Data.Fix.cata $ \global -> 
         case global of 
             GlobalType.Transaction sender receiver tipe cont -> 
-                if participant == sender then 
-                     LocalType.send sender receiver tipe cont
-                else if participant == receiver then 
-                     LocalType.receive receiver sender tipe cont
-                else 
-                    cont 
+                if sender == receiver then
+                    if participant == sender then 
+                         LocalType.send sender receiver tipe $ LocalType.receive receiver sender tipe cont
+                    else 
+                         cont
+                else
+                    if participant == sender then 
+                         LocalType.send sender receiver tipe cont
+                    else if participant == receiver then 
+                         LocalType.receive receiver sender tipe cont
+                    else 
+                        cont 
 
             GlobalType.OneOf offerer selector options -> 
                 if participant == offerer then 
