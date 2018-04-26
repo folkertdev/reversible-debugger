@@ -3,14 +3,9 @@ import Test.Hspec
 import Test.QuickCheck
 import Control.Exception (evaluate)
 import Control.Monad
-
-
-import Types
-import Text.ParserCombinators.Parsec as Parsec
-
 import Control.Monad.Trans.State as State 
 
-import Semantics (Monitor(..), ExecutionState(..), Program, ProgramF(..), Value(..), renameVariable, Queue, emptyQueue , Session, forward_, emptyQueue, letBinding, send, run, applyFunction, decrement, Error, IntOperator(..))
+import Semantics (List, Monitor(..), ExecutionState(..), Program, ProgramF(..), Value(..), renameVariable, Queue, emptyQueue , Session, forward_, emptyQueue, Error, IntOperator(..))
 import qualified Semantics
 import LocalType (LocalType, TypeContext) 
 import qualified LocalType 
@@ -20,8 +15,10 @@ import qualified Data.Map as Map
 import Data.List as List
 import Data.Fix
 
-import qualified RecursiveChoice
-import qualified NestedRecursion
+import qualified Examples.RecursiveChoice as RecursiveChoice
+import qualified Examples.NestedRecursion as NestedRecursion
+
+import qualified HighLevel as H
 
 main :: IO ()
 main = hspec $ describe "all" Main.all
@@ -49,25 +46,31 @@ backwardN (p:ps) state =
         Left e -> Left e
         Right v -> backwardN ps v
 
+compileAlice = H.compile "Location1" "A"
+compileBob = H.compile "Location1" "B"
+
 testBackward = describe "backward" $ do 
     it "send/receive behaves" $ 
         let 
             monitor1 = createMonitor (id, LocalType.send    "A" "B" "unit" LocalType.end) Map.empty
             monitor2 = createMonitor (id, LocalType.receive "B" "A" "unit" LocalType.end) Map.empty
             state = executionState emptyQueue
-                [("A", monitor1, Semantics.send "A" VUnit Semantics.terminate)
-                ,("B", monitor2, Semantics.receive "B" "x" Semantics.terminate)
+                [("A", monitor1, compileAlice $ H.send VUnit)
+                ,("B", monitor2, compileBob $ do 
+                    x <- H.receive
+                    H.terminate
+                 )
                 ]
 
             newMonitor1 = createMonitor (LocalType.backwardSend "A" "B" "unit", LocalType.end) Map.empty
             newMonitor2 = 
                 createMonitor 
-                    (LocalType.backwardReceive "B" "A" "unit" "x" "v0", LocalType.end) 
+                    (LocalType.backwardReceive "B" "A" "unit" "var0" "v0", LocalType.end) 
                     (Map.singleton "v0" VUnit)
 
             newState = executionState (Semantics.enqueueHistory ("A", "B", VUnit) emptyQueue)
-                [("A", newMonitor1, Semantics.terminate)
-                ,("B", newMonitor2, Semantics.terminate)
+                [("A", newMonitor1, compileAlice  H.terminate)
+                ,("B", newMonitor2, compileBob H.terminate)
                 ]
         in do
             forwardN ["A", "B"] state `shouldBe` Right newState
@@ -101,8 +104,9 @@ testBackward = describe "backward" $ do
 
     it "choise behaves" $ 
         let 
-            monitor1 = createMonitor (id, RecursiveChoice.localTypes Map.! "A") Map.empty
-            monitor2 = createMonitor (id, RecursiveChoice.localTypes Map.! "B") Map.empty
+            monitor name = createMonitor (id, RecursiveChoice.localTypes Map.! name) Map.empty
+            monitor1 = monitor "A" 
+            monitor2 = monitor "B" 
 
             state = executionState emptyQueue
                 [ ("A", monitor1, RecursiveChoice.alice)
@@ -116,14 +120,17 @@ testBackward = describe "backward" $ do
     it "assignment behaves" $ 
         let 
             monitor = createMonitor (id, LocalType.end) Map.empty
-            newMonitor = createMonitor (Fix . LocalType.Assignment "x" "v0", LocalType.end) (Map.singleton "v0" VUnit) 
+            newMonitor = createMonitor (Fix . LocalType.Assignment "var0" "v0", LocalType.end) (Map.singleton "v0" VUnit) 
 
             state = executionState emptyQueue
-                [("A", monitor, Semantics.letBinding "x" VUnit Semantics.terminate)
+                [("A", monitor, compileAlice $ do
+                    x <- H.create VUnit 
+                    H.terminate
+                 )
                 ]
 
             newState = executionState emptyQueue
-                [("A", newMonitor, Semantics.terminate)
+                [("A", newMonitor, compileAlice H.terminate)
                 ]
         in do
             forwardN ["A"] state `shouldBe` Right newState
@@ -187,12 +194,19 @@ testBackward = describe "backward" $ do
             monitorA = createMonitor (id, localTypes Map.! "A") Map.empty
             monitorB = createMonitor (id, localTypes Map.! "B") Map.empty
 
-            alice = 
-                Semantics.send "A" VUnit $ 
-                    Semantics.offer "A" [ ("continue", Semantics.send "A" VUnit Semantics.terminate), ("end", Semantics.terminate) ]
-            bob = 
-                Semantics.receive "B" "y" $ 
-                    Semantics.select "B" [ ("continue", VBool True, Semantics.receive "B" "x" Semantics.terminate), ("end", VBool False, Semantics.terminate) ]
+            alice = H.compile "Location1" "A" $ do
+                H.send VUnit  
+                H.offer [ ("continue", H.send VUnit), ("end", H.terminate) ]
+
+            bob = H.compile "Location1" "B" $ do
+                y <- H.receive
+                H.select 
+                    [ ("continue", VBool True, do
+                        x <- H.receive
+                        H.terminate
+                      )
+                    , ("end", VBool False, H.terminate) 
+                    ]
 
             state = executionState emptyQueue
                 [ ("A", monitorA, alice)
@@ -226,7 +240,7 @@ testForward = describe "forward_" $ do
 
     it "literal doesn't change state" $ 
         let monitor = createMonitor (id, LocalType.end) Map.empty
-            state = executionState emptyQueue [("A", monitor, Semantics.literal VUnit)]
+            state = executionState emptyQueue [("A", monitor, Fix $ Semantics.Literal VUnit)]
 
             newState = executionState emptyQueue [("A", monitor, Semantics.terminate)]
         in
@@ -234,19 +248,24 @@ testForward = describe "forward_" $ do
 
     it "let renames in function bodies" $ 
         let monitor = createMonitor (id, LocalType.end) Map.empty
-            newMonitor = createMonitor (Fix . LocalType.Assignment "x" "v0" , LocalType.end) (Map.singleton "v0" (VFunction "_" (Fix (Application "v0" VUnit))))
+            newMonitor = 
+                createMonitor 
+                (Fix . LocalType.Assignment "var0" "v0" , LocalType.end) 
+                (Map.singleton "v0" (VFunction "var1" (Fix (Application "v0" VUnit))))
 
-            program = letBinding "x" (VFunction "_" $ applyFunction "x" VUnit) $ applyFunction "x" VUnit 
+            program = do
+                x <- H.recursiveFunction $ \self _ -> H.applyFunction self VUnit 
+                H.applyFunction x VUnit
 
-            state = executionState emptyQueue [("A", monitor, program)] 
+            state = executionState emptyQueue [("A", monitor, compileAlice program)] 
 
-            newState = executionState emptyQueue [("A", newMonitor, applyFunction "v0" VUnit )]
+            newState = executionState emptyQueue [("A", newMonitor, Fix $ Semantics.Application "v0" VUnit )]
         in
             forwarder state `shouldBe` Right newState 
 
     it "send behaves" $ 
         let monitor = createMonitor (id, LocalType.send "A" "A" "unit" LocalType.end) Map.empty
-            state = executionState emptyQueue [("A", monitor, Semantics.send "A" VUnit Semantics.terminate)]
+            state = executionState emptyQueue [("A", monitor, compileAlice $ H.send VUnit)] 
 
             newMonitor = createMonitor (LocalType.backwardSend "A" "A" "unit", LocalType.end) Map.empty
             newState = executionState 
@@ -259,14 +278,17 @@ testForward = describe "forward_" $ do
         let monitor1 = createMonitor (id, LocalType.send    "A" "B" "unit" LocalType.end) Map.empty
             monitor2 = createMonitor (id, LocalType.receive "B" "A" "unit" LocalType.end) Map.empty
             state = executionState emptyQueue
-                [("A", monitor1, Semantics.send "A" VUnit Semantics.terminate)
-                ,("B", monitor2, Semantics.receive "B" "x" Semantics.terminate)
+                [("A", monitor1, compileAlice $ H.send VUnit) 
+                ,("B", monitor2, compileBob $ do 
+                    x <- H.receive 
+                    H.terminate
+                 )
                 ]
 
             newMonitor1 = createMonitor (LocalType.backwardSend "A" "B" "unit", LocalType.end) Map.empty
             newMonitor2 = 
                 createMonitor 
-                    (LocalType.backwardReceive "B" "A" "unit" "x" "v0", LocalType.end) 
+                    (LocalType.backwardReceive "B" "A" "unit" "var0" "v0", LocalType.end) 
                     (Map.singleton "v0" VUnit)
 
             newState = executionState 
@@ -302,24 +324,24 @@ testForward = describe "forward_" $ do
             forwarderN [ "A" ] state `shouldBe` Right newState 
     -}
 testRenameVariable = describe "renameVariable" $ do
-    let renamer = renameVariable "x" "y" 
+    let renamer = unFix . renameVariable "x" "y" . Fix
 
     it "renames function name" $
-          renamer (Semantics.applyFunction "x" VUnit) `shouldBe` Semantics.applyFunction "y" VUnit
+          renamer (Semantics.Application "x" VUnit) `shouldBe` Semantics.Application "y" VUnit
 
     it "renames reference in function argument" $
-        renamer (Semantics.applyFunction "f" (VReference "x")) 
-            `shouldBe` Semantics.applyFunction "f" (VReference "y")
+        renamer (Semantics.Application "f" (VReference "x")) 
+            `shouldBe` Semantics.Application "f" (VReference "y")
 
 
 
     it "renames in assignment right-hand side" $
-        renamer (Semantics.letBinding "v" (VReference "x") Semantics.terminate)
-            `shouldBe` Semantics.letBinding "v" (VReference "y") Semantics.terminate
+        renamer (Semantics.Let "v" (VReference "x") Semantics.terminate)
+            `shouldBe` Semantics.Let "v" (VReference "y") Semantics.terminate
 
     it "renames in send payload right-hand side" $
-        renamer (Semantics.send "owner" (VReference "x") Semantics.terminate)
-            `shouldBe` Semantics.send "owner" (VReference "y") Semantics.terminate
+        renamer (Semantics.Send "owner" (VReference "x") Semantics.terminate)
+            `shouldBe` Semantics.Send "owner" (VReference "y") Semantics.terminate
     {-
     it "renames in IfThenElse condition" $
         renamer (Semantics.ifThenElse (VReference "x") Semantics.terminate Semantics.terminate)
@@ -327,8 +349,8 @@ testRenameVariable = describe "renameVariable" $ do
     -}
 
     it "renames in literal" $
-        renamer (Semantics.literal (VReference "x")) 
-            `shouldBe` Semantics.literal (VReference "y") 
+        renamer (Semantics.Literal (VReference "x")) 
+            `shouldBe` Semantics.Literal (VReference "y") 
 
     {-
     it "renames in nested condition" $

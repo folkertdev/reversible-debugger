@@ -677,43 +677,11 @@ data ProgramF value f
 
 deriving instance (ElmType a, ElmType b, ElmType c) => ElmType (a,b,c)
 
-run :: List (Program value -> Program value) -> Program value
-run = foldr ($) terminate
+terminate :: Program a
+terminate = Fix NoOp
 
-
-parallel :: List (Program value) -> Program value
-parallel = foldr1 (\a b -> Fix (Parallel a b))
-
-send :: Participant -> value -> Program value -> Program value
-send o v c = Fix (Send o v c)
-
-receive :: Participant -> Identifier -> Program value -> Program value
-receive o v c = Fix (Receive o v c)
-
-terminate :: Program value
-terminate = Fix NoOp 
-
-applyFunction :: Identifier -> value -> Program value
-applyFunction functionName argument = Fix $ Application functionName argument
-
-literal :: value -> Program value
-literal = Fix . Literal
-
--- ifThenElse :: value -> Program value -> Program value -> Program value
--- ifThenElse condition thenBranch elseBranch = Fix $ IfThenElse condition thenBranch elseBranch
-
-select :: Participant -> List (String, value, Program value) -> Program value
-select owner options = Fix $ Select owner options
-
-offer :: Participant -> List (String, Program value) -> Program value
-offer owner options = Fix $ Offer owner options
-
-letBinding :: Identifier -> value -> Program value -> Program value
-letBinding name value cont = Fix $ Let name value cont
-
-
-forward_ :: Location -> Participant -> Session Value ()        
-forward_ location participant = do
+validate :: Location -> Participant -> Session Value (Program Value, Monitor Value String) 
+validate location participant = do
     state <- State.get
     case Map.lookup participant (participants state) of 
         Nothing -> 
@@ -721,23 +689,40 @@ forward_ location participant = do
         Just monitor -> 
             case Map.lookup location (locations state) >>= Map.lookup participant of 
                 Just program -> 
-                    forward location participant program monitor
+                    return (program, monitor)
+
                 Nothing -> 
                     error $ "location has no participant named " ++ participant
+
+untilTypeDecision :: (Location -> Participant -> Program Value -> Monitor Value String -> Session Value ()) 
+                  -> Location -> Participant -> Session Value ()
+untilTypeDecision mover location participant = do
+    (program, monitor) <- validate location participant 
+    case unFix program of 
+        Send {} -> return ()
+        Receive {} -> return ()
+        Offer _ _ -> return ()
+        Select _ _ ->return ()
+        _ -> do
+            mover location participant program monitor
+            untilTypeDecision mover location participant  
+
+forwardUntilTypeDecision :: Location -> Participant -> Session Value ()
+forwardUntilTypeDecision = untilTypeDecision forward 
+
+backwardUntilTypeDecision :: Location -> Participant -> Session Value ()
+backwardUntilTypeDecision = untilTypeDecision backward 
+
+forward_ :: Location -> Participant -> Session Value ()        
+forward_ location participant = do
+    (program, monitor) <- validate location participant 
+    forward location participant program monitor
 
 
 backward_ :: Location -> Participant -> Session Value ()        
 backward_ location participant = do
-    state <- State.get
-    case Map.lookup participant (participants state) of 
-        Nothing -> 
-            error "unknown participant"
-        Just monitor -> 
-            case Map.lookup location (locations state) >>= Map.lookup participant of 
-                Just program -> 
-                    backward location participant program monitor
-                Nothing -> 
-                    error $ "location has no participant named " ++ participant
+    (program, monitor) <- validate location participant 
+    backward location participant program monitor
 
 forwardTestable :: Location -> Participant -> ExecutionState Value -> Either Error (ExecutionState Value)
 forwardTestable location participant state = 

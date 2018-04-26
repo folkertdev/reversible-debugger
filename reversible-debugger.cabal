@@ -20,7 +20,6 @@ library
                      , LocalType
                      , Semantics
                      , Examples.ThreeBuyer
-                     , Examples.Recursive
                      , Examples.RecursiveChoice
                      , Examples.NestedDelegation
                      , Examples.NestedRecursion

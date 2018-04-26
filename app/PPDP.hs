@@ -2,7 +2,6 @@ module Main where
 
 import Semantics
 
-import Examples.Recursive
 import Examples.ParallelDelegation
 import Examples.NestedDelegation
 
