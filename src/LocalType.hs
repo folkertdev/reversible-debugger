@@ -88,6 +88,7 @@ data TypeContextF program value a f
         , picked :: Zipper (String, program, LocalType a)
         , continuation :: f 
         }
+    | Branched { condition :: value, verdict :: Bool, otherBranch :: program, continuation :: f }
     | Application Identifier Identifier f 
     | Spawning Location Location Location f
     | Assignment { visibleName :: Identifier, internalName :: Identifier, continuation :: f }
@@ -103,9 +104,9 @@ backwardSend owner sender tipe base =
         Fix $ SendOrReceive local base
 
 
-backwardReceive :: Participant ->  Participant -> u -> Identifier -> Identifier -> TypeContext p v u 
+backwardReceive :: Participant ->  Participant -> Identifier -> Identifier -> u -> TypeContext p v u 
                 -> TypeContext p v u 
-backwardReceive owner sender tipe visibleName variableName base = 
+backwardReceive owner sender visibleName variableName tipe base = 
     Fix $ BackwardReceive owner sender visibleName variableName tipe base  
 
 backwardSelect :: Participant
@@ -129,7 +130,24 @@ backwardOffer owner selector picked continuation =
  * the information needed to roll, the TypeContext
  * the information needed to step forward, the LocalType
 -}
-type LocalTypeState program value u =  ( TypeContext program value u, LocalType u ) 
+type LocalTypeState program value u  = Synchronizable ( TypeContext program value u, LocalType u ) 
+
+
+data Synchronizable a = Synchronized a | Unsynchronized a deriving (Show, Eq, Functor)
+
+createState :: TypeContext program value u -> LocalType u -> LocalTypeState program value u
+createState = curry Unsynchronized 
+
+unwrapState state = 
+    case state of 
+        Unsynchronized x ->  
+            x
+
+        Synchronized x -> 
+            x
+
+mapState :: (TypeContext program value u -> LocalType u -> (TypeContext program value u, LocalType u)) -> LocalTypeState program value u -> LocalTypeState program value u 
+mapState tagger = fmap (uncurry tagger) 
 
 recurse :: LocalType a -> LocalType a 
 recurse cont = Fix . Atom $ R cont

@@ -19,11 +19,15 @@ library
                        GlobalType
                      , LocalType
                      , Semantics
+                     , Queue
+                     , Program
+                     , Session
+                     , Synchronization
                      , Examples.ThreeBuyer
                      , Examples.RecursiveChoice
-                     , Examples.NestedDelegation
+                     --, Examples.NestedDelegation
                      , Examples.NestedRecursion
-                     , Examples.ParallelDelegation
+                     -- , Examples.ParallelDelegation
                      , HighLevel
                      , Zipper 
   other-modules:       Utils
