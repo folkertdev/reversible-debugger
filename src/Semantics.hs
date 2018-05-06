@@ -277,8 +277,7 @@ forward location participant program monitor = do
 checkAndPerformSend :: Location -> Participant -> Monitor Value String -> Participant -> Value -> Program Value -> Session Value ()
 checkAndPerformSend location participant monitor owner payload continuation = 
     if participant == owner then do
-        (previous, fixedLocal) <- validateLocalType location participant monitor
-        let localType = unFix fixedLocal
+        (previous, localType) <- second unFix <$> validateLocalType location participant monitor
         case localType of 
             LocalType.Send expectedOwner target tipe continuationType -> do
                 ensure (owner == expectedOwner) (error $ "Send owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
@@ -304,8 +303,7 @@ checkAndPerformSend location participant monitor owner payload continuation =
 checkAndPerformReceive :: Location -> Participant -> Monitor Value String -> Participant -> Identifier -> Program Value -> Session Value ()
 checkAndPerformReceive location participant monitor owner visibleName continuation = 
     if participant == owner then do
-        (previous, fixedLocal) <- validateLocalType location participant monitor
-        let localType = unFix fixedLocal
+        (previous, localType) <- second unFix <$> validateLocalType location participant monitor
         case localType of 
             LocalType.Receive expectedOwner sender tipe continuationType -> do
                 ensure (owner == expectedOwner) (error $ "Receive owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
