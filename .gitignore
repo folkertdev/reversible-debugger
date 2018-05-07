@@ -1,1 +1,8 @@
 .stack-work/
+
+tfp-submission/paper.aux
+tfp-submission/paper.fdb_latexmk
+tfp-submission/paper.fls
+tfp-submission/paper.log
+tfp-submission/paper.out
+tfp-submission/paper.tex

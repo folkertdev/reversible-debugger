@@ -20,15 +20,15 @@ import GHC.Generics
 import LocalType (Location, Participant, Identifier)
 
 
-data ProgramF value f 
-    = Send { owner :: Participant, value :: value, continuation :: f }
-    | Receive { owner :: Participant, variableName :: Identifier, continuation :: f  }
-    | Offer Participant (List (String, f))
-    | Select Participant (List (String, value, f))
-    | Parallel f f 
+data ProgramF value next 
+    = Send { owner :: Participant, value :: value, continuation :: next }
+    | Receive { owner :: Participant, variableName :: Identifier, continuation :: next  }
+    | Offer Participant (List (String, next))
+    | Select Participant (List (String, value, next))
+    | Parallel next next 
     | Application Identifier value
-    | Let Identifier value f 
-    | IfThenElse value f f
+    | Let Identifier value next 
+    | IfThenElse value next next
     | Literal value -- needed to define multi-parameter functions
     | NoOp
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable, ToJSON, FromJSON, ElmType)
