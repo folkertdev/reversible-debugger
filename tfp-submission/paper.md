@@ -25,7 +25,7 @@ forward :: Location -> Participant -> Session Value ()
 backward :: Location -> Participant -> Session Value ()
 ```
 
-Where the `Session` type contains an `ExecutionState` holding a store of variables and other things, and 
+Where `Session` contains an `ExecutionState` holding a store of variables and other things, and 
 the function can fail producing an `Error`.
 
 ```haskell
@@ -35,7 +35,8 @@ type Session value a = StateT (ExecutionState value) (Except Error) a
 
 ## The Monitor
 
-Every participant has a monitor. This monitor stores variables, the current state of the type and 
+A participant can be described by its monitor and its programs at all locations. 
+The monitor contains various metadata about the participant: variables, the current state of the type and 
 some other information to be able to move backward.
 
 ```haskell
@@ -49,6 +50,11 @@ data Monitor value tipe =
         }
         deriving (Show, Eq)
 ```
+
+Next we will look at how session types are represented, what the language looks like and how 
+to keep track of and reverse past actions.
+
+## Global and Local Types 
 
 As mentioned, we have two kinds of session types: Global and Local.
 The Global type describes transactions and choices.
@@ -116,6 +122,8 @@ To build a prototype for the session types described previously, we also need a 
 type Participant = String
 type Identifier = String
 
+type Program = Fix (ProgramF Value) 
+
 data ProgramF value next 
     -- communication primitives
     = Send { owner :: Participant, value :: value, continuation :: next }
@@ -134,9 +142,6 @@ data ProgramF value next
     | NoOp
     deriving (Eq, Show, Functor)
 
--- TODO check this definition
-type Program = Fix (ProgramF Value) 
-
 
 data Value 
     = VBool Bool
@@ -154,7 +159,6 @@ data Value
 Given a `LocalType` and a `Program`, we can now step through the program. For each instruction, we 
 check the session type to see whether the instruction is allowed. 
 
-**TODO: explain the need for `owner`**
 
 In the definition of `ProgramF`, the recursion is factored out and replaced by a type parameter.
 We then use `Fix` to give us back arbitrarily deep trees of instructions. The advantage of this 
@@ -235,11 +239,43 @@ compile location participant (HighLevelProgram program) =
     freeToFix $ runStateT program (location, participant, 0) 
 ```
 
+## Ownership 
+
+The `owner` field for send, receive, offer and select is important. It makes sure that instructions in 
+closures are attributed to the correct participant. 
+
+```haskell
+globalType = do 
+    transaction "B" "C" "thunk"
+    transaction "B" "A" "address"
+    transaction "A" "B" "amount"
+
+bob = H.compile "Location1" "B" $ do 
+    thunk <- 
+        H.function $ \_ -> do
+            H.send (VString "Lucca, 55100")
+            d <- H.receive
+            H.terminate
+
+    H.send thunk 
+
+carol = H.compile "Location1" "C" $ do 
+    code <- H.receive 
+    H.applyFunction code VUnit
+
+alice = H.compile "Location1" "A" $ do 
+    address <- H.receive 
+    H.send (VInt 42)
+```
+
+Here `B` creates a function that performs a send and receive. Because the function is created by `B`, the owner
+of these statements is `B`, even when the function is sent to and eventually evaluated by `C`. 
+
 
 # Reversibility
 
-Every local type case needs an "inverse" that contains enough information to undo the action. 
-Additionally, the language's instructions (variable binding, if statements, function application, etc.) also need to be reversible. 
+Every forward step needs an inverse backward step. For every forward step we store enough information 
+to recreate the instruction and local type that made us do the forward step.
 
 ```haskell
 type TypeContext program value a = Fix (TypeContextF program value a)
@@ -288,25 +324,15 @@ At any point, we can move back to a previous state.
 type Session value a = StateT (ExecutionState value) (Except Error) a
 ```
 
-## Error generation 
-
-There are many failure conditions. accurate error reporting is very convenient whilst developing, but 
-also to guide future users when something doesn't work. 
-
-```haskell
-data Error 
-    = SessionNotInSync 
-    | UndefinedParticipant Participant
-    | UndefinedVariable Participant Identifier
-    | SynchronizationError String
-    | LabelError String
-    | QueueError String Queue.QueueError
-    deriving (Eq, Show)
-```
-
 ## ExecutionState
 
+Finally, we have all the components we need. The execution state contains the monitors and the programs at all 
+locations. Additionally it countains a variable counter to generate unique new names, and the central message 
+queue 
+
 ```haskell
+
+type Queue a = [a]
 
 data ExecutionState value = 
     ExecutionState 
@@ -317,6 +343,24 @@ data ExecutionState value =
         , _queue :: Queue value
         , _isFunction :: value -> Maybe (Identifier, Program value)
         }
+```
+
+
+## Error generation 
+
+There are a lot of potential failure conditions in this system. A small error somewhere 
+in either the global type or the program can quickly move program and type out of sync. 
+Therefore, returning detailed error messages is required.
+
+```haskell
+data Error 
+    = SessionNotInSync 
+    | UndefinedParticipant Participant
+    | UndefinedVariable Participant Identifier
+    | SynchronizationError String
+    | LabelError String
+    | QueueError String Queue.QueueError
+    deriving (Eq, Show)
 ```
 
 
