@@ -1,4 +1,4 @@
-
+{-# LANGUAGE PatternSynonyms #-}
 import Test.Hspec
 import Test.QuickCheck
 import Control.Exception (evaluate)
@@ -11,7 +11,7 @@ import Semantics (forward_, backward_)
 import qualified Semantics
 import qualified Queue
 import Zipper (Zipper(..))
-import LocalType (LocalType, TypeContext) 
+import LocalType (LocalType(..), TypeContext) 
 import qualified LocalType 
 import qualified GlobalType 
 
@@ -356,6 +356,80 @@ testForward = describe "forward_" $ do
             newState = executionState Queue.empty [("A", newMonitor, Fix $ Program.Application "v0" VUnit )]
         in
             forwarder state `shouldBe` Right newState 
+
+    it "let assigns to correct participant" $ 
+        let 
+
+            localTypes = LocalType.projections globalType
+
+            newMonitors = 
+                createMonitor 
+                (Fix . LocalType.Assignment "var0" "v0" , LocalType.end) 
+                (Map.singleton "v0" (VFunction "var1" (Fix (Application "v0" VUnit))))
+
+            
+            globalType =
+                GlobalType.transaction "B" "C" "thunk"
+                $ GlobalType.transaction "B" "A" "address"
+                $ GlobalType.transaction "A" "B" "amount"
+                  GlobalType.end
+
+            bob = do 
+                thunk <- 
+                    H.function $ \_ -> do
+                        H.send (VString "Lucca, 55100")
+                        d <- H.receive
+                        H.terminate
+
+                H.send thunk 
+
+            carol = do 
+                code <- H.receive 
+                H.applyFunction code VUnit
+
+            alice = do 
+                address <- H.receive 
+                H.send (VInt 42)
+
+            state = 
+                executionState Queue.empty 
+                    [ ("A", createMonitor (id, localTypes Map.! "A") Map.empty, H.compile "Location1" "A" alice)
+                    , ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "Location1" "B" bob)
+                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "Location1" "C" carol)
+                    ]
+
+            newQueue = 
+                List.foldr Queue.enqueueHistory Queue.empty 
+                    [("A","B",VInt 42)
+                    ,("B","A",VString "Lucca, 55100")
+                    ,("B","C",VFunction "var1" (Fix (Send {owner = "B", value = VString "Lucca, 55100", continuation = Fix (Receive {owner = "B", variableName = "var2", continuation = Fix NoOp})})))
+                    ]
+
+            aliceType = 
+                (LocalType.backwardSend "A" "B" "amount" . LocalType.backwardReceive "A" "B" "var0" "v3" "address", LocalType.end)
+
+            bobType = 
+                ( LocalType.backwardReceive "B" "A" "var2" "v4" "amount" . LocalType.backwardSend "B" "A" "address" . LocalType.backwardSend "B" "C" "thunk" . Fix . LocalType.Assignment "var0" "v0", LocalType.end)
+                
+
+            carolType = 
+                ( Fix . LocalType.Application "v2" "k0" . LocalType.backwardReceive "C" "B" "var0" "v3" "thunk", LocalType.end )
+
+            bobStore = 
+                Map.fromList [("v0",VFunction "var1" (Fix (Send {owner = "B", value = VString "Lucca, 55100", continuation = Fix (Receive {owner = "B", variableName = "var2", continuation = Fix NoOp})}))),("v4",VInt 42)]
+
+            carolStore = 
+                Map.fromList [("v1",VFunction "var1" (Fix (Send {owner = "B", value = VString "Lucca, 55100", continuation = Fix (Receive {owner = "B", variableName = "var2", continuation = Fix NoOp})})))]
+
+            newState = 
+                executionState newQueue 
+                    [ ("A", createMonitor aliceType (Map.fromList [("v3",VString "Lucca, 55100")]), H.compile "Location1" "A" H.terminate)
+                    , ("B", createMonitor bobType bobStore, H.compile "Location1" "B" H.terminate)
+                    , ("C", createMonitor aliceType carolStore, H.compile "Location1" "C" H.terminate)
+                    ]
+        in
+            forwardN ["B", "B", "C", "C", "C", "A", "A", "C" ]  state `shouldBe` Right newState 
+
 
     it "receive adds its variable to the correct owner" $ 
         let 
