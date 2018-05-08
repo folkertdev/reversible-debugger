@@ -15,21 +15,43 @@ abstract: |
 ...
 
 
+# Foundations
 
-# Session Types 
+We set out to implement the language, types and semantics given above. 
+The end goal is to implement the two stepping functions 
 
-Session types describe a protocol between two or more actors. 
-The session type describes the interactions that an actor may have (when it can send, when it can receive) and the 
-types of values it can send or expect to receive. 
+```haskell
+forward :: Location -> Participant -> Session Value ()
+backward :: Location -> Participant -> Session Value ()
+```
 
-We will look at dynamic session types in particular. Of course it would be nice if all our programs are statically checked for correctness, 
-but in the real world, we often want to combine systems written in different languages at different times. 
-Therefore, dynamic session types have a lot of value in practice. 
+Where the `Session` type contains an `ExecutionState` holding a store of variables and other things, and 
+the function can fail producing an `Error`.
 
-The session types come in two forms: The global type, and the local type. 
+```haskell
+type Session value a = StateT (ExecutionState value) (Except Error) a
+```
 
-The global type contains all the interactions in the program. 
 
+## The Monitor
+
+Every participant has a monitor. This monitor stores variables, the current state of the type and 
+some other information to be able to move backward.
+
+```haskell
+data Monitor value tipe = 
+    Monitor 
+        { _localType :: LocalTypeState (Program value) value tipe
+        , _recursiveVariableNumber :: Int
+        , _recursionPoints :: List (LocalType tipe)
+        , _store :: Map Identifier value 
+        , _applicationHistory :: Map Identifier (Identifier, value)
+        }
+        deriving (Show, Eq)
+```
+
+As mentioned, we have two kinds of session types: Global and Local.
+The Global type describes transactions and choices.
 
 ```haskell
 a = "Alice"
@@ -41,39 +63,54 @@ data MyType
 
 globalType :: GlobalType MyType
 globalType = do
-    transaction A B ZipCode
-    transaction B A Address
+    transaction a b ZipCode
+    transaction b a Address
 ```
 
-The local type can then be projected to its participants - in this case `A` and `B`.
-This projection contains only the interactions that involve a particular actor. 
+The Global type can then be projected onto a participant, resulting in a local type 
+containing sends and receives, and offers and selects. The projection of `globalType` onto `a` and `b` 
+would be equivalent to:
 
 ```haskell
+aType :: LocalType MyType
 aType = do
-    send B ZipCode
-    receive B Address
+    send b ZipCode
+    receive b Address
 
+bType :: LocalType MyType
 bType = do
-    receive A ZipCode
-    send A Address
+    receive a ZipCode
+    send a Address
 ```
 
-Our types can also contain choice 
+
+**TODO: unsure whether to include the full definition below, but I feel like the recursion should be mentioned**
+
+The definition of global types is given by
 
 ```haskell
+type GlobalType u = Fix (GlobalTypeF u)
+
+data GlobalTypeF u next
+    = Transaction 
+        { from :: Participant, to :: Participant, tipe :: u, continuation ::  next } 
+    | OneOf { from :: Participant, to :: Participant, options :: Map String next }
+    | R next
+    | V
+    | Wk next
+    | End
+    deriving (Show, Functor)
 ```
 
-And (nested) recursion
+The recursive constructors are taken from @cloud-haskell. `R` introduces 
+a recursion point, `V` jumps back to a recursion point and `Wk` weakens the recursion, making it possible 
+to jump to a less tightly-binding `R`.
 
-```haskell
-```
 
-# A language for the types 
+
+## A Language 
 
 To build a prototype for the session types described previously, we also need a value language.
-
-The language is a simple pi-calculus with some added sugar to make interesting examples easier to write 
-and to show how the reversing (see below) is implemented for them: 
 
 ```haskell
 type Participant = String
@@ -114,135 +151,24 @@ data Value
     deriving (Eq, Show)
 ```
 
-The above implementations are written in a syntactic sugar called do-notation. Via an interpretation from a high-level description of the syntax
-that uses a free monad over a functor (the fact that the result is a monad allows us to use do-notation) the above examples can be compiled to a `Fix (ProgramF value)` 
+Given a `LocalType` and a `Program`, we can now step through the program. For each instruction, we 
+check the session type to see whether the instruction is allowed. 
 
-## Extracting recursion: Fix and Free 
+**TODO: explain the need for `owner`**
 
-the `Fix` and `Free` data types are two ways of factoring out recursion from a data type definition. 
-Both require the data type to be an instance of `Functor`: The type is of the shape `f a` - like `List a` or `Maybe a`, and there exists a mapping function `fmap :: (a -> b) -> (f a -> f b)`. 
+In the definition of `ProgramF`, the recursion is factored out and replaced by a type parameter.
+We then use `Fix` to give us back arbitrarily deep trees of instructions. The advantage of this 
+transformation is that we can use recursion schemes - like folds - on the structure.
 
-Fix requires the data type to have a natural leaf: a constructor that does not contain an `a`. `Free` on the other hand lets us choose some other type for the leaves.
+## An eDSL with the free monad
 
-## Fix 
+Writing programs with `Fix` everywhere is tedious, and we can do better. 
+A common method in haskell is to use the free monad to construct a monad out of a functor. 
+With this monad we can use do-notation, which is much more pleasant to write.
 
-Take for instance this simple expression language
-
-```haskell
-data Expr
-    = Literal Int
-    | Add Expr Expr 
-```
-
-We can equivalently write 
-
-```haskell
-data ExprF next
-    = Literal Int
-    | Add next next 
-
-type Expr = Fix ExprF
-```
-
-The `Fix` data type is the fixed point type. 
-
-```haskell
-data Fix (f :: * -> *) = Fix (f (Fix f))
-
-simple :: Fix ExprF
-simple = Fix (Literal 42)
-
-complex :: Fix ExprF
-complex = 
-    Fix (Add (Fix (Literal 40)) (Fix (Literal 2)))
-```
-
-The advantage that this transformation gives us that it is easy to define functions that only deal with one level of the data,  
-and use them on the whole structure. For instance evaluation of the above expression can be written as 
-
-```haskell
-evaluate :: Fix ExprF -> Int 
-evaluate = 
-    Fix.cata $ \expr -> 
-        case expr of 
-            Literal v -> 
-                v
-
-            Add a b -> 
-                a + b
-```
-
-The `cata` function - a catamorphism also known as a fold or reduce - applies evaluate from the bottom up. In the code we write, we 
-only need to make local decisions and don't have to write the plumbing to get the recursion right. 
-
-## The Free Monad 
-
-Free monads bring two improvements 
-
-* They allow us to provide a unit 
-* They allow us to use do-notation 
-
-As can be seen in the previous section, writing expressions with `Fix` everywhere is messsy. 
-
-```haskell
-data Free (f :: * -> *) a
-    = Pure a 
-    | Free (f (Free f a))
-```
-
-```haskell
-data StackF a next 
-    = Push a next
-    | Pop (a -> next)
-    | End 
-
-type Stack a = Free StackF a
-     
-program :: Stack Int
-program = do 
-    push 5 
-    push 4 
-    a <- pop
-    b <- pop
-    push (a + b)
-
-push :: a -> Stack a ()
-push v = liftFree (Push v ()) 
-
-pop :: Stack a a 
-pop = liftFree (Pop identity)
-
-end :: Stack a a 
-end = liftFree End
-
-foldFree :: Functor f => (f a -> a -> a) -> Free f a -> a -> a 
-foldFree step instruction default = 
-    case instruction of 
-        Pure v -> 
-            
-            
-evaluate :: Stack a -> State (List a) ()
-evaluate instruction = 
-    case instruction of 
-        Free (Push value rest) -> do
-            State.modify (\stack -> value : stack)
-            evaluate rest
-
-        Free (Pop continuation) -> do
-            stack <- State.get 
-            case stack of 
-                [] -> error "empty stack"
-                x:xs -> do
-                    State.put xs
-                    continuation x
-                    
-        Pure value -> 
-            return ()
-```
-
-The idea then is to use a free monad on our `ProgramF` data type to be able to build a nice DSL out of it. 
-
-We define
+The idea then is to use the free monad on our `ProgramF` data type to be able to build a nice DSL. 
+For the transformation back, we also need some state: a variable counter that allows us to produce 
+new unique variable names. 
 
 
 ```haskell
@@ -250,9 +176,6 @@ newtype HighLevelProgram a =
     HighLevelProgram (StateT (Location, Participant, Int) (Free (ProgramF Value)) a)
         deriving (Functor, Applicative, Monad, MonadState (Location, Participant, Int))
 ```
-    
-The state contains the location, owner and a variable counter to generate new unique variable names. 
-We can now implement the primitives
 
 ```haskell
 uniqueVariableName :: HighLevelProgram Identifier
@@ -277,7 +200,7 @@ terminate :: HighLevelProgram a
 terminate = HighLevelProgram (lift $ Free NoOp)
 ```
 
-With the local types given above, we can now write correct implementations
+We can now give correct implementations to the local types given above.
 
 ```haskell
 aType = do
@@ -300,8 +223,116 @@ bob = do
     send address
 ```
 
+And then transform them into a `Program` with
+
+```haskell
+freeToFix :: Free (ProgramF value) a -> Program
+freeToFix (Pure n) = Fix NoOp 
+freeToFix (Free x) = Fix (fmap freeToFix x)
+
+compile :: Location -> Participant -> HighLevelProgram a -> Program 
+compile location participant (HighLevelProgram program) = 
+    freeToFix $ runStateT program (location, participant, 0) 
+```
+
 
 # Reversibility
 
 Every local type case needs an "inverse" that contains enough information to undo the action. 
 Additionally, the language's instructions (variable binding, if statements, function application, etc.) also need to be reversible. 
+
+```haskell
+type TypeContext program value a = Fix (TypeContextF program value a)
+
+data TypeContextF program value a f 
+    = Hole 
+    | SendOrReceive (LocalTypeF a ()) f 
+    | Selected 
+        { owner :: Participant
+        , offerer :: Participant 
+        , selection :: Zipper (String, value, program, LocalType a)
+        , continuation :: f 
+        }
+    | Offered 
+        { owner :: Participant
+        , selector :: Participant 
+        , picked :: Zipper (String, program, LocalType a)
+        , continuation :: f 
+        }
+    | Branched 
+        { condition :: value
+        , verdict :: Bool
+        , otherBranch :: program
+        , continuation :: f 
+        }
+    | Application Identifier Identifier f 
+    | Spawning Location Location Location f
+    | Assignment 
+        { visibleName :: Identifier
+        , internalName :: Identifier
+        , continuation :: f 
+        }
+    | Literal a f
+    deriving (Eq, Show, Generic, Functor)
+```
+
+Given a `LocalType` and a `Program` we can now move forward whilst producing a trace through the execution. 
+At any point, we can move back to a previous state.
+
+
+
+
+# Running everything
+
+```haskell
+type Session value a = StateT (ExecutionState value) (Except Error) a
+```
+
+## Error generation 
+
+There are many failure conditions. accurate error reporting is very convenient whilst developing, but 
+also to guide future users when something doesn't work. 
+
+```haskell
+data Error 
+    = SessionNotInSync 
+    | UndefinedParticipant Participant
+    | UndefinedVariable Participant Identifier
+    | SynchronizationError String
+    | LabelError String
+    | QueueError String Queue.QueueError
+    deriving (Eq, Show)
+```
+
+## ExecutionState
+
+```haskell
+
+data ExecutionState value = 
+    ExecutionState 
+        { _variableCount :: Int
+        , _applicationCount :: Int
+        , _participants :: Map Participant (Monitor value String)
+        , _locations :: Map Location (Map Participant (Program value))
+        , _queue :: Queue value
+        , _isFunction :: value -> Maybe (Identifier, Program value)
+        }
+```
+
+
+We can then finally define two stepping functions 
+
+```haskell
+forward :: Location -> Participant -> Session ()
+backward :: Location -> Participant -> Session ()
+```
+
+# future work 
+
+- also store state of the global protocol and use it to step
+- make informed decisions when a branch of a choice fails
+
+# Conclusion
+
+
+# Bibliography
