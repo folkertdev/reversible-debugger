@@ -6,7 +6,8 @@ import GHC.Generics
 import qualified Data.Foldable as Foldable
 import Data.Set as Set
 import Data.Map as Map (Map, elems, fromList, lookup)
-import Data.Monoid ((<>))
+import Data.Monoid ((<>), mconcat)
+import qualified Data.List as List 
 
 import Data.Void as Void (Void, absurd)
 import Data.Fix
@@ -82,6 +83,15 @@ liftFree action = Free (fmap Pure action)
 
 transaction :: (Show participant, Ord participant) => participant -> participant -> tipe -> IGlobalType participant tipe () 
 transaction from to tipe = liftFree (Transaction from to tipe ())
+
+transactions :: (Show participant, Ord participant) => participant -> List participant -> tipe -> IGlobalType participant tipe () 
+transactions sender receivers tipe = 
+    let
+        go [] = Pure ()
+        go (x:xs) = Free (Transaction sender x tipe $ go xs)
+    in
+        go receivers
+
 
 oneOf :: (Show participant, Ord participant) => participant -> participant -> List (String, IGlobalType participant u a) -> IGlobalType participant u a
 oneOf from to options = Free (Choice from to (Map.fromList options))

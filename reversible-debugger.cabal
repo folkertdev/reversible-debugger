@@ -25,6 +25,7 @@ library
                      , Synchronization
                      , Examples.ThreeBuyer
                      , Examples.RecursiveChoice
+                     , Examples.TFP
                      --, Examples.NestedDelegation
                      , Examples.NestedRecursion
                      -- , Examples.ParallelDelegation
