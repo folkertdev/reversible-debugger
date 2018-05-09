@@ -562,7 +562,7 @@ wrapLocalType tagger monitor =
     in
         monitor { _localType =  newLocalType }
 
-forwardChoice :: Id -> Id -> Map String (GlobalType.GlobalType String) -> Session Value String
+forwardChoice :: Id -> Id -> Map String (GlobalType.GlobalType Participant String) -> Session Value String
 forwardChoice (l1, offerer) (l2, selector) options = do
     -- validate both parties
     (program1, monitor1_) <- validate l1 offerer

@@ -22,24 +22,36 @@ import qualified Queue
 import qualified HighLevel as H
 import Debug.Trace as Debug
 
+data MyParticipants = A | B | C | V deriving (Show, Eq, Ord)
 
-globalType :: GlobalType.GlobalType String
-globalType = 
-    GlobalType.transaction "A" "V" "title" 
-        $ GlobalType.transaction "V" "A" "price" 
-        $ GlobalType.transaction "V" "B" "price" 
-        $ GlobalType.transaction "A" "B" "share" 
-        $ GlobalType.transaction "B" "A" "ok" 
-        $ GlobalType.transaction "B" "V" "ok" 
-        $ GlobalType.transaction "B" "C" "share"
-        $ GlobalType.transaction "B" "C" "thunk"
-        $ GlobalType.transaction "B" "V" "address"
-        $ GlobalType.transaction "V" "B" "date"
-        $ GlobalType.end
+data MyType
+    = Title
+    | Price 
+    | Share
+    | Ok
+    | Thunk
+    | Address
+    | Date
+    deriving (Show, Eq, Ord)
+
+
+globalType :: GlobalType.GlobalType MyParticipants MyType
+globalType = GlobalType.globalType $ do
+    GlobalType.transaction A V Title 
+    GlobalType.transaction V A Price 
+    GlobalType.transaction V B Price 
+    GlobalType.transaction A B Share 
+    GlobalType.transaction B A Ok 
+    GlobalType.transaction B V Ok 
+    GlobalType.transaction B C Share
+    GlobalType.transaction B C Thunk
+    GlobalType.transaction B V Address
+    GlobalType.transaction V B Date
+    GlobalType.end
 
 
 localTypes :: Map Identifier (LocalType.LocalType String)
-localTypes = LocalType.projections globalType
+localTypes = LocalType.projections $ GlobalType.mapType show globalType
 
 
 alice = H.compile "Location1" "A" $ do 
@@ -110,6 +122,7 @@ executionState =
 
             }
 
+{-
 deriveSteps :: Int -> GlobalType.GlobalType String -> Session Value ()
 deriveSteps n global = 
     case Debug.traceShowId $ unFix global of 
@@ -126,10 +139,11 @@ deriveSteps n global =
 
         _ -> error "unsupported for now"
 
-
 derived = 
     deriveSteps 8 globalType 
         |> flip State.runStateT executionState
+-}
+
 
 steps = 
         ( do

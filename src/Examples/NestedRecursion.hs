@@ -29,17 +29,18 @@ import qualified Queue
 
 import qualified HighLevel as H
 
+data Participants = A | B deriving (Show, Eq, Ord)
 
-recursiveGlobalType :: GlobalType.GlobalType String
-recursiveGlobalType = 
+recursiveGlobalType :: GlobalType.GlobalType Participants String
+recursiveGlobalType = GlobalType.globalType $ 
     GlobalType.recurse $
-        GlobalType.recurse $
-            GlobalType.transaction "A" "B" "number" $
-                GlobalType.oneOf "A" "B" 
-                    [ (,) "recurse"  GlobalType.recursionVariable 
-                    , (,) "recurse-toplevel"  (GlobalType.weakenRecursion GlobalType.recursionVariable)
-                    , (,) "end" GlobalType.end
-                    ]
+        GlobalType.recurse $ do
+            GlobalType.transaction A B "number"
+            GlobalType.oneOf A B 
+                [ (,) "recurse"  GlobalType.recursionVariable 
+                , (,) "recurse-toplevel"  (GlobalType.weakenRecursion GlobalType.recursionVariable)
+                , (,) "end" GlobalType.end
+                ]
 
 
 localTypes :: Map Identifier (LocalType.LocalType String)

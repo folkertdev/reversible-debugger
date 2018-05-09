@@ -8,48 +8,102 @@ import Data.Set as Set
 import Data.Map as Map (Map, elems, fromList, lookup)
 import Data.Monoid ((<>))
 
+import Data.Void as Void (Void, absurd)
 import Data.Fix
+import Control.Monad.Free (Free(..))
+import qualified Control.Monad.Free as Free 
 
 import Utils ((|>), List)
 
-type Participant = String
-
 {-| A global type with transaction and recursion -}
-type GlobalType u = Fix (GlobalTypeF u)
+type GlobalType participant u = Fix (GlobalTypeF participant u)
 
-data GlobalTypeF u f
-    = Transaction { from :: Participant, to :: Participant, tipe :: u, continuation ::  f } 
-    | Choice { from :: Participant, to :: Participant, options :: Map String f }
+type IGlobalType participant u a = Free (GlobalTypeF participant u) a 
+
+data GlobalTypeF participant u f
+    = Transaction { from :: participant, to :: participant, tipe :: u, continuation ::  f } 
+    | Choice { from :: participant, to :: participant, options :: Map String f }
     | R f
     | V
     | Wk f
     | End
     deriving (Show, Generic, Functor, Foldable, Traversable)
 
-transaction :: Participant -> Participant -> tipe -> GlobalType tipe -> GlobalType tipe
-transaction from to tipe cont = Fix (Transaction from to tipe cont)
+mapParticipants :: (p1 -> p2) -> GlobalType p1 a -> GlobalType p2 a
+mapParticipants mapper (Fix global) = Fix $ 
+    case global of 
+        Transaction p1 p2 tipe cont -> 
+            Transaction (mapper p1) (mapper p2) tipe $ mapParticipants mapper cont
 
-oneOf :: Participant -> Participant -> List (String, GlobalType tipe) -> GlobalType tipe
-oneOf from to options = Fix (Choice from to (Map.fromList options))
+        Choice p1 p2 conts -> 
+            Choice (mapper p1) (mapper p2) $ fmap (mapParticipants mapper) conts 
 
-recurse :: GlobalType a -> GlobalType a 
-recurse cont = Fix (R cont)
+        R cont -> 
+            R $ mapParticipants mapper cont
 
-broadenScope :: GlobalType a -> GlobalType a 
-broadenScope cont = Fix (Wk cont)
+        Wk cont -> 
+            Wk $ mapParticipants mapper cont
 
-weakenRecursion :: GlobalType a -> GlobalType a 
-weakenRecursion cont = Fix (Wk cont)
+        V -> 
+            V 
 
-recursionVariable :: GlobalType a
-recursionVariable = Fix V
+        End -> 
+            End
 
-end :: GlobalType a
-end = Fix End
+mapType :: (t1 -> t2) -> GlobalType p t1 -> GlobalType p t2
+mapType mapper (Fix global) = Fix $ 
+    case global of 
+        Transaction p1 p2 tipe cont -> 
+            Transaction p1 p2 (mapper tipe) $ mapType mapper cont
+
+        Choice p1 p2 conts -> 
+            Choice p1 p2 $ fmap (mapType mapper) conts 
+
+        R cont -> 
+            R $ mapType mapper cont
+
+        Wk cont -> 
+            Wk $ mapType mapper cont
+
+        V -> 
+            V 
+
+        End -> 
+            End
+
+
+globalType :: Free (GlobalTypeF p u) Void -> GlobalType p u 
+globalType (Pure v) = Void.absurd v
+globalType (Free x) = Fix (fmap globalType x)
+
+
+liftFree :: Functor f => f a -> Free f a
+liftFree action = Free (fmap Pure action)
+
+transaction :: (Show participant, Ord participant) => participant -> participant -> tipe -> IGlobalType participant tipe () 
+transaction from to tipe = liftFree (Transaction from to tipe ())
+
+oneOf :: (Show participant, Ord participant) => participant -> participant -> List (String, IGlobalType participant u a) -> IGlobalType participant u a
+oneOf from to options = Free (Choice from to (Map.fromList options))
+
+recurse :: Free (GlobalTypeF p u) void -> Free (GlobalTypeF p u) void
+recurse cont = Free (R cont)
+
+broadenScope :: Free (GlobalTypeF p u) void -> Free (GlobalTypeF p u) void
+broadenScope cont = Free (Wk cont)
+
+weakenRecursion :: Free (GlobalTypeF p u) a -> Free (GlobalTypeF p u) a
+weakenRecursion cont = Free (Wk cont)
+
+recursionVariable :: Free (GlobalTypeF p u) a 
+recursionVariable = Free V
+
+end :: Free (GlobalTypeF p u) a 
+end = Free End
 
 
 {-| enumerate all the participants in a global type -}
-participants :: GlobalType u -> Set Participant
+participants :: Ord participant => GlobalType participant u -> Set participant
 participants = 
     Data.Fix.cata $ \global ->
         case global of 
@@ -75,7 +129,7 @@ participants =
 
 
 {-| A global type state containing information to go back (crumbs) and forward (GlobalType) -}
-type GlobalTypeState u =  (List (GlobalType.Crumb u), GlobalType u)
+type GlobalTypeState p u =  (List (GlobalType.Crumb p u), GlobalType p u)
 
 data CrumbF s 
     = Before s
@@ -86,10 +140,10 @@ data CrumbF s
     | Offered s s
     deriving (Generic, Functor, Foldable, Traversable)
 
-type Crumb u = CrumbF (GlobalTypeF u ())
+type Crumb p u = CrumbF (GlobalTypeF p u ())
 
 
-unCrumb :: GlobalType u -> GlobalType.Crumb u -> GlobalType u
+unCrumb :: GlobalType p u -> GlobalType.Crumb p u -> GlobalType p u
 unCrumb global crumb = 
     let levelUp = foldl1 const crumb
     in
@@ -97,10 +151,10 @@ unCrumb global crumb =
 
 
 
-forgetState :: GlobalTypeState u -> GlobalType u 
+forgetState :: GlobalTypeState p u -> GlobalType p u 
 forgetState (crumbs, left) = Foldable.foldr (flip unCrumb) left crumbs 
 
-nested :: GlobalType u -> List (GlobalType u)
+nested :: GlobalType p u -> List (GlobalType p u)
 nested = Foldable.toList . unFix
 
 {-

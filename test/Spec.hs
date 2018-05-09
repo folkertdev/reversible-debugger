@@ -29,6 +29,8 @@ type List = []
 main :: IO ()
 main = hspec $ describe "all" Main.all
     
+data Participants = A | B | C | D | V  
+    deriving (Show, Eq, Ord)
 
 all = do 
     testForward
@@ -36,8 +38,6 @@ all = do
 
     testRenameVariable
 
-specific  = 
-    undefined
 
 
 forwardN []     state = Right state 
@@ -275,14 +275,14 @@ testBackward = describe "backward" $ do
 
     it "nested recursion behaves 2" $ 
         let 
-            globalType = 
+            globalType = GlobalType.globalType $ 
                 GlobalType.recurse $
-                    GlobalType.recurse $
-                        GlobalType.transaction "A" "B" "number" $
-                            GlobalType.oneOf "A" "B" 
-                                [ (,) "continue"  GlobalType.recursionVariable 
-                                , (,) "end" GlobalType.end
-                                ]
+                    GlobalType.recurse $ do
+                        GlobalType.transaction A B "number"
+                        GlobalType.oneOf A B 
+                            [ (,) "continue"  GlobalType.recursionVariable 
+                            , (,) "end" GlobalType.end
+                            ]
                         
             localTypes = LocalType.projections globalType
             monitorA = createMonitor (id, localTypes Map.! "A") Map.empty
@@ -368,11 +368,11 @@ testForward = describe "forward_" $ do
                 (Map.singleton "v0" (VFunction "var1" (Fix (Application "v0" VUnit))))
 
             
-            globalType =
-                GlobalType.transaction "B" "C" "thunk"
-                $ GlobalType.transaction "B" "A" "address"
-                $ GlobalType.transaction "A" "B" "amount"
-                  GlobalType.end
+            globalType = GlobalType.globalType $ do
+                GlobalType.transaction B C "thunk"
+                GlobalType.transaction B A "address"
+                GlobalType.transaction A B "amount"
+                GlobalType.end
 
             bob = do 
                 thunk <- 
@@ -432,8 +432,9 @@ testForward = describe "forward_" $ do
 
     it "let in thunk assigns to the correct participant" $
         let
-            globalType =
-                GlobalType.transaction "B" "C" "thunk" GlobalType.end
+            globalType = GlobalType.globalType $ do
+                GlobalType.transaction B C "thunk" 
+                GlobalType.end
 
             localTypes = LocalType.projections globalType
 
@@ -474,10 +475,10 @@ testForward = describe "forward_" $ do
 
     it "receive adds its variable to the correct owner" $ 
         let 
-            globalType = 
-                GlobalType.transaction "C" "B" "thunk" $ 
-                    GlobalType.transaction "A" "C" "fourtyTwo" 
-                    GlobalType.end
+            globalType = GlobalType.globalType $ do
+                GlobalType.transaction C B "thunk" 
+                GlobalType.transaction A C "fourtyTwo" 
+                GlobalType.end
 
             localTypes = LocalType.projections globalType
 
@@ -604,7 +605,7 @@ testForward = describe "forward_" $ do
 
     it "offer/select behaves" $ 
         let globalType = 
-                GlobalType.oneOf "A" "B" [ (,) "x" GlobalType.end , (,) "y" GlobalType.end ]
+                GlobalType.oneOf A B [ (,) "x" GlobalType.end , (,) "y" GlobalType.end ]
 
             type1 = LocalType.offer "A" "B" [ ("x",LocalType.end),("y",LocalType.end)]
             type2 = LocalType.select "B" "A" [("x",LocalType.end),("y",LocalType.end)]
@@ -630,7 +631,7 @@ testForward = describe "forward_" $ do
 
     it "offer errors when offerer owner is incorrect" $ 
         let globalType = 
-                GlobalType.oneOf "A" "B" [ (,) "x" GlobalType.end , (,) "y" GlobalType.end ]
+                GlobalType.oneOf A B [ (,) "x" GlobalType.end , (,) "y" GlobalType.end ]
 
             type1 = LocalType.offer "A" "C" [ ("x",LocalType.end),("y",LocalType.end)]
             type2 = LocalType.select "B" "A" [("x",LocalType.end),("y",LocalType.end)]
@@ -647,7 +648,7 @@ testForward = describe "forward_" $ do
 
     it "offer errors when offerer owner is incorrect" $ 
         let globalType = 
-                GlobalType.oneOf "A" "B" [ (,) "x" GlobalType.end , (,) "y" GlobalType.end ]
+                GlobalType.oneOf A B [ (,) "x" GlobalType.end , (,) "y" GlobalType.end ]
 
             type1 = LocalType.offer "A" "B" [ ("x",LocalType.end),("y",LocalType.end)]
             type2 = LocalType.select "B" "C" [("x",LocalType.end),("y",LocalType.end)]

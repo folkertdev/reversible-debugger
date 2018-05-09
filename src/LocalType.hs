@@ -177,19 +177,18 @@ select owner selector options =
     Fix $ Select owner selector (Map.fromList options)
 
 
-projections :: GlobalType u -> Map Participant (LocalType u)
+projections :: forall participant u. (Show participant, Ord participant) => GlobalType participant u -> Map Participant (LocalType u)
 projections global = 
-    GlobalType.participants global
-        |> Set.foldr (\participant -> Map.insert participant (project participant global)) Map.empty 
-
-
-partialProjection :: Participant -> GlobalTypeF u f -> Either (LocalType u) (LocalType u -> LocalType u, f)
-partialProjection participant = 
-    undefined
+    let withStringParticipants :: GlobalType Participant u
+        withStringParticipants =  global |> GlobalType.mapParticipants show 
+    in
+        withStringParticipants 
+            |> GlobalType.participants 
+            |> Set.foldr (\participant -> Map.insert participant (project participant withStringParticipants)) Map.empty 
 
 
 {-| Project a global type into a local one for a particular participant -}
-project :: Participant -> GlobalType u -> LocalType u 
+project :: Participant -> GlobalType Participant u -> LocalType u 
 project participant = 
     Data.Fix.cata $ \global -> 
         case global of 
