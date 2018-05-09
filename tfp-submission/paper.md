@@ -315,7 +315,6 @@ data TypeContextF program value a f
         , continuation :: f 
         }
     | Application Identifier Identifier f 
-    | Spawning Location Location Location f
     | Assignment 
         { visibleName :: Identifier
         , internalName :: Identifier
@@ -325,16 +324,16 @@ data TypeContextF program value a f
     deriving (Eq, Show, Generic, Functor)
 ```
 
-cover 
+For the instructions that modify the queue we must also roll the queue. Additionally, we require the 
+their participants to be synchronized. Synchronization ensures that the complete transaction in the global type is undone, but the rolling can still happen in a decoupled way.
+The synchronization is a dynamic check that will give an error message if either participant is not in the 
+expected state.
 
-### Synchronization 
+Let bindings remove assigned variables from the store. This is not strictly necesarry to maintain 
+causal consistency but it is good practice.
 
-The formal semantics describe synchronizations before roling a transaction or a choice: both parties must be ready to roll the action. This condition is checked dynamically; having it as a transition rule doesn't really work.
-
-
-- undoing queue actions / synchronization
-- undoing let bindings
-- undoing function applications
+Function applications are treated exactly as in the formal semantics: We store a reference to the 
+function and its arguments, so we can recreate the application later.
 
 Given a `LocalType` and a `Program` we can now move forward whilst producing a trace through the execution. 
 At any point, we can move back to a previous state.
