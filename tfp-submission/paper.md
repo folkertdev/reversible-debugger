@@ -1,21 +1,33 @@
 ---
 documentclass: llncs
-title: The power of dark silicon
-author: Darth Vader
-institute: the research facility
-email: "darth.vader@hs-augsburg.de"
-keywords: hope, luke, ewoks
+title: Reversible Session-Based Concurrency in Haskell\thanks{F.\ de Vries is a BSc student.}
+author:  Folkert de Vries\inst{1} \and Jorge A. Pérez\inst{1}\orcidID{0000-0002-1452-6180}
+institute: University of Groningen, The Netherlands
+authorrunning: F.\ de Vries and J.\ A.\ Pérez
+# email: "darth.vader@hs-augsburg.de"
 abstract: | 
-    Sit amet mauris. Curabitur a quam. Aliquam neque. Nam nunc nunc,
-    lacinia sed, varius quis, iaculis eget, ante. Nulla dictum justo eu lacus.
-    Phasellus sit amet quam. Nullam sodales. Cras non magna eu est consectetuer
-    faucibus. Donec tempor lobortis turpis. Sed tellus velit, ullamcorper ac,
-    fringilla vitae, sodales nec, purus. Morbi aliquet risus in mi.
+    Under a reversible semantics, computation steps can be undone. 
+    For message-passing, concurrent programs, reversing computation steps is a challenging and delicate task; one typically aims at formal semantics which are \emph{causally-consistent}. 
+    Prior work has addressed this challenge in the context of a process model of multiparty protocols (choreographies) following a so-called \emph{monitors-as-memories} approach.
+    In this paper, we describe our ongoing efforts aimed at implementing this operational semantics in Haskell. 
+    \keywords{Reversible computation \and Message-passing concurrency \and Session Types \and Haskell.}
 
 ...
 
+# Introduction
 
-# Foundations
+We implement the model in @DBLP:conf/ppdp/MezzinaP17.
+
+
+# The Process Model
+
+I think we need to explicitely define 
+
+* location
+* participant
+* queue
+
+# Our Haskell Implementation
 
 We set out to implement the language, types and semantics given above. 
 The end goal is to implement the two stepping functions 
@@ -25,17 +37,21 @@ forward :: Location -> Participant -> Session Value ()
 backward :: Location -> Participant -> Session Value ()
 ```
 
-Where `Session` contains an `ExecutionState` holding a store of variables and other things, and 
-the function can fail producing an `Error`.
+Where `Session` contains an `ExecutionState` holding among other things a store of variables, and 
+can fail producing an `Error`.
 
 ```haskell
 type Session value a = StateT (ExecutionState value) (Except Error) a
 ```
 
+Additionally we need to provide a program for every participant, a monitor for every participant 
+and a global message queue. All three of those need to be able to move forward and backward.
+
+**TODO list explictly the next sections and what they describe**
 
 ## The Monitor
 
-A participant can be described by its monitor and its programs at all locations. 
+A participant is defined by its monitor and its program. 
 The monitor contains various metadata about the participant: variables, the current state of the type and 
 some other information to be able to move backward.
 
@@ -57,7 +73,28 @@ to keep track of and reverse past actions.
 ## Global and Local Types 
 
 As mentioned, we have two kinds of session types: Global and Local.
-The Global type describes transactions and choices.
+The Global type describes interactions between participants, specifically the 
+sending and receiving of a value (a transaction), and selecting one out of a set of options 
+(a choice). The definition of global types is given by
+
+```haskell
+type GlobalType u = Fix (GlobalTypeF u)
+
+data GlobalTypeF u next
+    = Transaction 
+        { from :: Participant, to :: Participant, tipe :: u, continuation ::  next } 
+    | Choice 
+        { from :: Participant, to :: Participant, options :: Map String next }
+    | R next
+    | V
+    | Wk next
+    | End
+    deriving (Show, Functor)
+```
+
+The recursive constructors are taken from @cloud-haskell. `R` introduces 
+a recursion point, `V` jumps back to a recursion point and `Wk` weakens the recursion, making it possible 
+to jump to a less tightly-binding `R`.
 
 ```haskell
 a = "Alice"
@@ -73,9 +110,10 @@ globalType = do
     transaction b a Address
 ```
 
-The Global type can then be projected onto a participant, resulting in a local type 
-containing sends and receives, and offers and selects. The projection of `globalType` onto `a` and `b` 
-would be equivalent to:
+The Global type can then be projected onto a participant, resulting in a local type. 
+The local type describes interactions between a participant and the central message queue.
+Specifically, sends and receives, and offers and selects. The projection of `globalType` onto `a` and `b` 
+is equivalent to:
 
 ```haskell
 aType :: LocalType MyType
@@ -89,34 +127,9 @@ bType = do
     send a Address
 ```
 
-
-**TODO: unsure whether to include the full definition below, but I feel like the recursion should be mentioned**
-
-The definition of global types is given by
-
-```haskell
-type GlobalType u = Fix (GlobalTypeF u)
-
-data GlobalTypeF u next
-    = Transaction 
-        { from :: Participant, to :: Participant, tipe :: u, continuation ::  next } 
-    | OneOf { from :: Participant, to :: Participant, options :: Map String next }
-    | R next
-    | V
-    | Wk next
-    | End
-    deriving (Show, Functor)
-```
-
-The recursive constructors are taken from @cloud-haskell. `R` introduces 
-a recursion point, `V` jumps back to a recursion point and `Wk` weakens the recursion, making it possible 
-to jump to a less tightly-binding `R`.
-
-
-
 ## A Language 
 
-To build a prototype for the session types described previously, we also need a value language.
+We need a language to use with our types. It needs at least instructions for the four participant-queue interactions, a way to assign variables, and a way to define and apply functions.
 
 ```haskell
 type Participant = String
@@ -125,7 +138,7 @@ type Identifier = String
 type Program = Fix (ProgramF Value) 
 
 data ProgramF value next 
-    -- communication primitives
+    -- transaction primitives
     = Send { owner :: Participant, value :: value, continuation :: next }
     | Receive { owner :: Participant, variableName :: Identifier, continuation :: next  }
 
@@ -156,24 +169,24 @@ data Value
     deriving (Eq, Show)
 ```
 
-Given a `LocalType` and a `Program`, we can now step through the program. For each instruction, we 
-check the session type to see whether the instruction is allowed. 
-
-
 In the definition of `ProgramF`, the recursion is factored out and replaced by a type parameter.
 We then use `Fix` to give us back arbitrarily deep trees of instructions. The advantage of this 
 transformation is that we can use recursion schemes - like folds - on the structure.
 
+Given a `LocalType` and a `Program`, we can now step forward through the program. For each instruction, we 
+check the session type to see whether the instruction is allowed. 
+
 ## An eDSL with the free monad
 
 Writing programs with `Fix` everywhere is tedious, and we can do better. 
-A common method in haskell is to use the free monad to construct a monad out of a functor. 
+We can create an embedded domain-specific language (eDSL) using the free monad. 
+The free monad is a monad that comes for free given some functor. 
 With this monad we can use do-notation, which is much more pleasant to write.
 
 The idea then is to use the free monad on our `ProgramF` data type to be able to build a nice DSL. 
-For the transformation back, we also need some state: a variable counter that allows us to produce 
+For the transformation from `Free (ProgramF value) a` back to `Fix (ProgramF value)` we need 
+also need some state: a variable counter that allows us to produce 
 new unique variable names. 
-
 
 ```haskell
 newtype HighLevelProgram a = 
@@ -272,10 +285,10 @@ Here `B` creates a function that performs a send and receive. Because the functi
 of these statements is `B`, even when the function is sent to and eventually evaluated by `C`. 
 
 
-# Reversibility
+## Reversibility
 
-Every forward step needs an inverse backward step. For every forward step we store enough information 
-to recreate the instruction and local type that made us do the forward step.
+Every forward step needs an inverse. When taking a forward step we store enough information 
+to recreate the instruction and local type that made us perform the forward step.
 
 ```haskell
 type TypeContext program value a = Fix (TypeContextF program value a)
@@ -315,18 +328,25 @@ data TypeContextF program value a f
 Given a `LocalType` and a `Program` we can now move forward whilst producing a trace through the execution. 
 At any point, we can move back to a previous state.
 
+### Synchronization 
+
+The formal semantics describe synchronizations before roling a transaction or a choice: both parties must be ready to roll the action. This condition is checked dynamically; having it as a transition rule doesn't really work.
 
 
+## Putting it all together 
 
-# Running everything
+At the start we described the `Session` type.
 
 ```haskell
 type Session value a = StateT (ExecutionState value) (Except Error) a
 ```
 
-## ExecutionState
+We now have all the pieces we need to define the execution state. Based on the error conditions that arise
+in moving forward and backward, we can also define a meaningful `Error` type.
 
-Finally, we have all the components we need. The execution state contains the monitors and the programs at all 
+### ExecutionState
+
+The execution state contains the monitors and the programs at all 
 locations. Additionally it countains a variable counter to generate unique new names, and the central message 
 queue 
 
@@ -346,7 +366,7 @@ data ExecutionState value =
 ```
 
 
-## Error generation 
+### Error generation 
 
 There are a lot of potential failure conditions in this system. A small error somewhere 
 in either the global type or the program can quickly move program and type out of sync. 
@@ -363,20 +383,19 @@ data Error
     deriving (Eq, Show)
 ```
 
+### ? 
 
-We can then finally define two stepping functions 
+
 
 ```haskell
 forward :: Location -> Participant -> Session ()
 backward :: Location -> Participant -> Session ()
 ```
 
-# future work 
+# Concluding Remarks and Future Work
 
-- also store state of the global protocol and use it to step
+- also store the currenent position in the global protocol and use it to step
 - make informed decisions when a branch of a choice fails
-
-# Conclusion
 
 
 # Bibliography
