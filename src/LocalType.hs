@@ -207,7 +207,7 @@ project participant =
                     else 
                         cont 
 
-            GlobalType.OneOf offerer selector options -> 
+            GlobalType.Choice offerer selector options -> 
                 if participant == offerer then 
                     LocalType.offer offerer selector (Map.toList options)
                 else if participant == selector then 

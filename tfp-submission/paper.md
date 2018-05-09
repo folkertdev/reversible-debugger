@@ -325,12 +325,19 @@ data TypeContextF program value a f
     deriving (Eq, Show, Generic, Functor)
 ```
 
-Given a `LocalType` and a `Program` we can now move forward whilst producing a trace through the execution. 
-At any point, we can move back to a previous state.
+cover 
 
 ### Synchronization 
 
 The formal semantics describe synchronizations before roling a transaction or a choice: both parties must be ready to roll the action. This condition is checked dynamically; having it as a transition rule doesn't really work.
+
+
+- undoing queue actions / synchronization
+- undoing let bindings
+- undoing function applications
+
+Given a `LocalType` and a `Program` we can now move forward whilst producing a trace through the execution. 
+At any point, we can move back to a previous state.
 
 
 ## Putting it all together 

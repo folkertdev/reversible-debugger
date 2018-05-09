@@ -19,7 +19,7 @@ type GlobalType u = Fix (GlobalTypeF u)
 
 data GlobalTypeF u f
     = Transaction { from :: Participant, to :: Participant, tipe :: u, continuation ::  f } 
-    | OneOf { from :: Participant, to :: Participant, options :: Map String f }
+    | Choice { from :: Participant, to :: Participant, options :: Map String f }
     | R f
     | V
     | Wk f
@@ -30,7 +30,7 @@ transaction :: Participant -> Participant -> tipe -> GlobalType tipe -> GlobalTy
 transaction from to tipe cont = Fix (Transaction from to tipe cont)
 
 oneOf :: Participant -> Participant -> List (String, GlobalType tipe) -> GlobalType tipe
-oneOf from to options = Fix (OneOf from to (Map.fromList options))
+oneOf from to options = Fix (Choice from to (Map.fromList options))
 
 recurse :: GlobalType a -> GlobalType a 
 recurse cont = Fix (R cont)
@@ -56,7 +56,7 @@ participants =
             Transaction p1 p2 _ cont -> 
                 Set.fromList [ p1, p2 ] <> cont
 
-            OneOf p1 p2 conts -> 
+            Choice p1 p2 conts -> 
                 Set.fromList [ p1, p2 ] <> mconcat (Map.elems conts)
 
             R cont -> 
