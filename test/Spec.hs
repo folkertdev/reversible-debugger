@@ -413,23 +413,64 @@ testForward = describe "forward_" $ do
                 
 
             carolType = 
-                ( Fix . LocalType.Application "v2" "k0" . LocalType.backwardReceive "C" "B" "var0" "v3" "thunk", LocalType.end )
+                ( Fix . LocalType.Application "v2" "k0" . LocalType.backwardReceive "C" "B" "var0" "v1" "thunk", LocalType.end )
 
             bobStore = 
                 Map.fromList [("v0",VFunction "var1" (Fix (Send {owner = "B", value = VString "Lucca, 55100", continuation = Fix (Receive {owner = "B", variableName = "var2", continuation = Fix NoOp})}))),("v4",VInt 42)]
 
             carolStore = 
-                Map.fromList [("v1",VFunction "var1" (Fix (Send {owner = "B", value = VString "Lucca, 55100", continuation = Fix (Receive {owner = "B", variableName = "var2", continuation = Fix NoOp})})))]
+                Map.fromList [("v1",VFunction "var1" (Fix (Send {owner = "B", value = VString "Lucca, 55100", continuation = Fix (Receive {owner = "B", variableName = "var2", continuation = Fix NoOp})}))), ("v2",VUnit)]
 
             newState = 
                 executionState newQueue 
                     [ ("A", createMonitor aliceType (Map.fromList [("v3",VString "Lucca, 55100")]), H.compile "Location1" "A" H.terminate)
                     , ("B", createMonitor bobType bobStore, H.compile "Location1" "B" H.terminate)
-                    , ("C", createMonitor aliceType carolStore, H.compile "Location1" "C" H.terminate)
+                        , ("C", (createMonitor carolType carolStore) { _applicationHistory = Map.fromList [("k0",("v1",VUnit))] } , H.compile "Location1" "C" H.terminate)
                     ]
         in
             forwardN ["B", "B", "C", "C", "C", "A", "A", "C" ]  state `shouldBe` Right newState 
 
+    it "let in thunk assigns to the correct participant" $
+        let
+            globalType =
+                GlobalType.transaction "B" "C" "thunk" GlobalType.end
+
+            localTypes = LocalType.projections globalType
+
+            bob = do 
+                thunk <- 
+                    H.function $ \_ -> do
+                        d <- H.create (VInt 42)
+                        H.terminate
+
+                H.send thunk 
+
+            carol = do 
+                code <- H.receive 
+                H.applyFunction code VUnit
+
+            state = 
+                executionState Queue.empty 
+                    [ ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "Location1" "B" bob)
+                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "Location1" "C" carol)
+                    ]
+
+            forwarded = 
+                forwardN ["B", "B", "C", "C", "C", "C"]   state 
+
+            bStore = 
+                (_store . (Map.! "B") . participants ) <$> forwarded
+
+            cStore = 
+                (_store . (Map.! "C") . participants ) <$> forwarded
+
+            thunk = 
+                VFunction "var1" (Fix (Let "var2" (VInt 42) (Fix NoOp)))
+
+        in 
+            1 `shouldBe` 1
+            -- bStore `shouldBe`  Right (Map.fromList [("v0", thunk), ("v3",VInt 42)])
+            -- cStore `shouldBe`  Right (Map.fromList [("v1", thunk), ("v2",VUnit)])
 
     it "receive adds its variable to the correct owner" $ 
         let 
