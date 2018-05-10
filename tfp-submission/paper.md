@@ -11,8 +11,10 @@ abstract: |
     Prior work has addressed this challenge in the context of a process model of multiparty protocols (choreographies) following a so-called \emph{monitors-as-memories} approach.
     In this paper, we describe our ongoing efforts aimed at implementing this operational semantics in Haskell. 
     \keywords{Reversible computation \and Message-passing concurrency \and Session Types \and Haskell.}
-
+usepackage: graphicx,hyperref, xcolor,xspace,amsmath,amsfonts,stmaryrd,amssymb,enumerate, mathpartir
 ...
+
+
 
 # Introduction
 
@@ -49,26 +51,6 @@ and a global message queue. All three of those need to be able to move forward a
 
 **TODO list explictly the next sections and what they describe**
 
-## The Monitor
-
-A participant is defined by its monitor and its program. 
-The monitor contains various metadata about the participant: variables, the current state of the type and 
-some other information to be able to move backward.
-
-```haskell
-data Monitor value tipe = 
-    Monitor 
-        { _localType :: LocalTypeState (Program value) value tipe
-        , _recursiveVariableNumber :: Int
-        , _recursionPoints :: List (LocalType tipe)
-        , _store :: Map Identifier value 
-        , _applicationHistory :: Map Identifier (Identifier, value)
-        }
-        deriving (Show, Eq)
-```
-
-Next we will look at how session types are represented, what the language looks like and how 
-to keep track of and reverse past actions.
 
 ## Global and Local Types 
 
@@ -254,6 +236,10 @@ compile location participant (HighLevelProgram program) =
 The `owner` field for send, receive, offer and select is important. It makes sure that instructions in 
 closures are attributed to the correct participant. 
 
+~~~{#test .haskell caption="asdf fdsa"}
+asdf
+~~~
+
 ```haskell
 bob = H.compile "Location1" "B" $ do 
     thunk <- 
@@ -276,6 +262,8 @@ carol = H.compile "Location1" "C" $ do
     code <- H.receive 
     H.applyFunction code VUnit
 ```
+
+
 
 Here `B` creates a function that performs a send and receive. Because the function is created by `B`, the owner
 of these statements is `B`, even when the function is sent to and eventually evaluated by `C`. 
@@ -340,7 +328,6 @@ function and its arguments, so we can recreate the application later.
 Given a `LocalType` and a `Program` we can now move forward whilst producing a trace through the execution. 
 At any point, we can move back to a previous state.
 
-
 ## Putting it all together 
 
 At the start we described the `Session` type.
@@ -352,15 +339,47 @@ type Session value a = StateT (ExecutionState value) (Except Error) a
 We now have all the pieces we need to define the execution state. Based on the error conditions that arise
 in moving forward and backward, we can also define a meaningful `Error` type.
 
-### ExecutionState
+### The Monitor
 
-The execution state contains the monitors and the programs at all 
-locations. Additionally it countains a variable counter to generate unique new names, and the central message 
-queue 
+A participant is defined by its monitor and its program. 
+The monitor contains various metadata about the participant: variables, the current state of the type and 
+some other information to be able to move backward.
+
+In the formal semantics we've defined a monitor as a tagged triplet containing a history session type,
+a set of free variables and a store assigning these variables to values. In the haskell implementation, the 
+tag is moved into the history type `LocalTypeState`. The set of free variables and the store 
+is merged into a dictionary. The set of variables is the set of keys of the dictionary. 
 
 ```haskell
+data Monitor value tipe = 
+    Monitor 
+        { _localType :: LocalTypeState (Program value) value tipe
+        , _recursiveVariableNumber :: Int
+        , _recursionPoints :: List (LocalType tipe)
+        , _store :: Map Identifier value 
+        , _applicationHistory :: Map Identifier (Identifier, value)
+        }
+        deriving (Show, Eq)
+```
 
-type Queue a = [a]
+Additionally, the application history is folded into the monitor as this is a participant-specific piece of data. Similarly, the monitor keeps track of recursion points to restore the local type when a recursive 
+step is reversed.
+
+### ExecutionState
+
+The execution state contains the monitors and the programs at all locations. 
+Additionally it contains: 
+
+* A variable and application counter to generate unique new names
+* The central message queue. 
+* The `_isFunction` field, required to send functions over the queue: all references in the function body must be dereferenced before sending.
+
+```haskell
+data Queue a = Queue 
+    { history :: List ( Participant, Participant, a)
+    , current :: List (Participant, Participant, a)
+    }
+    deriving (Eq, Show)
 
 data ExecutionState value = 
     ExecutionState 
@@ -378,12 +397,13 @@ data ExecutionState value =
 
 There are a lot of potential failure conditions in this system. A small error somewhere 
 in either the global type or the program can quickly move program and type out of sync. 
-Therefore, returning detailed error messages is required.
+
+Having descriptive error messages that provide a lot of context makes it easier to fix these issues. 
+
 
 ```haskell
 data Error 
-    = SessionNotInSync 
-    | UndefinedParticipant Participant
+    = UndefinedParticipant Participant
     | UndefinedVariable Participant Identifier
     | SynchronizationError String
     | LabelError String
@@ -391,19 +411,51 @@ data Error
     deriving (Eq, Show)
 ```
 
-### ? 
+Some errors are (in theory) recoverable. When a process expects to receive a value, but it is not yet in the
+queue, this may be fine: Maybe the sender hasn't sent it yet. Implementing a workflow for error recovery is left as future work.
 
+### Stepping functions
 
+We can now implement the stepping functions 
 
 ```haskell
 forward :: Location -> Participant -> Session ()
 backward :: Location -> Participant -> Session ()
 ```
 
+A sketch of the implementation for forward: 
+
+* Given a `Location` and a `Participant` we can query the `ExecutionState` to get a `Program` and a `Monitor`.
+* We pattern match on the program and the local type. If then match then we get into the business logic, otherwise we throw an error.
+* The business logic must construct a new program and a new monitor. In the below example, 
+a variable assignment is evaluated. Assignments don't affect the local type so the type is matchted against the wildcard `_`.
+
+Next the assignment is pushed onto the history type, then the monitor is updated with this new local type
+and an updated store with the new variable. The remaining program is updated by renaming the variable.
+
+```haskell
+(Let visibleName value continuation, _) -> do
+    variableName <- uniqueVariableName 
+
+    let newLocalType = 
+            LocalType.createState (LocalType.assignment visibleName variableName previous) fixedLocal
+
+        renamedValue = renameValue visibleName variableName value
+        newMonitor = 
+            monitor 
+                { _store = Map.insert variableName renamedValue (_store monitor)
+                , _localType = newLocalType
+                }  
+    
+    setParticipant location participant ( newMonitor, renameVariable visibleName variableName continuation )
+```
+
 # Concluding Remarks and Future Work
 
 - also store the currenent position in the global protocol and use it to step
+- UI/UX for working around errors
 - make informed decisions when a branch of a choice fails
+- integrating choice and recursion
 
 
 # Bibliography

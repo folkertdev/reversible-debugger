@@ -124,3 +124,26 @@ data Free f a
     | Free (f (Free f a))
 ```
 
+
+
+some notes 
+
+* I think my understanding of 'location' is not completely correct
+* I think I've missed program recursion, because it can be expressed as function recursion. Not 
+sure whether this is a problem.
+* could let inline its value into its body? Of course this is not practical in "real" programming languages
+because of the memory overhead, but here it should be fine and restricts the variables only to 
+stuff we get from a receive.
+
+This is much like let-bindings compile into lambda terms in the lambda calculus, where 
+```
+let x = 4 in y + x
+
+-- Gets transformed into 
+
+(\x -> y + x) 4
+```
+
+The lambda calculus can use the above to compile let-bindings away completely. For the pi-calculus that 
+won't quite work because values that are `receive`d are not yet available 
+
