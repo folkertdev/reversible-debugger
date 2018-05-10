@@ -11,25 +11,26 @@
 % If you use the hyperref package, please uncomment the following line
 % to display URLs in blue roman font according to Springer's eBook style:
 % \renewcommand\UrlFont{\color{blue}\rmfamily}
-\usepackage{xcolor,xspace,amsmath,amsfonts,stmaryrd,amssymb,enumerate}
+\usepackage{xcolor,xspace,amsmath,amsfonts,stmaryrd,amssymb,enumerate,times}
 \usepackage{mathpartir}
 
 \newcommand{\todo}[1]{\textcolor{red}{TO DO:#1}}
-\newcommand{\erase}[1]{\textcolor{orange}{#1}}
+\newcommand{\erase}[1]{#1}
 
 \input{macrosCR}
 
 \begin{document}
 
 %
-\title{Reversible Session-Based Concurrency \\ in Haskell}
+\title{Reversible Session-Based Concurrency \\ in Haskell (Draft of a Full Research Paper)\thanks{This work was partially supported by the EU COST action IC1405 (Reversible Computation -- Extending Horizons of Computing).}}
 %
-%\titlerunning{Abbreviated paper title}
+\titlerunning{Reversible Session-Based Concurrency in Haskell}
 % If the paper title is too long for the running head, you can set
 % an abbreviated paper title here
 %
 \author{Folkert de Vries\thanks{Main author - BSc student.} \and
-Jorge A. P\'{e}rez\orcidID{0000-0002-1452-6180}}
+Jorge A. P\'{e}rez%\orcidID{0000-0002-1452-6180}}
+}
 %
 \authorrunning{F.\ de Vries and J.\ A.\ P\'{e}rez}
 % First names are abbreviated in the running head.
@@ -41,10 +42,10 @@ Jorge A. P\'{e}rez\orcidID{0000-0002-1452-6180}}
 %
 \begin{abstract}
 Under a reversible semantics, computation steps can be undone. 
-For message-passing, concurrent programs, reversing computation steps is a challenging and delicate task; one typically aims at formal semantics which are \emph{causally-consistent}. 
+For message-passing, concurrent programs, reversing computation steps is a challenging and delicate task; one typically aims at a formal semantics which is \emph{causal\-ly-consistent}. 
 Prior work has addressed this challenge in the context of a process model of multiparty protocols (choreographies) following a so-called \emph{monitors-as-memories} approach.
-In this paper, we describe our ongoing efforts aimed at implementing this reversible operational semantics in Haskell. 
-\keywords{Reversible computation \and Message-passing concurrency \and Session Types \and Haskell.}
+In this paper, we describe our ongoing work on implementing this specific reversible operational semantics in Haskell. 
+\keywords{Reversible computation \and Message-passing concurrency  \and Haskell.}
 \end{abstract}
 %
 %
@@ -52,9 +53,19 @@ In this paper, we describe our ongoing efforts aimed at implementing this revers
 \section{Introduction}
 This paper describes ongoing work aimed at developing a Haskell implementation of 
 \emph{reversible, message-passing concurrency}. 
-As we discuss below, our implementation is framed within a rather prolific line of research, which aims at  
-establishing rigorous foundations for reversible computing in the challenging setting of \emph{communication-centric} software systems, ubiquitous nowadays.
+Our implementation is framed within a rather prolific line of research, which aims at  
+establishing rigorous semantic foundations for reversible computing in the challenging 
+concurrent setting (see, e.g., the survey~\cite{DBLP:journals/eatcs/Lanese14}).
+Our key interest is the interplay of reversibility and message-passing concurrency, which is typically governed by
+\emph{protocols} among possibly distributed partners.
 
+In a programming language with a reversible semantics, computation steps can be undone.
+Reversing a sequential program is not hard: we should record enough information about standard forward steps in case we wish to return to a prior state. Reversing a concurrent program is  more difficult: since in a concurrent program control resides in more than one point, we require carefully designed \emph{memories} that not only record information about prior actions, but also about the \emph{causal dependencies} between actions originated in different threads.
+For this reason, in a reversible, concurrent setting it is highly desirable to have a semantics which is \emph{causally consistent}. Causal consistency ensures that reversible steps lead to system states that could been have reached by performing forward steps only. That is, causally consistent reversibility does not lead to extraneous states, not reachable through ordinary forward computations.
+
+The quest for causally consistent reversible semantics for (message-passing) concurrency has led to a number of valuable proposals (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common drawback in several of those works is that the memories used are rather heavy, and so the resulting reversible semantics are overly complex. This is a particularly notorious drawback in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the context of concurrent processes whose communication actions are governed by \emph{choreographies} defined by \emph{multiparty session types}~\cite{HYC08}. The reversible semantics developed in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent; however, it is far from clear whether it can be implemented as  actual tools for the  analysis of message-passing, concurrent programs.
+
+In this paper, we describe a Haskell implementation of the reversible semantics proposed in~\cite{DBLP:conf/ppdp/MezzinaP17}. More precisely, we present a Haskell interpreter of message-passing programs written in the reversible process framework in~\cite{DBLP:conf/ppdp/MezzinaP17}. This allows us to assess in practice the benefits and features of the memories and mechanisms deployed in~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In this process, we have found the use of a functional programming language---and in particular, of Haskell---a natural choice. PLEASE BRIEFLY ELABORATE ON BENEFITS OF USING HASKELL.
 
 \section{The Process Model}
 % !TEX root = rev_chor_journal.tex
@@ -66,13 +77,14 @@ This section summarizes the reversible process model proposed by Mezzina and P\'
     \includegraphics[width=8.7cm]{./img/figmodel.pdf}
 \end{center}
 \vspace{-4mm}
-\caption{Our process model of multiparty communications.}\label{f:model}
+\caption{The process model of multiparty communications defined in~\cite{DBLP:conf/ppdp/MezzinaP17}.}\label{f:model}
+\vspace{-4mm}
 \end{figure}
 Fig.~\ref{f:model} depicts the ingredients of our
-two-level model of \emph{choreographies} and \emph{configurations/processes}, given in~\cite{DBLP:conf/ppdp/MezzinaP17}.
+two-level model of \emph{choreographies} and \emph{configurations/processes}.
 Choreographies are defined in terms of \emph{global types}, which describe a protocol among two or more participants. 
 A global type can be \emph{projected} onto each participant so as to obtain 
-its corresponding  \emph{local type}, i.e., a session type that abstracts a participant's contribution to the global protocol. 
+a \emph{local type}, i.e., a session type that abstracts a participant's contribution to the global protocol. 
 (We often use `choreographies' and `global types' as synonyms.)
 The semantics of global types is given in terms of forward and backward  transition systems (Fig.~\ref{f:gts}). 
 There is a \emph{configuration} for each protocol participant: it includes a \emph{located process}
@@ -81,7 +93,7 @@ that
 that enables forward/backward steps at run-time
 based on the local type.
 The semantics of configurations is given in terms of forward and backward reduction relations (Figs.~\ref{fig:fw} and~\ref{fig:bk}).
-In the following, we  use colors to improve readability:
+Below, we  use colors to improve readability:
 elements in \fwcolor{blue} belong to a forward semantics;
 elements in \bkcolor{red} belong to a backward semantics.
 %Given this two-level setting, our goal will be that of connecting (i)~forward and backward steps at the (high) level of choreographic specifications, and (ii) forward and backward steps at the (low) level of configurations/processes. This will be content of 
@@ -91,7 +103,7 @@ elements in \bkcolor{red} belong to a backward semantics.
 
 \subsubsection{Syntax}
 Let us write $\p, \q, \gpart{r}, \pA, \pB \ldots$ to denote (protocol) \emph{participants}.
-The syntax of global types ($G, G', \ldots$) and local types  ($T, T', \ldots$) is standard~\cite{HYC08} and defined as follows:
+The syntax of global types ($G, G', \ldots$) and local types  ($T, T', \ldots$) follows standard lines~\cite{HYC08}:
 \begin{align*}
 			G, G'  \bnfis & \gtcom{p}{q}{U}{G} %\bnfbar 
 			\sbnfbar
@@ -108,14 +120,14 @@ The syntax of global types ($G, G', \ldots$) and local types  ($T, T', \ldots$) 
 \end{align*}
 \noindent
 Global type $\gtcom{p}{q}{U}{G}$ says that \p may send a value of type $U$ to \q, and then continue as $G$.
-Given a finite index set $I$ and pairwise different \emph{labels} $\lbl_i$, global type $\gtcho{p}{q}{\lbl_i}{G_i}$ specifies that  \p may choose  label $\lbl_i$, communicate this selection to \q, and then continue as $G_i$.
+Given a finite index set $I$ and pairwise different \emph{labels} $\lbl_i$, global type $\gtcho{p}{q}{\lbl_i}{G_i}$ says that  \p may choose  label $\lbl_i$, communicate this selection to \q, and then continue as $G_i$.
 In these two types %thus denote direct communications; 
 we assume that $\p \neq \q$.
-For the sake of presentation, here 
-we do not consider labeled choices in global types; these can be easily accommodated---see \S\,\ref{s:ext} and~\cite{MezzinaP17arxiv}.
+%We also considered labeled choices in global types.
+%For the sake of presentation, here we do not consider labeled choices in global types; these can be easily accommodated---see \S\,\ref{s:ext} and~\cite{MezzinaP17arxiv}.
 Global %types include also 
 recursive and terminated protocols are denoted $\mu X. G$ and $\gend$, respectively.
-We write $\parties{G}$ to denote the set of participants in $G$.
+The set $\parties{G}$ contains the participants in $G$.
 Value types $U$ include basic first-order values (constants),   but also \emph{higher-order} values: abstractions from names to processes. 
 (We write $\Proc$ to denote the type of processes.)
 Local types 
@@ -129,19 +141,18 @@ says that \p may select one of such alternatives.
  Terminated and recursive local types are denoted $\lend$ and $\mu X. T$, respectively. 
 
 As usual, we consider only recursive types $\mu X. G$ (and $\mu X. T$) in which $X$ occurs guarded in $G$ (and $T$).
- We shall take an equi-recursive view of (global and local) types, and so we consider two  types with the same regular tree as equal.
+ We shall take an equi-recursive view of (global and local) types: we consider two  types with the same regular tree as equal.
  
-Global and local types are related by  \emph{projection}:
-following~\cite{HYC08},
-the projection of global type $G$ onto participant $\gpart{r}$, written $\tproj{G}{\gpart{r}}$, is defined in Fig.~\ref{f:proj}. 
-\modif{Intuitively, $\tproj{G}{\gpart{r}}$ denotes the (local) contribution of   $\gpart{r}$ to the overall choreographic behavior that $G$ declaratively specifies.
-As such, the projection of a directed communication $\gtcom{p}{q}{U}{G'}$ onto $\gpart{r}$ depends on
-$\gpart{r}$'s involvement, which is reflected locally as an input or output local type (if $\gpart{r}$ is indeed involved) or 
-as the terminated local protocol (otherwise). The projection of 
-recursive choreographies follows a similar principle; recursive variables and the terminated choreography are projected as expected.}
-%\modif{The projection  $\tproj{G}{\p}$ extrapolates the overall (local) behaviour of participant $\p$ from the global type G: if $p$ is involved into a communication from a global point of view then this is also reflected into its local type. Recursive type definitions, recursive variables and terminated  protocol are translated into the corresponding local ones.} 
-\added{Projection for $\gtcho{p}{q}{l_i}{G_i}$ is noteworthy: 
-the projections of the participants not involved in the choice (different from $\p, \q$) should correspond to the same identical local type.}
+Global and local types are related by  \emph{projection} (Fig.~\ref{f:proj}):
+the projection of global type $G$ onto participant $\gpart{r}$ is written $\tproj{G}{\gpart{r}}$. 
+\modif{Intuitively, $\tproj{G}{\gpart{r}}$ denotes the (local) contribution of   $\gpart{r}$ to the overall choreographic behavior that $G$ declaratively specifies.}
+%As such, the projection of a directed communication $\gtcom{p}{q}{U}{G'}$ onto $\gpart{r}$ depends on
+%$\gpart{r}$'s involvement, which is reflected locally as an input or output local type (if $\gpart{r}$ is indeed involved) or 
+%as the terminated local protocol (otherwise). The projection of 
+%recursive choreographies follows a similar principle; recursive variables and the terminated choreography are projected as expected.}
+%%\modif{The projection  $\tproj{G}{\p}$ extrapolates the overall (local) behaviour of participant $\p$ from the global type G: if $p$ is involved into a communication from a global point of view then this is also reflected into its local type. Recursive type definitions, recursive variables and terminated  protocol are translated into the corresponding local ones.} 
+%\added{Projection for $\gtcho{p}{q}{l_i}{G_i}$ is noteworthy: 
+%the projections of the participants not involved in the choice (different from $\p, \q$) should correspond to the same identical local type.}
 \begin{figure}[t!]
 {%\small
 \begin{align*}
@@ -263,7 +274,7 @@ The semantics of global types (Fig.~\ref{fig:prot_sem})
 comprises forward and backward transition rules. 
 %\jp{Indeed, our semantics seems more like an ``unlabeled LTS''. Could it be that labels will be useful later on?}
 To express backward steps, we require some auxiliary notions.
-We use \emph{global contexts}, ranged over by $\ctx{G}, \ctx{G}', \ldots$ with holes $\bullet$,  to record
+\emph{Global contexts}, ranged over by $\ctx{G}, \ctx{G}', \ldots$ with holes $\bullet$,  record
 previous actions, including the choices discarded and committed:
 %\begin{center}
 $$
@@ -278,7 +289,7 @@ $$
 %\end{center}
 We also use \emph{global types with history}, ranged over by $\mathsf{H}, \mathsf{H}', \ldots$, 
   to record the current protocol state. 
-This state is denoted by the \emph{cursor}~$\past$, which we introduced in~\cite{DBLP:journals/corr/MezzinaP16}:
+This state is denoted by the \emph{cursor}~$\past$:
 \begin{align*}
 			\mathsf{H}, \mathsf{H}'  \bnfis & 			\past G \sbnfbar	G \past 
 			\sbnfbar 
@@ -287,7 +298,8 @@ This state is denoted by the \emph{cursor}~$\past$, which we introduced in~\cite
 			\gtcom{p}{q}{U}{\past G} 
 			\\\sbnfbar & 
 			\gpart{p}\to\!\!\past\gpart{q}:\{\lbl_i:G_i \,;\, \lbl_j:G_j\}_{i \in I\setminus j} 
-			\\ \sbnfbar & 
+			%\\ \sbnfbar & 
+			\sbnfbar
  			\gpart{p}\to\gpart{q}:\{\lbl_i:G_i \,;\, \lbl_j:\past G_j\}_{i \in I\setminus j}  
 \end{align*}
 %Projection and notation $\parties{\cdot}$ extend easily to global types $\gth{H}$ (cf. Fig.~\ref{f:projext}).
@@ -299,7 +311,7 @@ The \emph{second state} represents the point in which \p has sent a value of typ
 reached \q; this is denoted $\gtcom{p}{\!\!\past q}{U}{G}$.
 The \emph{third state} represents the point in which \q has received the message from \p and
 the continuation $G$ is ready to execute; this is denoted by $\gtcom{p}{q}{U}{\past G}$.
-\modif{Using these intermediate states is central to precisely characterize the intended asynchronous semantics for processes.}
+%\modif{Using these intermediate states is central to precisely characterize the intended asynchronous semantics for processes.}
 These intuitions extend to $\gtcho{p}{q}{l_i}{G_i}$, with the following caveat:
 the second state should distinguish the choice made by $\p$ from the discarded alternatives; 
   we write $\gpart{p}\to\!\!\past\gpart{q}:\{\lbl_i:G_i \,;\, \lbl_j:G_j\}_{i \in I\setminus j}$ to describe that $\p$ has selected $\lbl_j$ and that this choice is still to be received by \q. Once this occurs, a state
@@ -311,7 +323,7 @@ For a forward directed exchange of a value,
 Rule~\fwcolor{\textsc{(FVal1)}} formalizes the transition from the first   to the second state;
 Rule~\fwcolor{\textsc{(FVal2)}} denotes the transition from the second to the third state.
 Rules~\fwcolor{\textsc{(FCho1)}} and~\fwcolor{\textsc{(FCho2)}} are their analogues for the forward directed communication of a label.
-Rules~\bkcolor{\textsc{(BVal1)}} and~\bkcolor{\textsc{(BVal2)}} undo the step performed by 
+Rules \bkcolor{\textsc{(BVal1)}} and \bkcolor{\textsc{(BVal2)}} undo the step performed by 
 Rules~\fwcolor{\textsc{(FVal1)}} and~\fwcolor{\textsc{(FVal2)}}, respectively. 
 \erase{Also, 
 Rules~\bkcolor{\textsc{(BCho1)}} and~\bkcolor{\textsc{(BCho2)}} undo the step performed by 
@@ -338,8 +350,8 @@ Rules~\fwcolor{\textsc{(FCho1)}} and~\fwcolor{\textsc{(FCho2)}}, respectively.}
 			 \bnfis &
 			\bout{u}{V}{P}  \sbnfbar  \binp{u}{x}{P} 
 			\erase{\sbnfbar \bsel{u}{\lbl_i. P_i}_{i\in I} \sbnfbar \bbra{u}{\lbl_i:P_i}_{i \in I}  }
-			 %\\
-			 %& 
+			 \\
+			 & 
 			 \sbnfbar  P \Par Q \sbnfbar  {\rvar{X} \sbnfbar \recp{X}{P}} 
 						\sbnfbar  
 			 {\appl{V}{u}}  
@@ -360,8 +372,7 @@ M \Par N
 \rtsyn{\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}} %% running process
 \sbnfbar 
 \rtsyn{\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}}  %% monitor
-\\
-& \sbnfbar 
+\sbnfbar 
 \rtsyn{\codah{s}{h_i}{h_o}%{\restrict{\mytilde{\gpart{r}}}}
 } % queue
 \sbnfbar 
@@ -391,14 +402,13 @@ M \Par N
 	local types $T, S$, local types with history $H, K$.
     Constructs given in \rtsyn{\text{boxes}} appear only at run-time.}}
 	\label{fig:syntax}
-%	\vspace{-1mm}
+	\vspace{-1mm}
 \end{figure}
 
 
 \subsubsection{Syntax}
 The syntax of processes and configurations is given in \figref{fig:syntax}.
-For processes $P, Q, \ldots$ we
-follow closely the syntax of \HOp, the core higher-order session $\pi$-calculus~\cite{KPY2016}.
+%For processes $P, Q, \ldots$ we follow closely the syntax of \HOp, the core higher-order session $\pi$-calculus~\cite{KPY2016}.
 %(In turn, \HOp is a subcalculus of the higher-order language studied  in~\cite{tlca07}.) 
 The syntax of configurations builds upon that of processes.
 %Next, we describe all these syntactic elements.
@@ -428,7 +438,8 @@ processes $\bsel{u}{\lbl_i. P_i}_{i\in I}$ and $\bbra{u}{l_i: P_i}_{i \in I}$ im
 selection and branching (internal and external labeled choices, respectively). 
 The selection  $\bsel{u}{\lbl_i. P_i}_{i\in I}$ is actually 
 a non-deterministic choice over $I$.}
-In an improvement with respect to~\cite{DBLP:journals/corr/MezzinaP16,MezzinaP17}, here we consider parallel composition of processes $P \Par Q$ 
+%In an improvement with respect to~\cite{DBLP:journals/corr/MezzinaP16,MezzinaP17}, h
+Here we consider parallel composition of processes $P \Par Q$ 
 and recursion $\recp{X}{P}$ (which binds the recursive variable $\varp{X}$ in process $P$).
 %as we will discuss, adding these constructs entails challenges in the characterization of 
 %causal consistent semantics (see next section).
@@ -459,7 +470,7 @@ $\myloc{\loc}{\binp{a}{x}{P}}$
 denotes service \emph{acceptance}. 
 \end{enumerate}
 In these constructs,  identifiers $\loc, \loc', \ldots$ denote    a  \emph{location} 
-or  \emph{site} (as in, e.g., the distributed $\pi$-calculus~\cite{Hennessy07}).
+or  \emph{site}. % (as in, e.g., the distributed $\pi$-calculus~\cite{Hennessy07}).
 Locations indexed by participants, useful in run-time expressions, are denoted $\ep{\loc}{\p}, \ep{\loc}{\q}$.
 Configurations also include
 inaction $\inact$, parallel composition  $M \Par N$,
@@ -469,17 +480,17 @@ name restriction $\news{n} M$, as well as
 \begin{enumerate}[$\bullet$]
 \item \emph{Running processes} are of the form $\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}$, where $\loc$ is a location that 
 hosts a process $P$ \erase{ and a \emph{(process) stack} $\stack{C}$} that implements participant $\p$.
-\erase{A process stack is simply a list of processes, useful 
-  to record/reinstate the discarded alternatives   in a labeled choice.}
+\erase{A process stack is a list of processes, useful 
+  to record/reinstate the discarded alternatives   in a choice.}
 
 \item \emph{Monitors} are of the form $\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}$ 
 where 
 $s$ is the session being monitored, 
 $\p$ is a participant,
-$H$ is a history session type (i.e. a session type with ``memory''), 
+$H$ is a history session type, 
 $\mytilde{x}$ is a set of free variables, 
 and the \emph{store} $\store$  records the value of such variables (see Def.~\ref{d:store}).
-These four elements allow us to track the current protocol
+These elements allow us to track the current protocol
 and  state of the   monitored process.
 
 Also, each monitor has a 
@@ -500,7 +511,7 @@ of the form
 $\codah{s}{h_i}{h_o}$,
 where $s$ is a session, $h_i$ is the input part of the queue, and $h_o$ is the output part of the queue.
 Each queue contains messages of the form $\valueq{\p}{\q}{\anyv}$ (read: ``message $\anyv$ is sent from $\p$ to $\q$'').
-As we will see, the effect of an output prefix in a process is to place the message in its corresponding output queue;
+The effect of an output prefix in a process is to place the message in its corresponding output queue;
 conversely, the effect of an input prefix is to obtain the first message from its input queue. 
 \added{Messages in the queue are \textit{never consumed}: a process reads a message $\valueq{\p}{\q}{\anyv}$ by moving it from the (tail of) queue $h_o$ to the (top of) queue $h_i$. This way, the    delimiter `$\history$' distinguishes the \textit{past} of the queue from its \textit{future}.}
 
@@ -531,56 +542,57 @@ Reduction is thus defined as $\red \subset \confs \times \confs$, whereas struct
 
 %\begin{definition}
 \emph{Evaluation contexts} are configurations with one hole 
- `$\bullet$', as defined by the following grammar:
+ `$\bullet$',  defined by:
 $$\ctx{E}\bnfis \bullet \sbnfbar M\Par \ctx{E} \sbnfbar \news{n}\, \ctx{E}$$
-\emph{General contexts} $\ctx{C}$ are processes or configurations with one hole~$\bullet$: they are obtained  by replacing one occurrence of $\inact$ (either as a process or as a configuration) with $\bullet$.
+\emph{General contexts} $\ctx{C}$ are processes or configurations with one hole~$\bullet$: they are obtained  by replacing one occurrence of $\inact$ (as a process or as a configuration) with $\bullet$.
 %\end{definition}
 %\noindent 
 A congruence on processes and configurations is an equivalence  $\Re$ that is closed under general contexts: $P \,\Re\,  Q \Longrightarrow \myctx{C}{P}\,\Re\,  \myctx{C}{Q}$
 and $M\Re N \Longrightarrow \myctx{C}{M}\,\Re\,  \myctx{C}{N}$.
-We define $\equiv$  as the smallest congruence on processes and configurations
-that satisfies the axioms in Fig.~\ref{fig:str}. \modif{Most axioms are standard and/or similar to those for the $\pi$-calculus~\cite{DBLP:conf/concur/SangiorgiW01}; the exception is $\np{\key{\loc}{\er}}{\conf{}{\news{a}P}} \scong \news{a}\np{\key{\loc}{\er}}{\conf{}{P}}$, which allows a bound name to cross the boundaries of a running process, 
-thus relating processes and configurations.}
+We rely on a notion of structural congruence on processes and configurations, denoted $\equiv$ and defined in~\cite{DBLP:conf/ppdp/MezzinaP17}.
+%that satisfies the axioms in Fig.~\ref{fig:str}. \modif{Most axioms are standard and/or similar to those for the $\pi$-calculus~\cite{DBLP:conf/concur/SangiorgiW01}; the exception is $\np{\key{\loc}{\er}}{\conf{}{\news{a}P}} \scong \news{a}\np{\key{\loc}{\er}}{\conf{}{P}}$, which allows a bound name to cross the boundaries of a running process, 
+%thus relating processes and configurations.}
 A relation $\Re$ on configurations is \emph{evaluation-closed} if it satisfies the   following rules:
 \begin{mathpar}
  \inferrule*[left=(Ctx)]{M\,\Re\, N}{\myctx{E}{M}\,\Re\, \myctx{E}{N}} \and 
  \inferrule*[left=(Eqv)]{M \scong M' \and M' \,\Re\, N' \and N'\scong N}{M \,\Re\, N} \and 
 \end{mathpar}
 
-\begin{figure}[t!]
-{%\small
-\[
-	\begin{array}{c}
-		A \Par \inact \scong A
-		\quad
-		A \Par B \scong B \Par A
-		\quad
-		A \Par (B \Par C) \scong (A \Par B) \Par C
+%\begin{figure}[t!]
+%{%\small
+%\[
+%	\begin{array}{c}
+%		A \Par \inact \scong A
+%		\quad
+%		A \Par B \scong B \Par A
+%		\quad
+%		A \Par (B \Par C) \scong (A \Par B) \Par C
+%%		\\[1mm]
+%%		\quad 
 %		\\[1mm]
-%		\quad 
-		\\[1mm]
-		A \Par \news{n} B \scong \news{n}(A \Par B)
-		\ (n \notin \fn{P})
-				\quad
-		\news{n} \inact \scong \inact
-		\\[1mm]
-		\recp{X}{P} \scong P\subst{\recp{X}{P}}{\rvar{X}}
+%		A \Par \news{n} B \scong \news{n}(A \Par B)
+%		\ (n \notin \fn{P})
+%				\quad
+%		\news{n} \inact \scong \inact
 %		\\[1mm]
-		\quad
-		A \scong B \textrm{ if } A \scong_\alpha B\\
-		\modif{\np{\key{\loc}{\er}}{\conf{\stack{C}}{\news{a}P}} \scong \news{a}\np{\key{\loc}{\er}}{\conf{\stack{C}}{P}} }\todo{check this}
-%		\qquad
-%		\dk{V \scong W \textrm{ if } V \scong_\alpha W
-%\quad \abs{x}{P} \scong \abs{x}{Q} \textrm{ if } P \scong Q} 
-%\quad
-%	\np{\key{k}{i}}{(P \Par Q)} \scong \np{\key{k}{i}}{P} \Par \np{\key{k}{i}}{Q}
-	\end{array}
-\]
-}
-\vspace{-4mm}
-\caption{Structural Congruence \todo{ADD SWAP ON QUEUES.}}
-\label{fig:str}
-\end{figure}
+%		\recp{X}{P} \scong P\subst{\recp{X}{P}}{\rvar{X}}
+%%		\\[1mm]
+%		\quad
+%		A \scong B \textrm{ if } A \scong_\alpha B\\
+%		\modif{\np{\key{\loc}{\er}}{\conf{\stack{C}}{\news{a}P}} \scong \news{a}\np{\key{\loc}{\er}}{\conf{\stack{C}}{P}} }
+%		%\todo{check this}
+%%		\qquad
+%%		\dk{V \scong W \textrm{ if } V \scong_\alpha W
+%%\quad \abs{x}{P} \scong \abs{x}{Q} \textrm{ if } P \scong Q} 
+%%\quad
+%%	\np{\key{k}{i}}{(P \Par Q)} \scong \np{\key{k}{i}}{P} \Par \np{\key{k}{i}}{Q}
+%	\end{array}
+%\]
+%}
+%\vspace{-4mm}
+%\caption{Structural Congruence.}
+%\label{fig:str}
+%\end{figure}
 %To enable reversible labeled choices, we define the following class of \textit{choice contexts}:
 %
 %\begin{definition}[Choice context]
@@ -601,16 +613,16 @@ A relation $\Re$ on configurations is \emph{evaluation-closed} if it satisfies t
 The state of monitored processes is formalized as follows:
 
 \begin{definition} \label{d:store}
-A store $\store$ is a mapping from variables to values. Given a store $\store$, a variable $x$, and a value $V$, 
+A store $\store$ maps variables to values. Given a store $\store$, a variable $x$, and a value $V$, 
 the \emph{update} $\store\upd{x}{V}$ and the 
- \emph{reverse update} $\rup{\store}{x}$ are defined as follows:
+ \emph{reverse update} $\rup{\store}{x}$ are defined as:
 %\cm{we have to understand better this thing of all bound variables are different }
 \begin{align*}
 \store\upd{x}{V} & = \begin{cases}
 \store\cup \{(x,V)\} &\text{ if } x\not\in \mathtt{dom}(\store) \\ 
 \text{ undefined }  & \text{otherwise}
 \end{cases} 
-\\
+\quad
 \rup{\store}{x} & =  \begin{cases}
 \store_1 &\text{ if } \store=\store_1\cup \{(x,V)\} \\ 
 \store  & \text{otherwise}
@@ -669,7 +681,7 @@ received abstractions $\abs{x}{P}$ can contain
 Let 
 $h$ and $\p$ be a queue 
 and a participant, respectively. 
-Also, let  
+Also, let  \\
 $\{\valueq{\q_1}{\p}{\abs{x_1}{P_1}}, \ldots, \valueq{\q_k}{\p}{\abs{x_k}{P_k}} \}$ 
  denote the (possibly empty) set of messages in $h$ containing abstractions sent to $\p$.
 We write 
@@ -748,7 +760,7 @@ w\in J \and J\subseteq I }
 \\
 \np{\key{\loc}{\er}}{ \conf{\stack C , \bsel{\ep{s}{\p}}{\lbl_i.P_i}_{i\in I\setminus w} }{P_w} }\Par 
 \moni{\ep{s}{\p}}{ \myctxr{\ctx{T}}{ \ltselp{\q}{\lbl_j:S_j \, , \, \lbl_w:\past S_w}{j}{J\setminus w}} }{\mytilde x}{\store} 
-%\\
+\\
 %\quad \qquad
 \Par 
 \codah{s}{h_i}{h_o\cons  \valueq{\p}{\q}{\lbl_w} }{} 
@@ -769,7 +781,7 @@ w\in J \and J\subseteq I }
 \\
 \np{\key{\loc}{\er}}{ \conf { \stack C , \bbra{\ep{s}{\p}}{\lbl_i:P_i}_{i \in I\setminus w}}{ P_w} } \Par 
 \moni{\ep{s}{\p}}{\myctxr{\ctx{T}}{\ltbrap{\q}{\lbl_j:S_j\,,\, \lbl_w:\past S_w}{j}{J\setminus w}} }{\mytilde x}{\store}
-%\\
+\\
 %\quad  \qquad 
 \Par \codah{s}{h_i\cons  \valueq{\q}{\p}{\lbl_w}}{h_o}{}
 \end{array}
@@ -783,6 +795,7 @@ w\in J \and J\subseteq I }
 \begin{array}{l}
 \np{\key{\loc}{\p}}{\conf{\stack{C}}{(\appl{V}{w})}} \Par \moni{\ep{s}{\p}}{\myctxr{\ctx{T}}{\past S}}{\mytilde x}{\store} 
 ~\fw~ 
+\\
 \news{k}\, \left( {\np{\key{\loc}{\p}}{\conf{\ctx{\stack {C}}}{P\subst{\myeval{w}{\sigma}}{x}}}}  \Par \mem{k}{(\appl{V}{w})}{\loc} \Par\moni{\ep{s}{\p}}{\myctxr{\ctx T}{ k. \past S}}{\mytilde x}{\store} \right)
 \end{array}
 }
@@ -795,7 +808,7 @@ w\in J \and J\subseteq I }
 \np{\key{\loc}{\p}}{\conf{\stack{C}}{P \Par Q}} \Par \moni{\ep{s}{\p}}{\myctxr{\ctx{T}}{\past S}}{\mytilde x}{\store} 
 %\\
 ~\fw~ 
-%\\
+\\
 \news{\loc_1,\loc_2}\, \left( \np{\key{\loc}{\p}}{\conf{\stack{C}}{\inact}}  
 \Par \np{\key{{\loc_1}}{\p}}{\conf{\inact}{P}}
 \Par \np{\key{{\loc_2}}{\p}}{\conf{\inact}{Q}} 
@@ -805,9 +818,10 @@ w\in J \and J\subseteq I }
 
 \end{mathpar}
 }
-%\vspace{-5mm}
+\vspace{-10mm}
 \caption{Decoupled semantics for configurations: Forward reduction ($\fw$).}
 \label{fig:fw}
+\vspace{-6mm}
 \end{figure*}
 
 
@@ -815,7 +829,7 @@ w\in J \and J\subseteq I }
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\begin{figure*}[t!]
+\begin{figure*}[h!]
 {%\small
 \begin{mathpar}
 \inferrule*[left=\bkcolor{(RInit)}]
@@ -860,6 +874,7 @@ w\in J \and J\subseteq I }
 \inferrule*[left=\bkcolor{(RollC)}]{ }{
 \begin{array}{c}
 \hmoni{\ep{s}{\p}}{\myctxr{\ctx T}{\ltbrap{\q}{\lbl_z:\past S_z\,,\,\lbl_w:S_w}{z}{J\setminus w}}}{\mytilde x}{\store_1}  \Par 
+\\
 \hmoni{\ep{s}{\q}}{\myctxr{\ctx S}{\ltselp{\p}{\lbl_z:\past S_z \, , \, \lbl_w: S_w}{z}{J\setminus w}}}{\mytilde y}{\store_2}  \Par 
 %\codah{s}{h_i}{h_o}{\restrict{\mytilde{\gpart{r}}}}
 \codah{s}{h_i}{h_o}
@@ -867,6 +882,7 @@ w\in J \and J\subseteq I }
 \bk 
 \\
 \monir{\ep{s}{\p}}{ \myctxr{\ctx T}{\ltbrap{\q}{\lbl_z:\past S_z\,,\,\lbl_w:S_w}{z}{J\setminus w}}}{\mytilde x}{\store_1}  \Par 
+\\
 \monir{\ep{s}{\q}}{\myctxr{\ctx S}{\ltselp{\p}{\lbl_z:\past S_z \, , \, \lbl_w: S_w}{z}{J\setminus w}}}{\mytilde y}{\store_2}  \Par 
 %\codah{s}{h_1}{h_2}{\restrict{\mytilde{\gpart{r}},\p,\q}}
 \codah{s}{h_i}{h_o}
@@ -886,7 +902,7 @@ w\in J \and J\subseteq I }
 \codah{s}{h_i}{(\p,\q,V)\cons h_o}
 %\\
 ~\bk~
-%\\
+\\
 \np{\key{\loc}{\er}}{\conf{\stack C }{\bout{\ep{s}{\p}}{V}{P}}} \Par 
 \hmoni{\ep{s}{\p}}{ \myctxr{\ctx T}{\past\ltout{\q}{U}{S}} }{\mytilde x}{\store}
  \Par %\codah{s}{h_i}{h_o}{\restrict{\mytilde{\gpart{r}}}}
@@ -924,6 +940,7 @@ w\in J \and J\subseteq I }
 \np{\key{\loc}{\er}}{\conf{\stack C,\bbra{\ep{s}{\p}}{\lbl_i:P_i }_{i \in I\setminus\set{w}}}{P}
 } \Par 
 \monir{\ep{s}{\p}}{\myctxr{\ctx T}{\ltbrap{\q}{\lbl_j:S_j\,,\, \lbl_w:\past S_w}{j}{J\setminus w}} }{\mytilde x}{\store}
+\\
 \Par 
 %\codah{s}{h_i\cons  \valueq{\q}{\p}{\lbl_w}}{h_o}{\restrict{\p, \mytilde{\gpart{r}}}}
 \codah{s}{h_i\cons  \valueq{\q}{\p}{\lbl_w}}{h_o}
@@ -934,6 +951,7 @@ w\in J \and J\subseteq I }
 \hmoni{\ep{s}{\p}}{\myctxr{\ctx T}{\past\ltbra{\q}{\lbl_j}{S_j}{j}{J}} }{\mytilde x}{\store} 
 \Par 
 %\codah{s}{h_i}{\valueq{\q}{\p}{\lbl_w}\cons h_o}{\restrict{\mytilde{\gpart{r}}}}
+\\
 \codah{s}{h_i}{\valueq{\q}{\p}{\lbl_w}\cons h_o}
 \end{array}
  }}
@@ -986,7 +1004,7 @@ w\in J \and J\subseteq I }
 \Par \moni{\ep{s}{\p}}{\myctxr{\ctx T}{ (\loc,\loc_1,\loc_2). \past S}}{\mytilde x}{\store} \right)
 %\\
 ~\bk~
-%\\
+\\
 \np{\key{\loc}{\p}}{\conf{\stack{C}}{P \Par Q}} \Par 
 \moni{\ep{s}{\p}}{\myctxr{\ctx{T}}{\past S}}{\mytilde x}{\store}  
 \end{array}
@@ -994,7 +1012,7 @@ w\in J \and J\subseteq I }
 
 \end{mathpar}
 }
-%\vspace{-4mm}
+\vspace{-8mm}
 \caption{Decoupled semantics for configurations: Backwards reduction ($\bk$).}
 \label{fig:bk}
 %\vspace{-3mm}
@@ -1006,7 +1024,7 @@ the forward and backward
 reduction relations, denoted $\fw$  and $\bk$, respectively. That is, $\red\, = \fw \cup \bk$. Relations $\fw$ and 
 $\bk$ are the smallest evaluation-closed relations satisfying the rules in Figs.~\ref{fig:fw} and~\ref{fig:bk}. We indicate with $ \trans{\red} $, $ \fws $, and $ \bks $  the reflexive and transitive closure of $\red$, $\fw$ and $\bk$, respectively.
 %We write $M \red^k M'$ to denote a sequence of $k \geq 0$ reduction steps (if $k=0$ then $M = M'$)
-We first discuss the forward reduction rules (Fig.~\ref{fig:fw}), omitting empty tags $\normark$:
+We first discuss the forward reduction rules (Fig.~\ref{fig:fw}): %, omitting empty tags $\normark$:
 % given in \ref{fig:fw} and \ref{fig:bk}.
 
 \begin{enumerate}[$\fwcolor{\blacktriangleright}$]
@@ -1028,7 +1046,7 @@ simply takes the first element of the output part of the queue and places it in 
 The cursor of the local type and state in the  monitor for $\p$ are updated accordingly.
 
  
-%\item 
+\item 
 \erase{Rule \fwcolor{\textsc{(Sel)}} is the forward rule for labeled selection, which in our case entails a non-deterministic choice between 
 pairwise different labels indexed by $I$. %This is how our construct is more general than usual selection constructs.
 We require that $I$ is contained in $J$, i.e., the set that indexes the choice according to the choreography. 
@@ -1037,7 +1055,7 @@ to support reversibility,
 alternatives different from $\lbl_w$ are stored in the stack $\stack{C}$ with their continuations.
 The cursor is also appropriately updated in the  monitor.}
 
-%\item 
+\item 
 \erase{Rule~\fwcolor{\textsc{(Bra)}} is similar to Rule \fwcolor{\textsc{(Sel)}}: it takes a message containing a label $\lbl_w$ as the first element in the output part of the queue, and places it into the input part. This entails a selection between the options indexed by $I$; the continuation $P_w$ is kept in the running process, and all those options different from $\lbl_w$ are kept in the stack. Also, the local type in the monitor is updated accordingly.
 }
 \item Rule~\fwcolor{\textsc{(Beta)}} handles name applications. Reduction  creates a fresh identifier ($k$ in the rule) for the running function, which keeps (i) the structure of the process prior to application, and (ii) the identifier of the running process that ``invokes'' the application. Notice that $k$ is recorded also in the monitor: this is necessary to undo applications in the proper order. To determine the actual abstraction and the name applied, we use   $\store$.
@@ -1046,7 +1064,7 @@ The cursor is also appropriately updated in the  monitor.}
 \end{enumerate}
 
 
-\todo{ADD SIMPLE EXAMPLE (NOW IN APPENDIX) OF CHOICE CONTEXTS (FWD ONLY).}
+%\todo{ADD SIMPLE EXAMPLE (NOW IN APPENDIX) OF CHOICE CONTEXTS (FWD ONLY).}
 
 \noindent
 Now we comment on the backward rules (Fig.~\ref{fig:bk}) which, in most cases, change the monitor tags from $\normark$ into $\bkcolor{\rmark}$:
@@ -1067,10 +1085,10 @@ the   monitor is tagged again with $\normark$.
 Rule \bkcolor{\textsc{(RIn)}} is the analog of Rule \bkcolor{\textsc{(ROut)}}. In this case, we also need to update the state of store $\store$. 
 %\jp{Actually, it seems better to explain \textsc{(RollIn)} first and then \textsc{(RollOut)}.}
 
-%\item 
+\item 
 \erase{Rule \bkcolor{\textsc{(RBra)}} undoes the input part of a labeled choice: the choice context is reinstated; the cursor is moved; the last message in the input part of the queue is moved to the output part. 
 %; the identity of the participant ($\p$ in the rule) is removed from the queue; and the monitor is tagged again with $\normark$.
-%\item 
+\item 
 Rule \bkcolor{\textsc{(RSel)}} is the analog of~\bkcolor{\textsc{(RBra)}}, but for the output part of the labeled choice. The non-deterministic   selection is reinstated.}
 
 \item Rule \bkcolor{\textsc{(RBeta)}} undoes $\beta$-reduction, reinstating the application. The running function disappears, using the information in the 
@@ -1078,9 +1096,6 @@ Rule \bkcolor{\textsc{(RSel)}} is the analog of~\bkcolor{\textsc{(RBra)}}, but f
 Rule~\bkcolor{\textsc{(RSpawn)}} undoes the spawn of a parallel thread, using the identifiers in the  monitor. 
 %\jp{This rule will depend on what we decide for parallel inside processes, and session initiation.}
 \end{enumerate}
-
-\noindent
-We now illustrate our reversible process model with an example.
 
 
 \section{Our Haskell Implementation}
@@ -1092,7 +1107,8 @@ We now illustrate our reversible process model with an example.
 % BibTeX users should specify bibliography style 'splncs04'.
 % References will then be sorted and formatted in the correct style.
 %
- \bibliographystyle{splncs04}
+% \bibliographystyle{splncs04}
+ \bibliographystyle{abbrv}
  \bibliography{session,biblio}
 %
 \end{document}
