@@ -154,6 +154,30 @@ testBackward = describe "backward" $ do
             forwardN ["A"] state `shouldBe` Right newState
             (backwardN [ "A" ] =<< forwardN ["A"] state) `shouldBe` Right state
 
+    it "application reverses correctly" $ 
+        let monitor = createMonitor (id, LocalType.end) Map.empty
+            program = do 
+                function <- H.function $ \x -> H.terminate
+                H.applyFunction function VUnit
+
+            state = executionState Queue.empty
+                [ ("A", monitor, H.compile "Location1" "A" program) 
+                ]
+
+            newMonitor = (createMonitor 
+                (Fix . LocalType.Application "v1" "k0" . Fix . LocalType.Assignment "var0" "v0", LocalType.end) $ 
+                Map.fromList [ ("v0",VFunction "var1" (Fix NoOp)),("v1",VUnit) ]
+                 ) { _applicationHistory = Map.fromList [("k0",("v0",VUnit))] }  
+
+            newState = executionState Queue.empty
+                [ ("A", newMonitor, H.compile "Location1" "A" H.terminate) 
+                ]
+
+        in do
+            (forwardN [ "A", "A", "A" ] state) `shouldBe` Right newState
+            (backwardN [ "A", "A", "A" ] =<< forwardN [ "A", "A", "A" ] state) `shouldBe` Right state
+            
+
     it "choise behaves" $ 
         let 
             monitor name = createMonitor (id, RecursiveChoice.localTypes Map.! name) Map.empty

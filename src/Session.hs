@@ -53,8 +53,7 @@ data Monitor value tipe =
 
 
 data Error 
-    = SessionNotInSync 
-    | UndefinedParticipant Participant
+    = UndefinedParticipant Participant
     | UndefinedVariable Participant Identifier
     | SynchronizationError String
     | LabelError String

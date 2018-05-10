@@ -194,22 +194,23 @@ forward location participant program monitor = do
         
         (Application functionName argument, _) -> do
             functionValue <- lookupVariable participant functionName 
-            argumentValue <- evaluateValue participant argument 
-            variableName <- uniqueVariableName 
+            argumentName <- uniqueVariableName 
 
             convertToFunction <- isFunction <$> State.get
             case convertToFunction functionValue of
-                Nothing -> error "function is not defined" 
+                Nothing -> 
+                    error "function is not defined" 
+
                 Just (variable, body) -> do
                     k <- uniqueApplicationName
-                    let newLocalType = LocalType.createState (Fix $ LocalType.Application variableName k previous) fixedLocal
+                    let newLocalType = LocalType.createState (Fix $ LocalType.Application argumentName k previous) fixedLocal
                         newMonitor = 
                             monitor 
-                                { _store = Map.insert variableName argumentValue (_store monitor)
+                                { _store = Map.insert argumentName argument (_store monitor)
                                 , _localType = newLocalType
                                 , _applicationHistory = Map.insert k (functionName, argument) (_applicationHistory monitor)
                                 }  
-                    setParticipant location participant (newMonitor, renameVariable variable variableName body)
+                    setParticipant location participant (newMonitor, renameVariable variable argumentName body)
 
         (Parallel p q, _) -> do
             l1 <- uniqueLocation 
@@ -408,18 +409,18 @@ backward location participant program monitor =
         LocalType.Synchronized _ -> 
             error "type is synced, but the previous instruction is not a transaction or choice"
 
-        LocalType.Unsynchronized (LocalType.Application variableName k rest) ->
+        LocalType.Unsynchronized (LocalType.Application argumentName k rest) ->
             case Map.lookup k (_applicationHistory monitor) of 
                 Nothing -> 
                     error "rolling function that does not exist"
-                Just ( function, argument ) -> 
+                Just ( functionName, argument ) -> 
                     setParticipant_
                         ( monitor 
                             { _localType = LocalType.Unsynchronized ( rest, next )
-                            , _store = Map.delete variableName (_store monitor)
+                            , _store = Map.delete argumentName (_store monitor)
                             , _applicationHistory = Map.delete k (_applicationHistory monitor) 
                             } 
-                        , Program.Application function argument
+                        , Program.Application functionName argument
                         )
 
 
@@ -457,7 +458,7 @@ backward location participant program monitor =
             in            
                 setParticipant_
                     ( newMonitor
-                    , Program.Let visibleName  value program
+                    , Program.Let visibleName value $ renameVariable variableName visibleName program
                     )
 
         LocalType.Unsynchronized (LocalType.Branched condition verdict otherBranch rest) -> 
