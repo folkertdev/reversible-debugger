@@ -22,14 +22,14 @@
 \begin{document}
 
 %
-\title{Reversible Session-Based Concurrency \\ in Haskell\thanks{F.\ de Vries is a BSc student.}}
+\title{Reversible Session-Based Concurrency \\ in Haskell}
 %
 %\titlerunning{Abbreviated paper title}
 % If the paper title is too long for the running head, you can set
 % an abbreviated paper title here
 %
-\author{Folkert de Vries\inst{1} \and
-Jorge A. P\'{e}rez\inst{1}\orcidID{0000-0002-1452-6180}}
+\author{Folkert de Vries\thanks{Main author - BSc student.} \and
+Jorge A. P\'{e}rez\orcidID{0000-0002-1452-6180}}
 %
 \authorrunning{F.\ de Vries and J.\ A.\ P\'{e}rez}
 % First names are abbreviated in the running head.
@@ -50,12 +50,14 @@ In this paper, we describe our ongoing efforts aimed at implementing this operat
 %
 %
 \section{Introduction}
-We implement the model in~\cite{DBLP:conf/ppdp/MezzinaP17}.
+
 
 \section{The Process Model}
 % !TEX root = rev_chor_journal.tex
 
-\begin{figure}
+This section summarizes the reversible process model proposed by Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which provides the formal basis for the Haskell implementation that we present in the following section (the main contribution of the present paper).
+
+\begin{figure}[!t]
 \begin{center}
     \includegraphics[width=8.7cm]{./img/figmodel.pdf}
 \end{center}
@@ -63,11 +65,11 @@ We implement the model in~\cite{DBLP:conf/ppdp/MezzinaP17}.
 \caption{Our process model of multiparty communications.}\label{f:model}
 \end{figure}
 Fig.~\ref{f:model} depicts the ingredients of our
-two-level model of \emph{choreographies} and \emph{configurations/processes}.
-Choreographies are defined in terms of \emph{global types}, which declaratively describe a protocol among two or more participants. 
+two-level model of \emph{choreographies} and \emph{configurations/processes}, given in~\cite{DBLP:conf/ppdp/MezzinaP17}.
+Choreographies are defined in terms of \emph{global types}, which describe a protocol among two or more participants. 
 A global type can be \emph{projected} onto each participant so as to obtain 
 its corresponding  \emph{local type}, i.e., a session type that abstracts a participant's contribution to the global protocol. 
-(Below we often use `choreographies' and `global types' as synonyms.)
+(We often use `choreographies' and `global types' as synonyms.)
 The semantics of global types is given in terms of forward and backward  transition systems (Fig.~\ref{f:gts}). 
 There is a \emph{configuration} for each protocol participant: it includes a \emph{located process}
 that 
@@ -75,14 +77,9 @@ that
 that enables forward/backward steps at run-time
 based on the local type.
 The semantics of configurations is given in terms of forward and backward reduction relations (Figs.~\ref{fig:fw} and~\ref{fig:bk}).
-% standardly coupled with a structural congruence on configurations/processes.
-
-\begin{remark}[Colors]
-Throughout the paper, we  use colors to improve readability. 
-In particular, %we use colors to distinguish the elements for forward and backward semantics:
+In the following, we  use colors to improve readability:
 elements in \fwcolor{blue} belong to a forward semantics;
 elements in \bkcolor{red} belong to a backward semantics.
-\end{remark}
 %Given this two-level setting, our goal will be that of connecting (i)~forward and backward steps at the (high) level of choreographic specifications, and (ii) forward and backward steps at the (low) level of configurations/processes. This will be content of 
 %Theorem~\ref{t:corrgc}.
 
@@ -1092,6 +1089,6 @@ We now illustrate our reversible process model with an example.
 % References will then be sorted and formatted in the correct style.
 %
  \bibliographystyle{splncs04}
- \bibliography{paper}
+ \bibliography{session,biblio}
 %
 \end{document}
