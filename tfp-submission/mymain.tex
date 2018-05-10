@@ -43,13 +43,17 @@ Jorge A. P\'{e}rez\orcidID{0000-0002-1452-6180}}
 Under a reversible semantics, computation steps can be undone. 
 For message-passing, concurrent programs, reversing computation steps is a challenging and delicate task; one typically aims at formal semantics which are \emph{causally-consistent}. 
 Prior work has addressed this challenge in the context of a process model of multiparty protocols (choreographies) following a so-called \emph{monitors-as-memories} approach.
-In this paper, we describe our ongoing efforts aimed at implementing this operational semantics in Haskell. 
+In this paper, we describe our ongoing efforts aimed at implementing this reversible operational semantics in Haskell. 
 \keywords{Reversible computation \and Message-passing concurrency \and Session Types \and Haskell.}
 \end{abstract}
 %
 %
 %
 \section{Introduction}
+This paper describes ongoing work aimed at developing a Haskell implementation of 
+\emph{reversible, message-passing concurrency}. 
+As we discuss below, our implementation is framed within a rather prolific line of research, which aims at  
+establishing rigorous foundations for reversible computing in the challenging setting of \emph{communication-centric} software systems, ubiquitous nowadays.
 
 
 \section{The Process Model}
