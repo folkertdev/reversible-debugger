@@ -97,35 +97,36 @@ a recursion point, `V` jumps back to a recursion point and `Wk` weakens the recu
 to jump to a less tightly-binding `R`.
 
 ```haskell
-a = "Alice"
-b = "Bob" 
+data MyParticipants = A | B | C | V deriving (Show, Eq, Ord)
 
-data MyType 
-    = Address
-    | ZipCode
+data MyType = Title | Price | Share | Ok | Thunk | Address | Date 
+    deriving (Show, Eq, Ord)
 
-globalType :: GlobalType MyType
-globalType = do
-    transaction a b ZipCode
-    transaction b a Address
+globalType :: GlobalType.GlobalType MyParticipants MyType
+globalType = GlobalType.globalType $ do
+    GlobalType.transaction A V Title 
+    GlobalType.transactions V [A, B] Price 
+    GlobalType.transaction A B Share 
+    GlobalType.transactions B [A, V] Ok 
+    GlobalType.transaction B C Share
+    GlobalType.transaction B C Thunk
+    GlobalType.transaction B V Address
+    GlobalType.transaction V B Date
+    GlobalType.end
+
+derivedTypeForA :: LocalType MyType
+derivedTypeForA = do
+    send V Title
+    receive V Price
+    send B Share
+    receive B Ok
 ```
 
 The Global type can then be projected onto a participant, resulting in a local type. 
 The local type describes interactions between a participant and the central message queue.
-Specifically, sends and receives, and offers and selects. The projection of `globalType` onto `a` and `b` 
-is equivalent to:
+Specifically, sends and receives, and offers and selects. The projection of `globalType` onto `A` 
+is equivalent to this pseudo-code of `derivedTypeForA`.
 
-```haskell
-aType :: LocalType MyType
-aType = do
-    send b ZipCode
-    receive b Address
-
-bType :: LocalType MyType
-bType = do
-    receive a ZipCode
-    send a Address
-```
 
 ## A Language 
 
@@ -220,24 +221,20 @@ terminate = HighLevelProgram (lift $ Free NoOp)
 We can now give correct implementations to the local types given above.
 
 ```haskell
+aType :: LocalType MyType
 aType = do
-    send B ZipCode
-    receive B Address
+    send V Title
+    receive V Price
+    send B Share
+    receive B Ok
 
-alice = do 
-    let zipcode = VString "4242AB"
-    send zipcode
-    address <- receive
-    terminate
-
-bType = do
-    receive A ZipCode
-    send A Address
-
-bob = do
-    zipcode <- receive
-    let address = "mûnewei 42"
-    send address
+alice = H.compile "Location1" "A" $ do 
+    let share = VInt 42 
+    H.send (VString "address" )
+    price <- H.receive 
+    H.send share
+    ok <- H.receive 
+    H.terminate
 ```
 
 And then transform them into a `Program` with
@@ -258,11 +255,6 @@ The `owner` field for send, receive, offer and select is important. It makes sur
 closures are attributed to the correct participant. 
 
 ```haskell
-globalType = do 
-    transaction "B" "C" "thunk"
-    transaction "B" "A" "address"
-    transaction "A" "B" "amount"
-
 bob = H.compile "Location1" "B" $ do 
     thunk <- 
         H.function $ \_ -> do
@@ -270,20 +262,30 @@ bob = H.compile "Location1" "B" $ do
             d <- H.receive
             H.terminate
 
+    price <- H.receive 
+    share <- H.receive 
+    let verdict = price `H.lessThan` VInt 79
+    H.send verdict 
+    H.send verdict 
+    H.send share
     H.send thunk 
 
+
 carol = H.compile "Location1" "C" $ do 
+    h <- H.receive 
     code <- H.receive 
     H.applyFunction code VUnit
-
-alice = H.compile "Location1" "A" $ do 
-    address <- H.receive 
-    H.send (VInt 42)
 ```
 
 Here `B` creates a function that performs a send and receive. Because the function is created by `B`, the owner
 of these statements is `B`, even when the function is sent to and eventually evaluated by `C`. 
 
+The design of the language and semantics poses some further issues. With the current mechanism 
+of storing applications, functions have to be named. Hence `H.function` cannot produce a simple value, 
+because it needs to assign to a variable and thereby update the state.
+
+It is also very important that all references in the function body are dereferenced before sending. 
+Otherwise the function could fail on the other end or use variables that should be out of its scope.
 
 ## Reversibility
 

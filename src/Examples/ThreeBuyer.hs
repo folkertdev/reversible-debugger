@@ -70,12 +70,18 @@ bob = H.compile "Location1" "B" $ do
             d <- H.receive
             H.terminate
 
-    let ok = VBool True
-    p <- H.receive 
-    h <- H.receive 
-    H.send ok 
-    H.send ok 
-    H.send h 
+    price <- H.receive 
+    share <- H.receive 
+    H.ifThenElse (price `H.lessThan` VInt 79)
+        ( do
+            H.send (VBool True)
+            H.send (VBool True)
+        )
+        ( do
+            H.send (VBool False)
+            H.send (VBool False)
+        )
+    H.send share
     H.send thunk 
 
 
