@@ -532,7 +532,7 @@ backward location participant program monitor =
         LocalType.Unsynchronized LocalType.Hole -> 
             return () 
 
-        LocalType.Unsynchronized (LocalType.SendOrReceive _ _) -> 
+        LocalType.Unsynchronized (LocalType.LocalType _ _) -> 
             error $ "satisfy the exhaustiveness checker" ++ show (unFix previous)
 
 

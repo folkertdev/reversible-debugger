@@ -78,6 +78,11 @@ The recursive constructors are taken from @cloud-haskell. `R` introduces
 a recursion point, `V` jumps back to a recursion point and `Wk` weakens the recursion, making it possible 
 to jump to a less tightly-binding `R`.
 
+A global type can be projected onto a participant, resulting in that participant's local type.
+The local type describes interactions between a participant and the central message queue.
+Specifically, sends and receives, and offers and selects. The projection of `globalType` onto `A` 
+is equivalent to this pseudo-code of `derivedTypeForA`.
+
 ```haskell
 data MyParticipants = A | B | C | V deriving (Show, Eq, Ord)
 
@@ -104,10 +109,6 @@ derivedTypeForA = do
     receive B Ok
 ```
 
-The Global type can then be projected onto a participant, resulting in a local type. 
-The local type describes interactions between a participant and the central message queue.
-Specifically, sends and receives, and offers and selects. The projection of `globalType` onto `A` 
-is equivalent to this pseudo-code of `derivedTypeForA`.
 
 
 ## A Language 
@@ -118,7 +119,7 @@ We need a language to use with our types. It needs at least instructions for the
 type Participant = String
 type Identifier = String
 
-type Program = Fix (ProgramF Value) 
+type Program value = Fix (ProgramF value) 
 
 data ProgramF value next 
     -- transaction primitives
@@ -129,7 +130,7 @@ data ProgramF value next
     | Offer Participant (List (String, next))
     | Select Participant (List (String, value, next))
 
-    -- other constructors to make interesting examples
+    -- other constructors 
     | Parallel next next 
     | Application Identifier value
     | Let Identifier value next 
@@ -153,20 +154,21 @@ data Value
 ```
 
 In the definition of `ProgramF`, the recursion is factored out and replaced by a type parameter.
-We then use `Fix` to give us back arbitrarily deep trees of instructions. The advantage of this 
-transformation is that we can use recursion schemes - like folds - on the structure.
+The `Fix` type reintroduces the ability to create to create arbitrarily deep trees of instructions. 
+The advantage of using `Fix` is that we can use recursion schemes - like folds - on the structure.
 
 Given a `LocalType` and a `Program`, we can now step forward through the program. For each instruction, we 
 check the session type to see whether the instruction is allowed. 
 
 ## An eDSL with the free monad
 
-Writing programs with `Fix` everywhere is tedious, and we can do better. 
-We can create an embedded domain-specific language (eDSL) using the free monad. 
-The free monad is a monad that comes for free given some functor. 
-With this monad we can use do-notation, which is much more pleasant to write.
+We create an embedded domain-specific language (eDSL) using the free monad to write our example programs. 
+This method allows us to use haskell's do-notation, which is much more convenient than writing programs 
+with `Fix`.
 
-The idea then is to use the free monad on our `ProgramF` data type to be able to build a nice DSL. 
+The free monad is a monad that comes for free given some functor. The `ProgramF` type is specifically
+created in such a way that it is a functor in `next`. The idea then is to use the free monad on our `ProgramF` data type to be able to build a nice DSL. 
+
 For the transformation from `Free (ProgramF value) a` back to `Fix (ProgramF value)` we need 
 also need some state: a variable counter that allows us to produce 
 new unique variable names. 
@@ -200,7 +202,7 @@ terminate :: HighLevelProgram a
 terminate = HighLevelProgram (lift $ Free NoOp)
 ```
 
-We can now give correct implementations to the local types given above.
+We can now write a correct implementation of `A`s local type. 
 
 ```haskell
 aType :: LocalType MyType
@@ -219,26 +221,24 @@ alice = H.compile "Location1" "A" $ do
     H.terminate
 ```
 
-And then transform them into a `Program` with
+`HighLevelProgram` is transformed into a `Program` by evaluating the `StateT`, this puts the correct owner
+and unique variable names into the tree, and then transforming `Free` to `Fix` by putting `NoOp` at the 
+leaves where needed.
 
 ```haskell
-freeToFix :: Free (ProgramF value) a -> Program
+freeToFix :: Free (ProgramF value) a -> Program value
 freeToFix (Pure n) = Fix NoOp 
 freeToFix (Free x) = Fix (fmap freeToFix x)
 
-compile :: Location -> Participant -> HighLevelProgram a -> Program 
+compile :: Location -> Participant -> HighLevelProgram a -> Program value
 compile location participant (HighLevelProgram program) = 
     freeToFix $ runStateT program (location, participant, 0) 
 ```
 
 ## Ownership 
 
-The `owner` field for send, receive, offer and select is important. It makes sure that instructions in 
+The `owner` field for send, receive, offer and select is makes sure that instructions in 
 closures are attributed to the correct participant. 
-
-~~~{#test .haskell caption="asdf fdsa"}
-asdf
-~~~
 
 ```haskell
 bob = H.compile "Location1" "B" $ do 
@@ -272,20 +272,21 @@ The design of the language and semantics poses some further issues. With the cur
 of storing applications, functions have to be named. Hence `H.function` cannot produce a simple value, 
 because it needs to assign to a variable and thereby update the state.
 
-It is also very important that all references in the function body are dereferenced before sending. 
-Otherwise the function could fail on the other end or use variables that should be out of its scope.
+
+It essential that all references in the function body are dereferenced before sending. 
+References that remain are invalid at the receiver, causing undefined behavior.
 
 ## Reversibility
 
-Every forward step needs an inverse. When taking a forward step we store enough information 
-to recreate the instruction and local type that made us perform the forward step.
+Every forward step needs an inverse. The inverse needs to contain all the information needed 
+to recreate the instruction and local type that performed the forward step.
 
 ```haskell
 type TypeContext program value a = Fix (TypeContextF program value a)
 
 data TypeContextF program value a f 
     = Hole 
-    | SendOrReceive (LocalTypeF a ()) f 
+    | LocalType (LocalTypeF a ()) f 
     | Selected 
         { owner :: Participant
         , offerer :: Participant 
@@ -314,18 +315,17 @@ data TypeContextF program value a f
     deriving (Eq, Show, Generic, Functor)
 ```
 
-For the instructions that modify the queue we must also roll the queue. Additionally, we require the 
-their participants to be synchronized. Synchronization ensures that the complete transaction in the global type is undone, but the rolling can still happen in a decoupled way.
-The synchronization is a dynamic check that will give an error message if either participant is not in the 
+For **send/receive** and **offer/select**, the instructions that modify the queue, we must also roll the queue. Additionally, both participants must be synchronized. Synchronization ensures that both parties roll their parts, but the rolling can still happen in a decoupled way.
+The synchronization is a dynamic check that throws an error message if either participant is not in the 
 expected state.
 
-Let bindings remove assigned variables from the store. This is not strictly necesarry to maintain 
-causal consistency but it is good practice.
+Rolling a **let** removes the assigned variable from the store. While strictly necesarry to maintain 
+causal consistency, it is good practice.
 
-Function applications are treated exactly as in the formal semantics: We store a reference to the 
+**Function applications** are treated exactly as in the formal semantics: A reference is stored to the 
 function and its arguments, so we can recreate the application later.
 
-Given a `LocalType` and a `Program` we can now move forward whilst producing a trace through the execution. 
+Given a `LocalType` and a `Program` we can now step through the program while producing a trace through the execution. 
 At any point, we can move back to a previous state.
 
 ## Putting it all together 
@@ -367,12 +367,11 @@ step is reversed.
 
 ### ExecutionState
 
-The execution state contains the monitors and the programs at all locations. 
-Additionally it contains: 
+The execution state contains the monitors and the programs, but also
 
 * A variable and application counter to generate unique new names
 * The central message queue. 
-* The `_isFunction` field, required to send functions over the queue: all references in the function body must be dereferenced before sending.
+* The `_isFunction` field, a function that extracts the function body used for function application. 
 
 ```haskell
 data Queue a = Queue 
@@ -411,8 +410,8 @@ data Error
     deriving (Eq, Show)
 ```
 
-Some errors are (in theory) recoverable. When a process expects to receive a value, but it is not yet in the
-queue, this may be fine: Maybe the sender hasn't sent it yet. Implementing a workflow for error recovery is left as future work.
+Not all errors are fatal. For instance, it is possible that one participant expects to receive the value, 
+but it's not been sent yet. This will give a queue error - because the correct value is not in the queue - but the program and the type are perfectly fine. Implementing a workflow for error recovery is left as future work.
 
 ### Stepping functions
 
@@ -430,7 +429,7 @@ A sketch of the implementation for forward:
 * The business logic must construct a new program and a new monitor. In the below example, 
 a variable assignment is evaluated. Assignments don't affect the local type so the type is matchted against the wildcard `_`.
 
-Next the assignment is pushed onto the history type, then the monitor is updated with this new local type
+Next the assignment is added to the history type, then the monitor is updated with this new local type
 and an updated store with the new variable. The remaining program is updated by renaming the variable.
 
 ```haskell

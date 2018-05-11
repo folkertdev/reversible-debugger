@@ -46,10 +46,10 @@ data Transaction u f
 -- PATTERNS
 
 pattern BackwardSend owner participant tipe continuation = 
-    SendOrReceive (Transaction (TSend owner participant tipe ())) continuation
+    LocalType (Transaction (TSend owner participant tipe ())) continuation
 
 pattern BackwardReceive owner participant visibleName variableName tipe continuation = 
-    SendOrReceive (Transaction (TReceive owner participant (Just (visibleName, variableName)) tipe ())) continuation
+    LocalType (Transaction (TReceive owner participant (Just (visibleName, variableName)) tipe ())) continuation
 
 pattern Send owner receiver tipe continuation = 
     Transaction (TSend owner receiver tipe continuation)
@@ -61,9 +61,9 @@ pattern RecursionPoint rest = Atom (R rest)
 pattern WeakenRecursion rest = Atom (Wk rest)
 pattern RecursionVariable = Atom V
 
-pattern BackwardRecursionPoint rest = SendOrReceive (Atom (R ())) rest
-pattern BackwardWeakenRecursion rest = SendOrReceive (Atom (Wk ())) rest
-pattern BackwardRecursionVariable rest = SendOrReceive (Atom V) rest 
+pattern BackwardRecursionPoint rest = LocalType (Atom (R ())) rest
+pattern BackwardWeakenRecursion rest = LocalType (Atom (Wk ())) rest
+pattern BackwardRecursionVariable rest = LocalType (Atom V) rest 
 
 pattern Offer  owner selector options = Choice (COffer owner selector options)
 pattern Select owner offerer  options = Choice (CSelect owner offerer options)
@@ -75,7 +75,7 @@ type TypeContext program value a = Fix (TypeContextF program value a)
 
 data TypeContextF program value a f 
     = Hole 
-    | SendOrReceive (LocalTypeF a ()) f 
+    | LocalType (LocalTypeF a ()) f 
     | Selected 
         { owner :: Participant
         , offerer :: Participant 
@@ -101,7 +101,7 @@ backwardSend owner sender tipe base =
         -- local :: LocalTypeF u ()
         local = Transaction $ TSend owner sender tipe ()
     in
-        Fix $ SendOrReceive local base
+        Fix $ LocalType local base
 
 
 backwardReceive :: Participant ->  Participant -> Identifier -> Identifier -> u -> TypeContext p v u 
