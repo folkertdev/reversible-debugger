@@ -19,6 +19,88 @@
 
 \input{macrosCR}
 
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+% use upquote if available, for straight quotes in verbatim environments
+
+% lncs 
+\usepackage{makeidx}
+\institute{University of Groningen, The Netherlands, \\ \texttt{}}
+
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[utf8]{inputenc}
+\else % if luatex or xelatex
+  \ifxetex
+    \usepackage{mathspec}
+    \usepackage{xltxtra,xunicode}
+  \else
+    \usepackage{fontspec}
+  \fi
+  \defaultfontfeatures{Mapping=tex-text,Scale=MatchLowercase}
+  \newcommand{\euro}{€}
+\fi
+% use microtype if available
+\IfFileExists{microtype.sty}{\usepackage{microtype}}{}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\newenvironment{Shaded}{}{}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.56,0.13,0.00}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.53,0.00,0.00}{#1}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.73,0.40,0.53}{#1}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textit{#1}}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.73,0.13,0.13}{\textit{#1}}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.02,0.16,0.49}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.10,0.09,0.49}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.40,0.40,0.40}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.74,0.48,0.00}{#1}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.49,0.56,0.16}{#1}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+
+% \ifxetex
+%   \usepackage[setpagesize=false, % page size defined by xetex
+%               unicode=false, % unicode breaks when used with xetex
+%               xetex]{hyperref}
+% \else
+%   \usepackage[unicode=true]{hyperref}
+% \fi
+% 
+\urlstyle{same}  % don't use monospace font for urls
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\setcounter{secnumdepth}{5}
+
+
 \begin{document}
 
 %
@@ -1098,9 +1180,535 @@ Rule~\bkcolor{\textsc{(RSpawn)}} undoes the spawn of a parallel thread, using th
 \end{enumerate}
 
 
-\section{Our Haskell Implementation}
+\section{Our Haskell Implementation}\label{our-haskell-implementation}
 
-\section{Future Work}
+We set out to implement the language, types and semantics given above.
+The end goal is to implement the two stepping functions
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{forward ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Participant} \OtherTok{->} \DataTypeTok{Session} \DataTypeTok{Value}\NormalTok{ ()}
+\OtherTok{backward ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Participant} \OtherTok{->} \DataTypeTok{Session} \DataTypeTok{Value}\NormalTok{ ()}
+\end{Highlighting}
+\end{Shaded}
+
+Where \texttt{Session} contains an \texttt{ExecutionState} holding among
+other things a store of variables, and can fail producing an
+\texttt{Error}.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{type} \DataTypeTok{Session}\NormalTok{ value a }\FunctionTok{=} \DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{ExecutionState}\NormalTok{ value) (}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
+\end{Highlighting}
+\end{Shaded}
+
+Additionally we need to provide a program for every participant, a
+monitor for every participant and a global message queue. All three of
+those need to be able to move forward and backward.
+
+The rest of this section is structured as follows: Section 3.1 describes
+the implementation of global and local types, 3.2 describes the process
+calculus and 3.3 gives a more convenient syntax for writing programs in
+that calculus. 3.4 covers how reversibility is implemented, and finally
+3.5 combines all the pieces.
+
+\emph{The code shown in this section is available at
+\url{https://github.com/folkertdev/reversible-debugger}}
+
+\subsection{Global and Local Types}\label{global-and-local-types}
+
+The Global type describes interactions between participants. The
+definition of global types is given by
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{type} \DataTypeTok{GlobalType}\NormalTok{ u }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{GlobalTypeF}\NormalTok{ u)}
+
+\KeywordTok{data} \DataTypeTok{GlobalTypeF}\NormalTok{ u next}
+    \FunctionTok{=} \DataTypeTok{Transaction} 
+\NormalTok{        \{}\OtherTok{ from ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ to ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ tipe ::}\NormalTok{ u,}\OtherTok{ continuation ::}\NormalTok{  next \} }
+    \FunctionTok{|} \DataTypeTok{Choice} 
+\NormalTok{        \{}\OtherTok{ from ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ to ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ options ::} \DataTypeTok{Map} \DataTypeTok{String}\NormalTok{ next \}}
+    \FunctionTok{|} \DataTypeTok{R}\NormalTok{ next}
+    \FunctionTok{|} \DataTypeTok{V}
+    \FunctionTok{|} \DataTypeTok{Wk}\NormalTok{ next}
+    \FunctionTok{|} \DataTypeTok{End}
+    \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Functor}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+The recursive constructors are taken from 2. \texttt{R} introduces a
+recursion point, \texttt{V} jumps back to a recursion point and
+\texttt{Wk} weakens the recursion, making it possible to jump to a less
+tightly-binding \texttt{R}.
+
+A global type can be projected onto a participant, resulting in that
+participant's local type. The local type describes interactions between
+a participant and the central message queue. Specifically, sends and
+receives, and offers and selects. We use the three buyer example from 1
+as a running example here. The projection of \texttt{globalType} onto
+\texttt{A} is equivalent to this pseudo-code of
+\texttt{derivedTypeForA}.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{MyParticipants} \FunctionTok{=} \DataTypeTok{A} \FunctionTok{|} \DataTypeTok{B} \FunctionTok{|} \DataTypeTok{C} \FunctionTok{|} \DataTypeTok{V} \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Eq}\NormalTok{, }\DataTypeTok{Ord}\NormalTok{)}
+
+\KeywordTok{data} \DataTypeTok{MyType} \FunctionTok{=} \DataTypeTok{Title} \FunctionTok{|} \DataTypeTok{Price} \FunctionTok{|} \DataTypeTok{Share} \FunctionTok{|} \DataTypeTok{Ok} \FunctionTok{|} \DataTypeTok{Thunk} \FunctionTok{|} \DataTypeTok{Address} \FunctionTok{|} \DataTypeTok{Date} 
+    \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Eq}\NormalTok{, }\DataTypeTok{Ord}\NormalTok{)}
+
+\OtherTok{globalType ::} \DataTypeTok{GlobalType.GlobalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
+\NormalTok{globalType }\FunctionTok{=}\NormalTok{ GlobalType.globalType }\FunctionTok{$} \KeywordTok{do}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
+\NormalTok{    GlobalType.transactions }\DataTypeTok{V}\NormalTok{ [}\DataTypeTok{A}\NormalTok{, }\DataTypeTok{B}\NormalTok{] }\DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
+\NormalTok{    GlobalType.transactions }\DataTypeTok{B}\NormalTok{ [}\DataTypeTok{A}\NormalTok{, }\DataTypeTok{V}\NormalTok{] }\DataTypeTok{Ok} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{C} \DataTypeTok{Share}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{C} \DataTypeTok{Thunk}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{V} \DataTypeTok{Address}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Date}
+\NormalTok{    GlobalType.end}
+
+\OtherTok{derivedTypeForA ::} \DataTypeTok{LocalType} \DataTypeTok{MyType}
+\NormalTok{derivedTypeForA }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    send }\DataTypeTok{V} \DataTypeTok{Title}
+\NormalTok{    receive }\DataTypeTok{V} \DataTypeTok{Price}
+\NormalTok{    send }\DataTypeTok{B} \DataTypeTok{Share}
+\NormalTok{    receive }\DataTypeTok{B} \DataTypeTok{Ok}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{A Language}\label{a-language}
+
+We need a language to use with our types. It needs at least instructions
+for the four participant-queue interactions, a way to assign variables,
+and a way to define and apply functions.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{type} \DataTypeTok{Participant} \FunctionTok{=} \DataTypeTok{String}
+\KeywordTok{type} \DataTypeTok{Identifier} \FunctionTok{=} \DataTypeTok{String}
+
+\KeywordTok{type} \DataTypeTok{Program}\NormalTok{ value }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{ProgramF}\NormalTok{ value) }
+
+\KeywordTok{data} \DataTypeTok{ProgramF}\NormalTok{ value next }
+    \CommentTok{-- transaction primitives}
+    \FunctionTok{=} \DataTypeTok{Send}\NormalTok{ \{}\OtherTok{ owner ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ value ::}\NormalTok{ value,}\OtherTok{ continuation ::}\NormalTok{ next \}}
+    \FunctionTok{|} \DataTypeTok{Receive}\NormalTok{ \{}\OtherTok{ owner ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ variableName ::} \DataTypeTok{Identifier}\NormalTok{,}\OtherTok{ continuation ::}\NormalTok{ next  \}}
+
+    \CommentTok{-- choice primitives}
+    \FunctionTok{|} \DataTypeTok{Offer} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, next))}
+    \FunctionTok{|} \DataTypeTok{Select} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, value, next))}
+
+    \CommentTok{-- other constructors }
+    \FunctionTok{|} \DataTypeTok{Parallel}\NormalTok{ next next }
+    \FunctionTok{|} \DataTypeTok{Application} \DataTypeTok{Identifier}\NormalTok{ value}
+    \FunctionTok{|} \DataTypeTok{Let} \DataTypeTok{Identifier}\NormalTok{ value next }
+    \FunctionTok{|} \DataTypeTok{IfThenElse}\NormalTok{ value next next}
+    \FunctionTok{|} \DataTypeTok{Literal}\NormalTok{ value }
+    \FunctionTok{|} \DataTypeTok{NoOp}
+    \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Eq}\NormalTok{, }\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Functor}\NormalTok{)}
+
+
+\KeywordTok{data} \DataTypeTok{Value} 
+    \FunctionTok{=} \DataTypeTok{VBool} \DataTypeTok{Bool}
+    \FunctionTok{|} \DataTypeTok{VInt} \DataTypeTok{Int}
+    \FunctionTok{|} \DataTypeTok{VString} \DataTypeTok{String}
+    \FunctionTok{|} \DataTypeTok{VUnit}
+    \FunctionTok{|} \DataTypeTok{VIntOperator} \DataTypeTok{Value} \DataTypeTok{IntOperator} \DataTypeTok{Value} 
+    \FunctionTok{|} \DataTypeTok{VComparison} \DataTypeTok{Value} \DataTypeTok{Ordering} \DataTypeTok{Value}
+    \FunctionTok{|} \DataTypeTok{VFunction} \DataTypeTok{Identifier}\NormalTok{ (}\DataTypeTok{Program} \DataTypeTok{Value}\NormalTok{)}
+    \FunctionTok{|} \DataTypeTok{VReference} \DataTypeTok{Identifier} 
+    \FunctionTok{|} \DataTypeTok{VLabel} \DataTypeTok{String}
+    \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Eq}\NormalTok{, }\DataTypeTok{Show}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+In the definition of \texttt{ProgramF}, the recursion is factored out
+and replaced by a type parameter. The \texttt{Fix} type reintroduces the
+ability to create to create arbitrarily deep trees of instructions. The
+advantage of using \texttt{Fix} is that we can use recursion schemes -
+like folds - on the structure.
+
+Given a \texttt{LocalType} and a \texttt{Program}, we can now step
+forward through the program. For each instruction, we check the session
+type to see whether the instruction is allowed.
+
+\subsection{An eDSL with the free
+monad}\label{an-edsl-with-the-free-monad}
+
+We create an embedded domain-specific language (eDSL) using the free
+monad to write our example programs. This method allows us to use
+haskell's do-notation, which is much more convenient than writing
+programs with \texttt{Fix}.
+
+The free monad is a monad that comes for free given some functor. The
+\texttt{ProgramF} type is specifically created in such a way that it is
+a functor in \texttt{next}. The idea then is to use the free monad on
+our \texttt{ProgramF} data type to be able to build a nice DSL.
+
+For the transformation from \texttt{Free\ (ProgramF\ value)\ a} back to
+\texttt{Fix\ (ProgramF\ value)} we need also need some state: a variable
+counter that allows us to produce new unique variable names.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{newtype} \DataTypeTok{HighLevelProgram}\NormalTok{ a }\FunctionTok{=} 
+    \DataTypeTok{HighLevelProgram}\NormalTok{ (}\DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{Location}\NormalTok{, }\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{) (}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{)) a)}
+        \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Functor}\NormalTok{, }\DataTypeTok{Applicative}\NormalTok{, }\DataTypeTok{Monad}\NormalTok{, }\DataTypeTok{MonadState}\NormalTok{ (}\DataTypeTok{Location}\NormalTok{, }\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{))}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{uniqueVariableName ::} \DataTypeTok{HighLevelProgram} \DataTypeTok{Identifier}
+\NormalTok{uniqueVariableName }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    (location, participant, n) }\OtherTok{<-}\NormalTok{ State.get}
+\NormalTok{    State.put (location, participant, n }\FunctionTok{+} \DecValTok{1}\NormalTok{)}
+\NormalTok{    return }\FunctionTok{$} \StringTok{"var"} \FunctionTok{++}\NormalTok{ show n}
+
+\OtherTok{send ::} \DataTypeTok{Value} \OtherTok{->} \DataTypeTok{HighLevelProgram}\NormalTok{ ()}
+\NormalTok{send value }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    (_, participant, _) }\OtherTok{<-}\NormalTok{ State.get}
+    \DataTypeTok{HighLevelProgram} \FunctionTok{$}\NormalTok{ lift }\FunctionTok{$}\NormalTok{ liftFree (}\DataTypeTok{Send}\NormalTok{ participant value ())  }
+
+\OtherTok{receive ::} \DataTypeTok{HighLevelProgram} \DataTypeTok{Value}
+\NormalTok{receive }\FunctionTok{=} \KeywordTok{do} 
+\NormalTok{    (_, participant, _) }\OtherTok{<-}\NormalTok{ State.get}
+\NormalTok{    variableName }\OtherTok{<-}\NormalTok{ uniqueVariableName }
+    \DataTypeTok{HighLevelProgram} \FunctionTok{$}\NormalTok{ lift }\FunctionTok{$}\NormalTok{ liftFree (}\DataTypeTok{Receive}\NormalTok{ participant variableName ())}
+\NormalTok{    return (}\DataTypeTok{VReference}\NormalTok{ variableName)}
+
+\OtherTok{terminate ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
+\NormalTok{terminate }\FunctionTok{=} \DataTypeTok{HighLevelProgram}\NormalTok{ (lift }\FunctionTok{$} \DataTypeTok{Free} \DataTypeTok{NoOp}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+We can now write a correct implementation of \texttt{A}s local type.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{aType ::} \DataTypeTok{LocalType} \DataTypeTok{MyType}
+\NormalTok{aType }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    send }\DataTypeTok{V} \DataTypeTok{Title}
+\NormalTok{    receive }\DataTypeTok{V} \DataTypeTok{Price}
+\NormalTok{    send }\DataTypeTok{B} \DataTypeTok{Share}
+\NormalTok{    receive }\DataTypeTok{B} \DataTypeTok{Ok}
+
+\NormalTok{alice }\FunctionTok{=}\NormalTok{ H.compile }\StringTok{"Location1"} \StringTok{"A"} \FunctionTok{$} \KeywordTok{do} 
+    \KeywordTok{let}\NormalTok{ share }\FunctionTok{=} \DataTypeTok{VInt} \DecValTok{42} 
+\NormalTok{    H.send (}\DataTypeTok{VString} \StringTok{"address"}\NormalTok{ )}
+\NormalTok{    price }\OtherTok{<-}\NormalTok{ H.receive }
+\NormalTok{    H.send share}
+\NormalTok{    ok }\OtherTok{<-}\NormalTok{ H.receive }
+\NormalTok{    H.terminate}
+\end{Highlighting}
+\end{Shaded}
+
+\texttt{HighLevelProgram} is transformed into a \texttt{Program} by
+evaluating the \texttt{StateT}, this puts the correct owner and unique
+variable names into the tree, and then transforming \texttt{Free} to
+\texttt{Fix} by putting \texttt{NoOp} at the leaves where needed.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{freeToFix ::} \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{ProgramF}\NormalTok{ value) a }\OtherTok{->} \DataTypeTok{Program}\NormalTok{ value}
+\NormalTok{freeToFix (}\DataTypeTok{Pure}\NormalTok{ n) }\FunctionTok{=} \DataTypeTok{Fix} \DataTypeTok{NoOp} 
+\NormalTok{freeToFix (}\DataTypeTok{Free}\NormalTok{ x) }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (fmap freeToFix x)}
+
+\OtherTok{compile ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Participant} \OtherTok{->} \DataTypeTok{HighLevelProgram}\NormalTok{ a }\OtherTok{->} \DataTypeTok{Program}\NormalTok{ value}
+\NormalTok{compile location participant (}\DataTypeTok{HighLevelProgram}\NormalTok{ program) }\FunctionTok{=} 
+\NormalTok{    freeToFix }\FunctionTok{$}\NormalTok{ runStateT program (location, participant, }\DecValTok{0}\NormalTok{) }
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{Ownership}\label{ownership}
+
+The \texttt{owner} field for send, receive, offer and select is makes
+sure that instructions in closures are attributed to the correct
+participant.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{bob }\FunctionTok{=}\NormalTok{ H.compile }\StringTok{"Location1"} \StringTok{"B"} \FunctionTok{$} \KeywordTok{do} 
+\NormalTok{    thunk }\OtherTok{<-} 
+\NormalTok{        H.function }\FunctionTok{$}\NormalTok{ \textbackslash{}_ }\OtherTok{->} \KeywordTok{do}
+\NormalTok{            H.send (}\DataTypeTok{VString} \StringTok{"Lucca, 55100"}\NormalTok{)}
+\NormalTok{            d }\OtherTok{<-}\NormalTok{ H.receive}
+\NormalTok{            H.terminate}
+
+\NormalTok{    price }\OtherTok{<-}\NormalTok{ H.receive }
+\NormalTok{    share }\OtherTok{<-}\NormalTok{ H.receive }
+    \KeywordTok{let}\NormalTok{ verdict }\FunctionTok{=}\NormalTok{ price }\OtherTok{`H.lessThan`} \DataTypeTok{VInt} \DecValTok{79}
+\NormalTok{    H.send verdict }
+\NormalTok{    H.send verdict }
+\NormalTok{    H.send share}
+\NormalTok{    H.send thunk }
+
+
+\NormalTok{carol }\FunctionTok{=}\NormalTok{ H.compile }\StringTok{"Location1"} \StringTok{"C"} \FunctionTok{$} \KeywordTok{do} 
+\NormalTok{    h }\OtherTok{<-}\NormalTok{ H.receive }
+\NormalTok{    code }\OtherTok{<-}\NormalTok{ H.receive }
+\NormalTok{    H.applyFunction code }\DataTypeTok{VUnit}
+\end{Highlighting}
+\end{Shaded}
+
+Here \texttt{B} creates a function that performs a send and receive.
+Because the function is created by \texttt{B}, the owner of these
+statements is \texttt{B}, even when the function is sent to and
+eventually evaluated by \texttt{C}.
+
+The design of the language and semantics poses some further issues. With
+the current mechanism of storing applications, functions have to be
+named. Hence \texttt{H.function} cannot produce a simple value, because
+it needs to assign to a variable and thereby update the state.
+
+It essential that all references in the function body are dereferenced
+before sending. References that remain are invalid at the receiver,
+causing undefined behavior.
+
+\subsection{Reversibility}\label{reversibility}
+
+Every forward step needs an inverse. The inverse needs to contain all
+the information needed to recreate the instruction and local type that
+performed the forward step.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{type} \DataTypeTok{TypeContext}\NormalTok{ program value a }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{TypeContextF}\NormalTok{ program value a)}
+
+\KeywordTok{data} \DataTypeTok{TypeContextF}\NormalTok{ program value a f }
+    \FunctionTok{=} \DataTypeTok{Hole} 
+    \FunctionTok{|} \DataTypeTok{LocalType}\NormalTok{ (}\DataTypeTok{LocalTypeF}\NormalTok{ a ()) f }
+    \FunctionTok{|} \DataTypeTok{Selected} 
+\NormalTok{        \{}\OtherTok{ owner ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ offerer ::} \DataTypeTok{Participant} 
+\NormalTok{        ,}\OtherTok{ selection ::} \DataTypeTok{Zipper}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, value, program, }\DataTypeTok{LocalType}\NormalTok{ a)}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ f }
+\NormalTok{        \}}
+    \FunctionTok{|} \DataTypeTok{Offered} 
+\NormalTok{        \{}\OtherTok{ owner ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ selector ::} \DataTypeTok{Participant} 
+\NormalTok{        ,}\OtherTok{ picked ::} \DataTypeTok{Zipper}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, program, }\DataTypeTok{LocalType}\NormalTok{ a)}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ f }
+\NormalTok{        \}}
+    \FunctionTok{|} \DataTypeTok{Branched} 
+\NormalTok{        \{}\OtherTok{ condition ::}\NormalTok{ value}
+\NormalTok{        ,}\OtherTok{ verdict ::} \DataTypeTok{Bool}
+\NormalTok{        ,}\OtherTok{ otherBranch ::}\NormalTok{ program}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ f }
+\NormalTok{        \}}
+    \FunctionTok{|} \DataTypeTok{Application} \DataTypeTok{Identifier} \DataTypeTok{Identifier}\NormalTok{ f }
+    \FunctionTok{|} \DataTypeTok{Assignment} 
+\NormalTok{        \{}\OtherTok{ visibleName ::} \DataTypeTok{Identifier}
+\NormalTok{        ,}\OtherTok{ internalName ::} \DataTypeTok{Identifier}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ f }
+\NormalTok{        \}}
+    \FunctionTok{|} \DataTypeTok{Literal}\NormalTok{ a f}
+    \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Eq}\NormalTok{, }\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Generic}\NormalTok{, }\DataTypeTok{Functor}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+For \textbf{send/receive} and \textbf{offer/select}, the instructions
+that modify the queue, we must also roll the queue. Additionally, both
+participants must be synchronized. Synchronization ensures that both
+parties roll their parts, but the rolling can still happen in a
+decoupled way. The synchronization is a dynamic check that throws an
+error message if either participant is not in the expected state.
+
+Rolling a \textbf{let} removes the assigned variable from the store.
+While strictly necesarry to maintain causal consistency, it is good
+practice.
+
+\textbf{Function applications} are treated exactly as in the formal
+semantics: A reference is stored to the function and its arguments, so
+we can recreate the application later.
+
+Given a \texttt{LocalType} and a \texttt{Program} we can now step
+through the program while producing a trace through the execution. At
+any point, we can move back to a previous state.
+
+\subsection{Putting it all together}\label{putting-it-all-together}
+
+At the start we described the \texttt{Session} type.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{type} \DataTypeTok{Session}\NormalTok{ value a }\FunctionTok{=} \DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{ExecutionState}\NormalTok{ value) (}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
+\end{Highlighting}
+\end{Shaded}
+
+We now have all the pieces we need to define the execution state. Based
+on the error conditions that arise in moving forward and backward, we
+can also define a meaningful \texttt{Error} type.
+
+\subsubsection{The Monitor}\label{the-monitor}
+
+A participant is defined by its monitor and its program. The monitor
+contains various metadata about the participant: variables, the current
+state of the type and some other information to be able to move
+backward.
+
+In the formal semantics we have defined a monitor as a tagged triplet
+containing a history session type, a set of free variables and a store
+assigning these variables to values. In the haskell implementation, the
+tag is moved into the history type \texttt{LocalTypeState}. The set of
+free variables and the store is merged into a dictionary. The set of
+variables is the set of keys of the dictionary.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{Monitor}\NormalTok{ value tipe }\FunctionTok{=} 
+    \DataTypeTok{Monitor} 
+\NormalTok{        \{}\OtherTok{ _localType ::} \DataTypeTok{LocalTypeState}\NormalTok{ (}\DataTypeTok{Program}\NormalTok{ value) value tipe}
+\NormalTok{        ,}\OtherTok{ _recursiveVariableNumber ::} \DataTypeTok{Int}
+\NormalTok{        ,}\OtherTok{ _recursionPoints ::} \DataTypeTok{List}\NormalTok{ (}\DataTypeTok{LocalType}\NormalTok{ tipe)}
+\NormalTok{        ,}\OtherTok{ _store ::} \DataTypeTok{Map} \DataTypeTok{Identifier}\NormalTok{ value }
+\NormalTok{        ,}\OtherTok{ _applicationHistory ::} \DataTypeTok{Map} \DataTypeTok{Identifier}\NormalTok{ (}\DataTypeTok{Identifier}\NormalTok{, value)}
+\NormalTok{        \}}
+        \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Eq}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+Additionally, the application history is folded into the monitor as this
+is a participant-specific piece of data. Similarly, the monitor keeps
+track of recursion points to restore the local type when a recursive
+step is reversed.
+
+\subsubsection{ExecutionState}\label{executionstate}
+
+The execution state contains the monitors and the programs, but also
+
+\begin{itemize}
+\tightlist
+\item
+  A variable and application counter to generate unique new names
+\item
+  The central message queue.
+\item
+  The \texttt{\_isFunction} field, a function that extracts the function
+  body used for function application.
+\end{itemize}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{Queue}\NormalTok{ a }\FunctionTok{=} \DataTypeTok{Queue} 
+\NormalTok{    \{}\OtherTok{ history ::} \DataTypeTok{List}\NormalTok{ ( }\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Participant}\NormalTok{, a)}
+\NormalTok{    ,}\OtherTok{ current ::} \DataTypeTok{List}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Participant}\NormalTok{, a)}
+\NormalTok{    \}}
+    \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Eq}\NormalTok{, }\DataTypeTok{Show}\NormalTok{)}
+
+\KeywordTok{data} \DataTypeTok{ExecutionState}\NormalTok{ value }\FunctionTok{=} 
+    \DataTypeTok{ExecutionState} 
+\NormalTok{        \{}\OtherTok{ _variableCount ::} \DataTypeTok{Int}
+\NormalTok{        ,}\OtherTok{ _applicationCount ::} \DataTypeTok{Int}
+\NormalTok{        ,}\OtherTok{ _participants ::} \DataTypeTok{Map} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{Monitor}\NormalTok{ value }\DataTypeTok{String}\NormalTok{)}
+\NormalTok{        ,}\OtherTok{ _locations ::} \DataTypeTok{Map} \DataTypeTok{Location}\NormalTok{ (}\DataTypeTok{Map} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{Program}\NormalTok{ value))}
+\NormalTok{        ,}\OtherTok{ _queue ::} \DataTypeTok{Queue}\NormalTok{ value}
+\NormalTok{        ,}\OtherTok{ _isFunction ::}\NormalTok{ value }\OtherTok{->} \DataTypeTok{Maybe}\NormalTok{ (}\DataTypeTok{Identifier}\NormalTok{, }\DataTypeTok{Program}\NormalTok{ value)}
+\NormalTok{        \}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{Error generation}\label{error-generation}
+
+There are a lot of potential failure conditions in this system. A small
+error somewhere in either the global type or the program can quickly
+move program and type out of sync.
+
+Having descriptive error messages that provide a lot of context makes it
+easier to fix these issues.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{Error} 
+    \FunctionTok{=} \DataTypeTok{UndefinedParticipant} \DataTypeTok{Participant}
+    \FunctionTok{|} \DataTypeTok{UndefinedVariable} \DataTypeTok{Participant} \DataTypeTok{Identifier}
+    \FunctionTok{|} \DataTypeTok{SynchronizationError} \DataTypeTok{String}
+    \FunctionTok{|} \DataTypeTok{LabelError} \DataTypeTok{String}
+    \FunctionTok{|} \DataTypeTok{QueueError} \DataTypeTok{String} \DataTypeTok{Queue.QueueError}
+    \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Eq}\NormalTok{, }\DataTypeTok{Show}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+Not all errors are fatal. For instance, it is possible that one
+participant expects to receive the value, but it's not been sent yet.
+This will give a queue error - because the correct value is not in the
+queue - but the program and the type are perfectly fine. Implementing a
+workflow for error recovery is left as future work.
+
+\subsubsection{Stepping functions}\label{stepping-functions}
+
+We can now implement the stepping functions
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{forward ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Participant} \OtherTok{->} \DataTypeTok{Session}\NormalTok{ ()}
+\OtherTok{backward ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Participant} \OtherTok{->} \DataTypeTok{Session}\NormalTok{ ()}
+\end{Highlighting}
+\end{Shaded}
+
+A sketch of the implementation for forward:
+
+\begin{itemize}
+\tightlist
+\item
+  Given a \texttt{Location} and a \texttt{Participant} we can query the
+  \texttt{ExecutionState} to get a \texttt{Program} and a
+  \texttt{Monitor}.
+\item
+  We pattern match on the program and the local type. If then match then
+  we get into the business logic, otherwise we throw an error.
+\item
+  The business logic must construct a new program and a new monitor. In
+  the below example, a variable assignment is evaluated. Assignments
+  don't affect the local type so the type is matchted against the
+  wildcard \texttt{\_}.
+\end{itemize}
+
+Next the assignment is added to the history type, then the monitor is
+updated with this new local type and an updated store with the new
+variable. The remaining program is updated by renaming the variable.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{(}\DataTypeTok{Let}\NormalTok{ visibleName value continuation, _) }\OtherTok{->} \KeywordTok{do}
+\NormalTok{    variableName }\OtherTok{<-}\NormalTok{ uniqueVariableName }
+
+    \KeywordTok{let}\NormalTok{ newLocalType }\FunctionTok{=} 
+\NormalTok{            LocalType.createState }
+\NormalTok{                (LocalType.assignment visibleName variableName previous) }
+\NormalTok{                fixedLocal}
+
+\NormalTok{        renamedValue }\FunctionTok{=}\NormalTok{ renameValue visibleName variableName value}
+\NormalTok{        newMonitor }\FunctionTok{=} 
+\NormalTok{            monitor }
+\NormalTok{                \{ _store }\FunctionTok{=}\NormalTok{ Map.insert variableName renamedValue (_store monitor)}
+\NormalTok{                , _localType }\FunctionTok{=}\NormalTok{ newLocalType}
+\NormalTok{                \}  }
+    
+\NormalTok{    setParticipant location participant }
+\NormalTok{        ( newMonitor, renameVariable visibleName variableName continuation )}
+\end{Highlighting}
+\end{Shaded}
+
+\section{Concluding Remarks and Future
+Work}\label{concluding-remarks-and-future-work}
+
+Our next step is to fully integrate recursion and choice. The
+combination of recrusion and choice with more than 2 participants won't
+always work because the choice is not sent to other participants. When
+the selected branch recurses, the other participants won't know about
+it. This quickly results in errors.
+
+We're also looking at providing a better user interface for the project
+as a whole and for resolving errors in particular.
+
+With regards to theory, we would like to be able to step though a
+program by individual global protocol actions. The local types and
+programs steps would automatically be generated from a global action.
+Additionally, we're experimenting with making informed decisions when
+one branch of a choice fails.
 %
 % ---- Bibliography ----
 %
