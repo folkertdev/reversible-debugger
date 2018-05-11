@@ -43,7 +43,8 @@ Where `Session` contains an `ExecutionState` holding among other things a store 
 can fail producing an `Error`.
 
 ```haskell
-type Session value a = StateT (ExecutionState value) (Except Error) a
+type Session value a = 
+    StateT (ExecutionState value) (Except Error) a
 ```
 
 Additionally we need to provide a program for every participant, a monitor for every participant 
@@ -64,9 +65,16 @@ type GlobalType u = Fix (GlobalTypeF u)
 
 data GlobalTypeF u next
     = Transaction 
-        { from :: Participant, to :: Participant, tipe :: u, continuation ::  next } 
+        { from :: Participant
+        , to :: Participant
+        , tipe :: u
+        , continuation ::  next 
+        } 
     | Choice 
-        { from :: Participant, to :: Participant, options :: Map String next }
+        { from :: Participant
+        , to :: Participant
+        , options :: Map String next 
+        }
     | R next
     | V
     | Wk next
@@ -122,8 +130,16 @@ type Program value = Fix (ProgramF value)
 
 data ProgramF value next 
     -- transaction primitives
-    = Send { owner :: Participant, value :: value, continuation :: next }
-    | Receive { owner :: Participant, variableName :: Identifier, continuation :: next  }
+    = Send 
+        { owner :: Participant
+        , value :: value
+        , continuation :: next 
+        }
+    | Receive 
+        { owner :: Participant
+        , variableName :: Identifier
+        , continuation :: next  
+        }
 
     -- choice primitives
     | Offer Participant (List (String, next))
@@ -174,8 +190,14 @@ new unique variable names.
 
 ```haskell
 newtype HighLevelProgram a = 
-    HighLevelProgram (StateT (Location, Participant, Int) (Free (ProgramF Value)) a)
-        deriving (Functor, Applicative, Monad, MonadState (Location, Participant, Int))
+    HighLevelProgram 
+        (StateT 
+            (Location, Participant, Int) 
+            (Free (ProgramF Value)) 
+            a
+        )
+    deriving ( Functor, Applicative
+             , Monad, MonadState (Location, Participant, Int))
 ```
 
 ```haskell
@@ -188,13 +210,15 @@ uniqueVariableName = do
 send :: Value -> HighLevelProgram ()
 send value = do
     (_, participant, _) <- State.get
-    HighLevelProgram $ lift $ liftFree (Send participant value ())  
+    HighLevelProgram $ lift $ 
+        liftFree (Send participant value ())  
 
 receive :: HighLevelProgram Value
 receive = do 
     (_, participant, _) <- State.get
     variableName <- uniqueVariableName 
-    HighLevelProgram $ lift $ liftFree (Receive participant variableName ())
+    HighLevelProgram $ lift $ 
+        liftFree (Receive participant variableName ())
     return (VReference variableName)
 
 terminate :: HighLevelProgram a
@@ -229,7 +253,10 @@ freeToFix :: Free (ProgramF value) a -> Program value
 freeToFix (Pure n) = Fix NoOp 
 freeToFix (Free x) = Fix (fmap freeToFix x)
 
-compile :: Location -> Participant -> HighLevelProgram a -> Program value
+compile :: Location 
+        -> Participant 
+        -> HighLevelProgram a 
+        -> Program value
 compile location participant (HighLevelProgram program) = 
     freeToFix $ runStateT program (location, participant, 0) 
 ```
@@ -281,7 +308,8 @@ Every forward step needs an inverse. The inverse needs to contain all the inform
 to recreate the instruction and local type that performed the forward step.
 
 ```haskell
-type TypeContext program value a = Fix (TypeContextF program value a)
+type TypeContext program value a = 
+    Fix (TypeContextF program value a)
 
 data TypeContextF program value a f 
     = Hole 
@@ -301,7 +329,8 @@ data TypeContextF program value a f
     | Branched 
         { condition :: value
         , verdict :: Bool
-        , otherBranch :: program
+   
+         , otherBranch :: program
         , continuation :: f 
         }
     | Application Identifier Identifier f 
@@ -332,7 +361,8 @@ At any point, we can move back to a previous state.
 At the start we described the `Session` type.
 
 ```haskell
-type Session value a = StateT (ExecutionState value) (Except Error) a
+type Session value a = 
+    StateT (ExecutionState value) (Except Error) a
 ```
 
 We now have all the pieces we need to define the execution state. Based on the error conditions that arise
@@ -381,13 +411,13 @@ data Queue a = Queue
 
 data ExecutionState value = 
     ExecutionState 
-        { _variableCount :: Int
-        , _applicationCount :: Int
-        , _participants :: Map Participant (Monitor value String)
-        , _locations :: Map Location (Map Participant (Program value))
-        , _queue :: Queue value
-        , _isFunction :: value -> Maybe (Identifier, Program value)
-        }
+    { _variableCount :: Int
+    , _applicationCount :: Int
+    , _participants :: Map Participant (Monitor value String)
+    , _locations :: Map Location (Map Participant (Program value))
+    , _queue :: Queue value
+    , _isFunction :: value -> Maybe (Identifier, Program value)
+    }
 ```
 
 
@@ -435,25 +465,34 @@ and an updated store with the new variable. The remaining program is updated by 
 (Let visibleName value continuation, _) -> do
     variableName <- uniqueVariableName 
 
-    let newLocalType = 
-            LocalType.createState 
-                (LocalType.assignment visibleName variableName previous) 
-                fixedLocal
+    let 
+        -- wrap the old history with an assingment
+        assignment = 
+            LocalType.assignment visibleName variableName previous
 
+        newLocalType = 
+            LocalType.createState assignment fixedLocal
+
+        -- rename any references in the right-hand side
         renamedValue = renameValue visibleName variableName value
-        newMonitor = 
-            monitor 
-                { _store = Map.insert variableName renamedValue (_store monitor)
-                , _localType = newLocalType
-                }  
+
+        newStore = 
+            Map.insert variableName renamedValue (_store monitor)
+
+        newMonitor = monitor 
+            { _store = newStore
+            , _localType = newLocalType 
+            }  
     
     setParticipant location participant 
-        ( newMonitor, renameVariable visibleName variableName continuation )
+        ( newMonitor
+        , renameVariable visibleName variableName continuation 
+        )
 ```
 
 # Concluding Remarks and Future Work
 
-Our next step is to fully integrate recursion and choice. The combination of recrusion and choice
+Our next step is to fully integrate recursion and choice. The combination of recursion and choice
 with more than 2 participants won't always work because the choice is not sent to other participants. 
 When the selected branch recurses, the other participants won't know about it. This quickly results in errors. 
 

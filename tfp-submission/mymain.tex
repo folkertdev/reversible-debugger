@@ -1199,7 +1199,8 @@ other things a store of variables, and can fail producing an
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\KeywordTok{type} \DataTypeTok{Session}\NormalTok{ value a }\FunctionTok{=} \DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{ExecutionState}\NormalTok{ value) (}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
+\KeywordTok{type} \DataTypeTok{Session}\NormalTok{ value a }\FunctionTok{=} 
+    \DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{ExecutionState}\NormalTok{ value) (}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
 \end{Highlighting}
 \end{Shaded}
 
@@ -1227,9 +1228,16 @@ definition of global types is given by
 
 \KeywordTok{data} \DataTypeTok{GlobalTypeF}\NormalTok{ u next}
     \FunctionTok{=} \DataTypeTok{Transaction} 
-\NormalTok{        \{}\OtherTok{ from ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ to ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ tipe ::}\NormalTok{ u,}\OtherTok{ continuation ::}\NormalTok{  next \} }
+\NormalTok{        \{}\OtherTok{ from ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ to ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ tipe ::}\NormalTok{ u}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{  next }
+\NormalTok{        \} }
     \FunctionTok{|} \DataTypeTok{Choice} 
-\NormalTok{        \{}\OtherTok{ from ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ to ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ options ::} \DataTypeTok{Map} \DataTypeTok{String}\NormalTok{ next \}}
+\NormalTok{        \{}\OtherTok{ from ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ to ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ options ::} \DataTypeTok{Map} \DataTypeTok{String}\NormalTok{ next }
+\NormalTok{        \}}
     \FunctionTok{|} \DataTypeTok{R}\NormalTok{ next}
     \FunctionTok{|} \DataTypeTok{V}
     \FunctionTok{|} \DataTypeTok{Wk}\NormalTok{ next}
@@ -1238,7 +1246,7 @@ definition of global types is given by
 \end{Highlighting}
 \end{Shaded}
 
-The recursive constructors are taken from ~\cite{cloud-haskell}. \texttt{R} introduces a
+The recursive constructors are taken from 2. \texttt{R} introduces a
 recursion point, \texttt{V} jumps back to a recursion point and
 \texttt{Wk} weakens the recursion, making it possible to jump to a less
 tightly-binding \texttt{R}.
@@ -1246,7 +1254,7 @@ tightly-binding \texttt{R}.
 A global type can be projected onto a participant, resulting in that
 participant's local type. The local type describes interactions between
 a participant and the central message queue. Specifically, sends and
-receives, and offers and selects. We use the three buyer example from ~\cite{DBLP:conf/ppdp/MezzinaP17}
+receives, and offers and selects. We use the three buyer example from 1
 as a running example here. The projection of \texttt{globalType} onto
 \texttt{A} is equivalent to this pseudo-code of
 \texttt{derivedTypeForA}.
@@ -1294,8 +1302,16 @@ and a way to define and apply functions.
 
 \KeywordTok{data} \DataTypeTok{ProgramF}\NormalTok{ value next }
     \CommentTok{-- transaction primitives}
-    \FunctionTok{=} \DataTypeTok{Send}\NormalTok{ \{}\OtherTok{ owner ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ value ::}\NormalTok{ value,}\OtherTok{ continuation ::}\NormalTok{ next \}}
-    \FunctionTok{|} \DataTypeTok{Receive}\NormalTok{ \{}\OtherTok{ owner ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ variableName ::} \DataTypeTok{Identifier}\NormalTok{,}\OtherTok{ continuation ::}\NormalTok{ next  \}}
+    \FunctionTok{=} \DataTypeTok{Send} 
+\NormalTok{        \{}\OtherTok{ owner ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ value ::}\NormalTok{ value}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ next }
+\NormalTok{        \}}
+    \FunctionTok{|} \DataTypeTok{Receive} 
+\NormalTok{        \{}\OtherTok{ owner ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ variableName ::} \DataTypeTok{Identifier}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ next  }
+\NormalTok{        \}}
 
     \CommentTok{-- choice primitives}
     \FunctionTok{|} \DataTypeTok{Offer} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, next))}
@@ -1355,8 +1371,14 @@ counter that allows us to produce new unique variable names.
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{newtype} \DataTypeTok{HighLevelProgram}\NormalTok{ a }\FunctionTok{=} 
-    \DataTypeTok{HighLevelProgram}\NormalTok{ (}\DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{Location}\NormalTok{, }\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{) (}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{)) a)}
-        \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Functor}\NormalTok{, }\DataTypeTok{Applicative}\NormalTok{, }\DataTypeTok{Monad}\NormalTok{, }\DataTypeTok{MonadState}\NormalTok{ (}\DataTypeTok{Location}\NormalTok{, }\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{))}
+    \DataTypeTok{HighLevelProgram} 
+\NormalTok{        (}\DataTypeTok{StateT} 
+\NormalTok{            (}\DataTypeTok{Location}\NormalTok{, }\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{) }
+\NormalTok{            (}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{)) }
+\NormalTok{            a}
+\NormalTok{        )}
+    \KeywordTok{deriving}\NormalTok{ ( }\DataTypeTok{Functor}\NormalTok{, }\DataTypeTok{Applicative}
+\NormalTok{             , }\DataTypeTok{Monad}\NormalTok{, }\DataTypeTok{MonadState}\NormalTok{ (}\DataTypeTok{Location}\NormalTok{, }\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{))}
 \end{Highlighting}
 \end{Shaded}
 
@@ -1368,16 +1390,19 @@ counter that allows us to produce new unique variable names.
 \NormalTok{    State.put (location, participant, n }\FunctionTok{+} \DecValTok{1}\NormalTok{)}
 \NormalTok{    return }\FunctionTok{$} \StringTok{"var"} \FunctionTok{++}\NormalTok{ show n}
 
+
 \OtherTok{send ::} \DataTypeTok{Value} \OtherTok{->} \DataTypeTok{HighLevelProgram}\NormalTok{ ()}
 \NormalTok{send value }\FunctionTok{=} \KeywordTok{do}
 \NormalTok{    (_, participant, _) }\OtherTok{<-}\NormalTok{ State.get}
-    \DataTypeTok{HighLevelProgram} \FunctionTok{$}\NormalTok{ lift }\FunctionTok{$}\NormalTok{ liftFree (}\DataTypeTok{Send}\NormalTok{ participant value ())  }
+    \DataTypeTok{HighLevelProgram} \FunctionTok{$}\NormalTok{ lift }\FunctionTok{$} 
+\NormalTok{        liftFree (}\DataTypeTok{Send}\NormalTok{ participant value ())  }
 
 \OtherTok{receive ::} \DataTypeTok{HighLevelProgram} \DataTypeTok{Value}
 \NormalTok{receive }\FunctionTok{=} \KeywordTok{do} 
 \NormalTok{    (_, participant, _) }\OtherTok{<-}\NormalTok{ State.get}
 \NormalTok{    variableName }\OtherTok{<-}\NormalTok{ uniqueVariableName }
-    \DataTypeTok{HighLevelProgram} \FunctionTok{$}\NormalTok{ lift }\FunctionTok{$}\NormalTok{ liftFree (}\DataTypeTok{Receive}\NormalTok{ participant variableName ())}
+    \DataTypeTok{HighLevelProgram} \FunctionTok{$}\NormalTok{ lift }\FunctionTok{$} 
+\NormalTok{        liftFree (}\DataTypeTok{Receive}\NormalTok{ participant variableName ())}
 \NormalTok{    return (}\DataTypeTok{VReference}\NormalTok{ variableName)}
 
 \OtherTok{terminate ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
@@ -1417,7 +1442,10 @@ variable names into the tree, and then transforming \texttt{Free} to
 \NormalTok{freeToFix (}\DataTypeTok{Pure}\NormalTok{ n) }\FunctionTok{=} \DataTypeTok{Fix} \DataTypeTok{NoOp} 
 \NormalTok{freeToFix (}\DataTypeTok{Free}\NormalTok{ x) }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (fmap freeToFix x)}
 
-\OtherTok{compile ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Participant} \OtherTok{->} \DataTypeTok{HighLevelProgram}\NormalTok{ a }\OtherTok{->} \DataTypeTok{Program}\NormalTok{ value}
+\OtherTok{compile ::} \DataTypeTok{Location} 
+        \OtherTok{->} \DataTypeTok{Participant} 
+        \OtherTok{->} \DataTypeTok{HighLevelProgram}\NormalTok{ a }
+        \OtherTok{->} \DataTypeTok{Program}\NormalTok{ value}
 \NormalTok{compile location participant (}\DataTypeTok{HighLevelProgram}\NormalTok{ program) }\FunctionTok{=} 
 \NormalTok{    freeToFix }\FunctionTok{$}\NormalTok{ runStateT program (location, participant, }\DecValTok{0}\NormalTok{) }
 \end{Highlighting}
@@ -1476,7 +1504,8 @@ performed the forward step.
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\KeywordTok{type} \DataTypeTok{TypeContext}\NormalTok{ program value a }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{TypeContextF}\NormalTok{ program value a)}
+\KeywordTok{type} \DataTypeTok{TypeContext}\NormalTok{ program value a }\FunctionTok{=} 
+    \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{TypeContextF}\NormalTok{ program value a)}
 
 \KeywordTok{data} \DataTypeTok{TypeContextF}\NormalTok{ program value a f }
     \FunctionTok{=} \DataTypeTok{Hole} 
@@ -1496,7 +1525,8 @@ performed the forward step.
     \FunctionTok{|} \DataTypeTok{Branched} 
 \NormalTok{        \{}\OtherTok{ condition ::}\NormalTok{ value}
 \NormalTok{        ,}\OtherTok{ verdict ::} \DataTypeTok{Bool}
-\NormalTok{        ,}\OtherTok{ otherBranch ::}\NormalTok{ program}
+   
+\NormalTok{         ,}\OtherTok{ otherBranch ::}\NormalTok{ program}
 \NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ f }
 \NormalTok{        \}}
     \FunctionTok{|} \DataTypeTok{Application} \DataTypeTok{Identifier} \DataTypeTok{Identifier}\NormalTok{ f }
@@ -1535,7 +1565,8 @@ At the start we described the \texttt{Session} type.
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\KeywordTok{type} \DataTypeTok{Session}\NormalTok{ value a }\FunctionTok{=} \DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{ExecutionState}\NormalTok{ value) (}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
+\KeywordTok{type} \DataTypeTok{Session}\NormalTok{ value a }\FunctionTok{=} 
+    \DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{ExecutionState}\NormalTok{ value) (}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
 \end{Highlighting}
 \end{Shaded}
 
@@ -1601,13 +1632,13 @@ The execution state contains the monitors and the programs, but also
 
 \KeywordTok{data} \DataTypeTok{ExecutionState}\NormalTok{ value }\FunctionTok{=} 
     \DataTypeTok{ExecutionState} 
-\NormalTok{        \{}\OtherTok{ _variableCount ::} \DataTypeTok{Int}
-\NormalTok{        ,}\OtherTok{ _applicationCount ::} \DataTypeTok{Int}
-\NormalTok{        ,}\OtherTok{ _participants ::} \DataTypeTok{Map} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{Monitor}\NormalTok{ value }\DataTypeTok{String}\NormalTok{)}
-\NormalTok{        ,}\OtherTok{ _locations ::} \DataTypeTok{Map} \DataTypeTok{Location}\NormalTok{ (}\DataTypeTok{Map} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{Program}\NormalTok{ value))}
-\NormalTok{        ,}\OtherTok{ _queue ::} \DataTypeTok{Queue}\NormalTok{ value}
-\NormalTok{        ,}\OtherTok{ _isFunction ::}\NormalTok{ value }\OtherTok{->} \DataTypeTok{Maybe}\NormalTok{ (}\DataTypeTok{Identifier}\NormalTok{, }\DataTypeTok{Program}\NormalTok{ value)}
-\NormalTok{        \}}
+\NormalTok{    \{}\OtherTok{ _variableCount ::} \DataTypeTok{Int}
+\NormalTok{    ,}\OtherTok{ _applicationCount ::} \DataTypeTok{Int}
+\NormalTok{    ,}\OtherTok{ _participants ::} \DataTypeTok{Map} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{Monitor}\NormalTok{ value }\DataTypeTok{String}\NormalTok{)}
+\NormalTok{    ,}\OtherTok{ _locations ::} \DataTypeTok{Map} \DataTypeTok{Location}\NormalTok{ (}\DataTypeTok{Map} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{Program}\NormalTok{ value))}
+\NormalTok{    ,}\OtherTok{ _queue ::} \DataTypeTok{Queue}\NormalTok{ value}
+\NormalTok{    ,}\OtherTok{ _isFunction ::}\NormalTok{ value }\OtherTok{->} \DataTypeTok{Maybe}\NormalTok{ (}\DataTypeTok{Identifier}\NormalTok{, }\DataTypeTok{Program}\NormalTok{ value)}
+\NormalTok{    \}}
 \end{Highlighting}
 \end{Shaded}
 
@@ -1676,22 +1707,33 @@ variable. The remaining program is updated by renaming the variable.
 \NormalTok{(}\DataTypeTok{Let}\NormalTok{ visibleName value continuation, _) }\OtherTok{->} \KeywordTok{do}
 \NormalTok{    variableName }\OtherTok{<-}\NormalTok{ uniqueVariableName }
 
-    \KeywordTok{let}\NormalTok{ newLocalType }\FunctionTok{=} 
-\NormalTok{            LocalType.createState }
-\NormalTok{                (LocalType.assignment visibleName variableName previous) }
-\NormalTok{                fixedLocal}
+    \KeywordTok{let} 
+        \CommentTok{-- wrap the old history with an assingment}
+\NormalTok{        assignment }\FunctionTok{=} 
+\NormalTok{            LocalType.assignment visibleName variableName previous}
 
+\NormalTok{        newLocalType }\FunctionTok{=} 
+\NormalTok{            LocalType.createState assignment fixedLocal}
+
+        \CommentTok{-- rename any references in the right-hand side}
 \NormalTok{        renamedValue }\FunctionTok{=}\NormalTok{ renameValue visibleName variableName value}
-\NormalTok{        newMonitor }\FunctionTok{=} 
-\NormalTok{            monitor }
-\NormalTok{                \{ _store }\FunctionTok{=}\NormalTok{ Map.insert variableName renamedValue (_store monitor)}
-\NormalTok{                , _localType }\FunctionTok{=}\NormalTok{ newLocalType}
-\NormalTok{                \}  }
+
+\NormalTok{        newStore }\FunctionTok{=} 
+\NormalTok{            Map.insert variableName renamedValue (_store monitor)}
+
+\NormalTok{        newMonitor }\FunctionTok{=}\NormalTok{ monitor }
+\NormalTok{            \{ _store }\FunctionTok{=}\NormalTok{ newStore}
+\NormalTok{            , _localType }\FunctionTok{=}\NormalTok{ newLocalType }
+\NormalTok{            \}  }
     
 \NormalTok{    setParticipant location participant }
-\NormalTok{        ( newMonitor, renameVariable visibleName variableName continuation )}
+\NormalTok{        ( newMonitor}
+\NormalTok{        , renameVariable visibleName variableName continuation }
+\NormalTok{        )}
 \end{Highlighting}
 \end{Shaded}
+
+
 
 \section{Concluding Remarks and Future
 Work}\label{concluding-remarks-and-future-work}
