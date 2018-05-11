@@ -20,4 +20,7 @@ filewatch: all
 	ls paper.md | entr make
 
 mymain:
-	pdflatex mymain.tex
+	pdflatex --jobname=tfp-draft-submission mymain.tex 
+	bibtex mymain 
+	bibtex tfp-draft-submission
+	pdflatex --jobname=tfp-draft-submission mymain.tex 
