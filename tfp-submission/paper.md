@@ -49,15 +49,15 @@ type Session value a = StateT (ExecutionState value) (Except Error) a
 Additionally we need to provide a program for every participant, a monitor for every participant 
 and a global message queue. All three of those need to be able to move forward and backward.
 
-**TODO list explictly the next sections and what they describe**
+The rest of this section is structured as follows: Section 3.1 describes the implementation of global and local types, 3.2 describes the process calculus and 3.3 gives a more convenient syntax for writing programs in that calculus. 3.4 covers how reversibility is implemented, and finally 3.5 combines all the pieces.
 
+_The code shown in this section is available at 
+[https://github.com/folkertdev/reversible-debugger](https://github.com/folkertdev/reversible-debugger)_
 
 ## Global and Local Types 
 
-As mentioned, we have two kinds of session types: Global and Local.
-The Global type describes interactions between participants, specifically the 
-sending and receiving of a value (a transaction), and selecting one out of a set of options 
-(a choice). The definition of global types is given by
+The Global type describes interactions between participants. 
+The definition of global types is given by
 
 ```haskell
 type GlobalType u = Fix (GlobalTypeF u)
@@ -80,8 +80,7 @@ to jump to a less tightly-binding `R`.
 
 A global type can be projected onto a participant, resulting in that participant's local type.
 The local type describes interactions between a participant and the central message queue.
-Specifically, sends and receives, and offers and selects. The projection of `globalType` onto `A` 
-is equivalent to this pseudo-code of `derivedTypeForA`.
+Specifically, sends and receives, and offers and selects. We use the three buyer example from @DBLP:conf/ppdp/MezzinaP17 as a running example here. The projection of `globalType` onto `A` is equivalent to this pseudo-code of `derivedTypeForA`.
 
 ```haskell
 data MyParticipants = A | B | C | V deriving (Show, Eq, Ord)
@@ -235,7 +234,7 @@ compile location participant (HighLevelProgram program) =
     freeToFix $ runStateT program (location, participant, 0) 
 ```
 
-## Ownership 
+### Ownership 
 
 The `owner` field for send, receive, offer and select is makes sure that instructions in 
 closures are attributed to the correct participant. 
@@ -345,7 +344,7 @@ A participant is defined by its monitor and its program.
 The monitor contains various metadata about the participant: variables, the current state of the type and 
 some other information to be able to move backward.
 
-In the formal semantics we've defined a monitor as a tagged triplet containing a history session type,
+In the formal semantics we have defined a monitor as a tagged triplet containing a history session type,
 a set of free variables and a store assigning these variables to values. In the haskell implementation, the 
 tag is moved into the history type `LocalTypeState`. The set of free variables and the store 
 is merged into a dictionary. The set of variables is the set of keys of the dictionary. 
@@ -437,7 +436,9 @@ and an updated store with the new variable. The remaining program is updated by 
     variableName <- uniqueVariableName 
 
     let newLocalType = 
-            LocalType.createState (LocalType.assignment visibleName variableName previous) fixedLocal
+            LocalType.createState 
+                (LocalType.assignment visibleName variableName previous) 
+                fixedLocal
 
         renamedValue = renameValue visibleName variableName value
         newMonitor = 
@@ -446,15 +447,22 @@ and an updated store with the new variable. The remaining program is updated by 
                 , _localType = newLocalType
                 }  
     
-    setParticipant location participant ( newMonitor, renameVariable visibleName variableName continuation )
+    setParticipant location participant 
+        ( newMonitor, renameVariable visibleName variableName continuation )
 ```
 
 # Concluding Remarks and Future Work
 
-- also store the currenent position in the global protocol and use it to step
-- UI/UX for working around errors
-- make informed decisions when a branch of a choice fails
-- integrating choice and recursion
+Our next step is to fully integrate recursion and choice. The combination of recrusion and choice
+with more than 2 participants won't always work because the choice is not sent to other participants. 
+When the selected branch recurses, the other participants won't know about it. This quickly results in errors. 
+
+We're also looking at providing a better user interface for the project as a whole and for 
+resolving errors in particular. 
+
+With regards to theory, we would like to be able to step though a program by individual global protocol actions. 
+The local types and programs steps would automatically be generated from a global action. Additionally, 
+we're experimenting with making informed decisions when one branch of a choice fails.
 
 
 # Bibliography

@@ -19,3 +19,5 @@ clean:
 filewatch: all
 	ls paper.md | entr make
 
+mymain:
+	pdflatex mymain.tex
