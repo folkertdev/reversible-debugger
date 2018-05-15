@@ -36,7 +36,7 @@ recursiveGlobalType = GlobalType.globalType $
     GlobalType.recurse $
         GlobalType.recurse $ do
             GlobalType.transaction A B "number"
-            GlobalType.oneOf A B 
+            GlobalType.oneOf B A
                 [ (,) "recurse"  GlobalType.recursionVariable 
                 , (,) "recurse-toplevel"  (GlobalType.weakenRecursion GlobalType.recursionVariable)
                 , (,) "end" GlobalType.end

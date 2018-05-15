@@ -14,6 +14,7 @@ import qualified GlobalType
 
 import Data.Maybe (fromMaybe)
 import Data.Map as Map (Map)
+import qualified Data.Set as Set 
 import qualified Data.Map as Map
 import Data.Fix as Fix
 import Data.List as List
@@ -136,7 +137,7 @@ forward location participant program monitor = do
                                 setParticipant location participant ( newMonitor, takenProgram ) 
 
                 _ -> 
-                    error $ "Select needs a LocalType.Select, but got " ++ show localType
+                    error $ "Select for owner " ++ owner ++ " needs a LocalType.Select, but got " ++ show localType
 
         (Offer owner options, _) -> 
             case localType of 
@@ -569,9 +570,11 @@ forwardChoice (l1, offerer) (l2, selector) options = do
     (program1, monitor1_) <- validate l1 offerer
     (program2, monitor2_) <- validate l2 selector
 
+    let participants = Set.empty -- <- obviously wrong 
+
     -- augment their types
-    let monitor1 = wrapLocalType (\_ -> Fix $ LocalType.Offer  offerer selector (fmap (LocalType.project offerer)  options)) monitor1_
-        monitor2 = wrapLocalType (\_ -> Fix $ LocalType.Select offerer selector (fmap (LocalType.project selector) options)) monitor2_
+    let monitor1 = wrapLocalType (\_ -> Fix $ LocalType.Offer  offerer selector (fmap (LocalType.project participants offerer)  options)) monitor1_
+        monitor2 = wrapLocalType (\_ -> Fix $ LocalType.Select offerer selector (fmap (LocalType.project participants selector) options)) monitor2_
 
     -- move actors forward
     forward l2 selector program2 monitor2

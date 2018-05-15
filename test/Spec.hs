@@ -99,7 +99,7 @@ testBackward = describe "backward" $ do
                  )
                 ]
 
-            cont = "(SendOrReceive (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"unit\", continuation = ()})) (Fix Hole))"
+            cont = "(LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"unit\", continuation = ()})) (Fix Hole))"
             actual = "Assignment {visibleName = \"var0\", internalName = \"v1\", continuation = Fix " ++ cont ++ "}"
             errorMessage = Session.SynchronizationError $ "the sender's previous instruction is not a Send, but " ++ actual
 
@@ -123,7 +123,7 @@ testBackward = describe "backward" $ do
                  )
                 ]
 
-            cont = "(SendOrReceive (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"unit\", continuation = ()})) (Fix Hole))"
+            cont = "(LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"unit\", continuation = ()})) (Fix Hole))"
             actual = "Assignment {visibleName = \"var0\", internalName = \"v1\", continuation = Fix " ++ cont ++ "}"
             errorMessage = Session.SynchronizationError $ "the sender's previous instruction is not a Send, but " ++ actual
 
@@ -205,11 +205,11 @@ testBackward = describe "backward" $ do
                 ]
 
             errorMessage = 
-                "the offerer's previous instruction is not a Offer, but SendOrReceive (Atom V) ("
+                "the offerer's previous instruction is not a Offer, but LocalType (Atom V) ("
                     ++ "Fix (Offered {owner = \"A\", selector = \"B\", picked = Zipper ([],(\"recurse\","
                     ++ "Fix (Application \"v0\" (VIntOperator (VReference \"v1\") Add (VInt (-1)))),Fix (Atom V)),[(\"end\",Fix NoOp,Fix (Atom End))]), continuation = "
-                    ++ "Fix (SendOrReceive (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = ()})) (Fix (Application \"v1\" \"k0\" ("
-                    ++ "Fix (Assignment {visibleName = \"var0\", internalName = \"v0\", continuation = Fix (SendOrReceive (Atom (R ())) (Fix Hole))})))))}))"
+                    ++ "Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = ()})) (Fix (Application \"v1\" \"k0\" ("
+                    ++ "Fix (Assignment {visibleName = \"var0\", internalName = \"v0\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))"
         in do
             let Right base = forwardN [ "A", "A", "A", "B", "B", "B" ]  state
             (backwardN [ "A", "B" ] =<< forwardN [ "B", "A", "A" ] base) `shouldBe` Left (SynchronizationError errorMessage)
@@ -226,11 +226,11 @@ testBackward = describe "backward" $ do
                 ]
 
             errorMessage = 
-                "the selector's previous instruction is not a Select, but Application \"v5\" \"k2\" (Fix (SendOrReceive (Atom V) ("
+                "the selector's previous instruction is not a Select, but Application \"v5\" \"k2\" (Fix (LocalType (Atom V) ("
                     ++ "Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",VComparison (VReference \"v4\") GT (VInt 0),"
                     ++ "Fix (Application \"v2\" VUnit),Fix (Atom V)),[(\"end\",VBool True,Fix NoOp,Fix (Atom End))]), continuation = "
-                    ++ "Fix (SendOrReceive (Transaction (TReceive {owner = \"B\", sender = \"A\", names = Just (\"var2\",\"v4\"), tipe = \"number\", continuation = ()})) ("
-                    ++ "Fix (Application \"v3\" \"k1\" (Fix (Assignment {visibleName = \"var0\", internalName = \"v2\", continuation = Fix (SendOrReceive (Atom (R ())) (Fix Hole))})))))}))))"
+                    ++ "Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", names = Just (\"var2\",\"v4\"), tipe = \"number\", continuation = ()})) ("
+                    ++ "Fix (Application \"v3\" \"k1\" (Fix (Assignment {visibleName = \"var0\", internalName = \"v2\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))))"
         in do
             let Right base = forwardN [ "A", "A", "A", "B", "B", "B" ]  state
             (backwardN [ "A", "B" ] =<< forwardN [ "B", "A", "B" ] base) `shouldBe` Left (SynchronizationError errorMessage)
@@ -303,7 +303,7 @@ testBackward = describe "backward" $ do
                 GlobalType.recurse $
                     GlobalType.recurse $ do
                         GlobalType.transaction A B "number"
-                        GlobalType.oneOf A B 
+                        GlobalType.oneOf B A
                             [ (,) "continue"  GlobalType.recursionVariable 
                             , (,) "end" GlobalType.end
                             ]

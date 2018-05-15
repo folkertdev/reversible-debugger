@@ -5,6 +5,7 @@ import GHC.Generics
 
 import Utils ((|>), List)
 import Data.Map as Map 
+import Data.List as List
 import Data.Set as Set 
 import Data.Fix
 import Data.Map.Merge.Strict as Merge
@@ -181,15 +182,18 @@ projections :: forall participant u. (Show participant, Ord participant) => Glob
 projections global = 
     let withStringParticipants :: GlobalType Participant u
         withStringParticipants =  global |> GlobalType.mapParticipants show 
+
+        participants = 
+            withStringParticipants 
+                |> GlobalType.participants 
     in
-        withStringParticipants 
-            |> GlobalType.participants 
-            |> Set.foldr (\participant -> Map.insert participant (project participant withStringParticipants)) Map.empty 
+        participants 
+            |> Set.foldr (\participant -> Map.insert participant (project participants participant withStringParticipants)) Map.empty 
 
 
 {-| Project a global type into a local one for a particular participant -}
-project :: Participant -> GlobalType Participant u -> LocalType u 
-project participant = 
+project :: Set Participant -> Participant -> GlobalType Participant u -> LocalType u 
+project participants participant = 
     Data.Fix.cata $ \global -> 
         case global of 
             GlobalType.Transaction sender receiver tipe cont -> 
@@ -206,13 +210,21 @@ project participant =
                     else 
                         cont 
 
-            GlobalType.Choice offerer selector options -> 
+            GlobalType.Choice selector offerer options -> 
                 if participant == offerer then 
-                    LocalType.offer offerer selector (Map.toList options)
+                    let others = Set.difference (Set.fromList [ selector, offerer ]) participants
+                        mappers = List.map (LocalType.select offerer) (Set.toList others)
+
+                        combined = List.foldl (\accum elem options -> accum [("multicast", elem options)]) (LocalType.offer offerer selector) mappers
+                    in
+                        combined (Map.toList options)
+
                 else if participant == selector then 
                     LocalType.select selector offerer (Map.toList options)
                 else 
-                    LocalType.end 
+                    -- we cast the decision to everyone
+                    LocalType.offer offerer selector (Map.toList options)
+
             
 
             GlobalType.R nestedGlobalType -> 

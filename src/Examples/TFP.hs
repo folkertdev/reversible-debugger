@@ -46,7 +46,7 @@ globalType = GlobalType.globalType $
         GlobalType.transaction B C Thunk
         -- deal or no deal? B can decide and retry when no deal
         -- otherwise finalize the deal
-        GlobalType.oneOf V B
+        GlobalType.oneOf B V
             [ (,) "failure" GlobalType.recursionVariable
             , (,) "success" $ do 
                 GlobalType.transaction B V Address

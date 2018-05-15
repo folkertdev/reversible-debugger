@@ -94,7 +94,7 @@ transactions sender receivers tipe =
 
 
 oneOf :: (Show participant, Ord participant) => participant -> participant -> List (String, IGlobalType participant u a) -> IGlobalType participant u a
-oneOf from to options = Free (Choice from to (Map.fromList options))
+oneOf selector offerer options = Free (Choice selector offerer (Map.fromList options))
 
 recurse :: Free (GlobalTypeF p u) void -> Free (GlobalTypeF p u) void
 recurse cont = Free (R cont)
@@ -134,8 +134,6 @@ participants =
 
             End -> 
                 Set.empty
-
-
 
 
 {-| A global type state containing information to go back (crumbs) and forward (GlobalType) -}
