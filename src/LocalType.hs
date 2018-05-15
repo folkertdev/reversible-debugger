@@ -212,18 +212,26 @@ project participants participant =
 
             GlobalType.Choice selector offerer options -> 
                 if participant == offerer then 
-                    let others = Set.difference (Set.fromList [ selector, offerer ]) participants
-                        mappers = List.map (LocalType.select offerer) (Set.toList others)
+                    let others = Set.toList $ Set.difference participants (Set.fromList [ selector, offerer ]) 
 
-                        combined = List.foldl (\accum elem options -> accum [("multicast", elem options)]) (LocalType.offer offerer selector) mappers
+                        folder participant (label, accum) = 
+                            ( label, LocalType.select offerer participant [ (label, accum) ] )
+
+                        f (label, tipe ) = 
+                            List.foldr folder (label, tipe) others 
+
+
+                        -- combined = List.foldl (\accum elem options -> elem [("multicast", accum options)]) () mappers
+
+                        newOptions = List.map f $ Map.toList options
                     in
-                        combined (Map.toList options)
+                        LocalType.offer offerer selector newOptions
 
                 else if participant == selector then 
                     LocalType.select selector offerer (Map.toList options)
                 else 
                     -- we cast the decision to everyone
-                    LocalType.offer offerer selector (Map.toList options)
+                    LocalType.offer participant offerer (Map.toList options)
 
             
 

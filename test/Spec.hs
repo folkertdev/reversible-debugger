@@ -16,6 +16,7 @@ import qualified LocalType
 import qualified GlobalType 
 
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import Data.List as List
 import Data.Fix
 
@@ -33,6 +34,7 @@ data Participants = A | B | C | D | V
     deriving (Show, Eq, Ord)
 
 all = do 
+    testProjection
     testForward
     testBackward
 
@@ -54,6 +56,38 @@ backwardN (p:ps) state =
 
 compileAlice = H.compile "Location1" "A"
 compileBob = H.compile "Location1" "B"
+
+testProjection = describe "projection" $ 
+    it "projection of choice" $ 
+        let globalType = GlobalType.globalType $ 
+                GlobalType.oneOf B A 
+                    [ (,) "x" $ do 
+                        GlobalType.transaction C B "sometype"
+                        GlobalType.end 
+                    , (,) "y" GlobalType.end 
+                    ]
+
+            given = LocalType.projections globalType
+            expected = LocalType.end
+
+            aType = 
+                LocalType.offer "A" "B" 
+                    [ ( "x"
+                      , LocalType.select "A" "C" [ ("x", LocalType.end ) ] 
+                      )
+                    , ( "y"
+                      , LocalType.select "A" "C" [ ("y", LocalType.end ) ] 
+                      )
+                    ]
+
+            bType = LocalType.select "B" "A" [("x", LocalType.receive "B" "C" "sometype" LocalType.end),("y", LocalType.end)]
+
+            cType = LocalType.offer "C" "A" [("x", LocalType.send "C" "B" "sometype" LocalType.end),("y", LocalType.end)]
+
+        in do
+            (given Map.! show A) `shouldBe` aType
+            (given Map.! show B) `shouldBe` bType
+            (given Map.! show C) `shouldBe` cType
 
 testBackward = describe "backward" $ do 
     it "send/receive behaves" $ 

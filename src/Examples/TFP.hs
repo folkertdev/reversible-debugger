@@ -41,14 +41,13 @@ globalType = GlobalType.globalType $
         GlobalType.transaction A V Title 
         GlobalType.transactions V [A, B] Price 
         GlobalType.transaction A B Share 
-        GlobalType.transactions B [A, V] Ok 
-        GlobalType.transaction B C Share
-        GlobalType.transaction B C Thunk
         -- deal or no deal? B can decide and retry when no deal
         -- otherwise finalize the deal
         GlobalType.oneOf B V
             [ (,) "failure" GlobalType.recursionVariable
             , (,) "success" $ do 
+                GlobalType.transaction B C Share
+                GlobalType.transaction B C Thunk
                 GlobalType.transaction B V Address
                 GlobalType.transaction V B Date
                 GlobalType.end 
@@ -59,46 +58,69 @@ localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections $ GlobalType.mapType show globalType
 
 
-alice = H.compile "Location1" "A" $ do 
-    let h = VInt 42 
-    H.send (VString "Logicomix" )
-    p <- H.receive 
-    H.send h
-    ok <- H.receive 
-    H.terminate
-            
-
-bob = H.compile "Location1" "B" $ do 
-    thunk <- 
-        H.function $ \_ -> do
-            H.send (VString "Lucca, 55100")
-            d <- H.receive
-            H.terminate
-
-    let ok = VBool True
-    p <- H.receive 
-    h <- H.receive 
-    H.send ok 
-    H.send ok 
-    H.send h 
-    H.send thunk 
+alice = H.compile "Location1" "A" $ 
+    H.recursive $ \self -> do
+        let h = VInt 42 
+        H.send (VString "Logicomix" )
+        p <- H.receive 
+        H.send h
+        H.offer 
+            [ (,) "failure" H.terminate
+            , (,) "success" H.terminate
+            ]
 
 
-carol = H.compile "Location1" "C" $ do 
-    h <- H.receive 
-    code <- H.receive 
-    H.applyFunction code VUnit
+bob = H.compile "Location1" "B" $ 
+    H.recursive $ \self -> do
+        thunk <- 
+            H.function $ \_ -> do
+                H.send (VString "Lucca, 55100")
+                d <- H.receive
+                H.terminate
 
-vendor = H.compile "Location1" "V" $ do 
-    let price title = VInt 42
-        date = VString "2018-03-14"
+        let ok = VBool True
+        price <- H.receive 
+        share <- H.receive 
+        H.select 
+            [ ( "failure", price `H.greaterThan` VInt 42, self )
+            , ( "success", VBool True, do 
+                H.send share
+                H.send thunk 
+              )
+            ]
 
-    t <- H.receive 
-    H.send (price t) 
-    H.send (price t) 
-    ok <- H.receive 
-    a <- H.receive 
-    H.send date
+
+carol = H.compile "Location1" "C" $ 
+    H.recursive $ \self -> 
+        H.offer 
+            [ (,) "failure" self
+            , (,) "success" $ do
+                h <- H.receive 
+                code <- H.receive 
+                H.applyFunction code VUnit
+            ]
+
+vendor = H.compile "Location1" "V" $ 
+    H.recursive $ \self -> do
+        let price title = VInt 42
+            date = VString "2018-03-14"
+
+        t <- H.receive 
+        H.send (price t) 
+        H.send (price t) 
+
+        H.offer 
+            [ (,) "failure" $ 
+                -- inform the others
+                shorter "failure" $ shorter "failure" self
+            , (,) "success" $ 
+                shorter "success" $ shorter "success" $ do
+                    address <- H.receive 
+                    H.send date
+            ]
+
+shorter label rest = 
+    H.select [ (label, VBool True, rest ) ]
 
 executionState = 
     let createMonitor participant = Monitor 
@@ -152,6 +174,19 @@ derived =
 
 steps = 
         ( do
+            -- do recursive steps
+            forward_ "Location1" "A" 
+            forward_ "Location1" "A" 
+
+            forward_ "Location1" "B" 
+            forward_ "Location1" "B" 
+
+            forward_ "Location1" "C" 
+            forward_ "Location1" "C" 
+
+            forward_ "Location1" "V" 
+            forward_ "Location1" "V" 
+
             -- initialize thunk
             forward_ "Location1" "B" 
 
@@ -166,10 +201,16 @@ steps =
             forward_ "Location1" "A" 
             forward_ "Location1" "B" 
 
-            forward_ "Location1" "B" 
-            forward_ "Location1" "A" 
+            -- first select/offer
             forward_ "Location1" "B" 
             forward_ "Location1" "V" 
+
+            -- communicate choice
+            forward_ "Location1" "V" 
+            forward_ "Location1" "A" 
+
+            forward_ "Location1" "V" 
+            forward_ "Location1" "C" 
 
             forward_ "Location1" "B" 
             forward_ "Location1" "C" 
@@ -186,5 +227,7 @@ steps =
 
             forward_ "Location1" "V" 
             forward_ "Location1" "C" 
+            {-
+            -}
         )
             |> flip State.runStateT executionState

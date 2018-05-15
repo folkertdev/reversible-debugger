@@ -133,6 +133,14 @@ recursiveFunction body_ = do
     HighLevelProgram $ lift $ liftFree (Let variableName (VFunction argument body) ())
     return (VReference variableName)
 
+recursive :: (HighLevelProgram a -> HighLevelProgram a) -> HighLevelProgram a
+recursive body = do
+    thunk <- recursiveFunction $ \self _ ->
+        body (applyFunction self VUnit)
+
+    applyFunction thunk VUnit
+
+
 terminate :: HighLevelProgram a
 terminate = HighLevelProgram (lift $ Free NoOp)
 
@@ -168,7 +176,7 @@ selection :: Label -> Value -> HighLevelProgram () -> (Label, Value, HighLevelPr
 selection = (,,) 
     
 
-applyFunction :: Value -> Value -> HighLevelProgram ()
+applyFunction :: Value -> Value -> HighLevelProgram a
 applyFunction (VReference f) argument = HighLevelProgram $ lift $ Free $ Application f argument
 applyFunction _ _ = error "functions atm. can only be references" 
 
@@ -191,3 +199,5 @@ greaterThan = comparison GT
 lessThan = comparison LT 
 
 equal = comparison EQ 
+        -- deal or no deal? B can decide and retry when no deal
+        -- otherwise finalize the deal
