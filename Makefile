@@ -5,4 +5,4 @@ all:
 	stack exec server
 
 watch-tests:
-	ghcid -c "stack ghci :reversible-debugger-test" -T=":main --color"
+	ghcid -c "stack ghci --ghci-options -isrc --ghci-options -itest reversible-debugger:reversible-debugger-test" -T ':set args ["--color"]' -T main

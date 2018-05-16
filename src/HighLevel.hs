@@ -62,8 +62,9 @@ compile participant (HighLevelProgram program) = do
     let result = runStateT program (participant, 0) 
     freeToFix result
 
-withCompile :: Participant -> Int -> HighLevelProgram a -> HighLevelProgram (Program Value)
-withCompile participant n (HighLevelProgram program) = do
+withCompile :: Participant -> HighLevelProgram a -> HighLevelProgram (Program Value)
+withCompile participant (HighLevelProgram program) = do
+    (_, n) <- State.get
     let newProgram = State.runStateT program (participant, n) 
         addedVariables = depth $ fmap (snd . snd) newProgram
 
@@ -105,8 +106,8 @@ create value = do
 ifThenElse :: Value -> HighLevelProgram a -> HighLevelProgram b -> HighLevelProgram ()
 ifThenElse condition thenBranch_ elseBranch_ = do
     (participant, n) <- State.get
-    thenBranch :: Program Value <- withCompile participant n thenBranch_
-    elseBranch :: Program Value <- withCompile participant n elseBranch_
+    thenBranch :: Program Value <- withCompile participant thenBranch_
+    elseBranch :: Program Value <- withCompile participant elseBranch_
     let program = fixToFree $ Fix $ IfThenElse condition thenBranch elseBranch
     HighLevelProgram $ lift program 
 
@@ -119,7 +120,7 @@ function body_ = do
     argument <- uniqueVariableName 
 
     (participant, n) <- State.get
-    body <- withCompile participant n (body_ (VReference argument))
+    body <- withCompile participant (body_ (VReference argument))
     HighLevelProgram $ lift $ liftFree (Let variableName (VFunction argument body) ())
     return (VReference variableName)
 
@@ -129,7 +130,7 @@ recursiveFunction body_ = do
     argument <- uniqueVariableName 
 
     (participant, n) <- State.get
-    body <- withCompile participant n (body_ (VReference variableName) (VReference argument))
+    body <- withCompile participant (body_ (VReference variableName) (VReference argument))
     HighLevelProgram $ lift $ liftFree (Let variableName (VFunction argument body) ())
     return (VReference variableName)
 
@@ -149,7 +150,7 @@ offer :: List (String, HighLevelProgram ()) -> HighLevelProgram ()
 offer options_ = do
     (participant, n) <- State.get
     let helper (label, program) = do
-            newProgram <- withCompile participant n program
+            newProgram <- withCompile participant program
             return ( label, newProgram )
 
     options <- mapM helper options_
@@ -160,7 +161,7 @@ select :: List (String, Value, HighLevelProgram ()) -> HighLevelProgram ()
 select options_ = do
     (participant, n) <- State.get
     let helper (label, condition, program) = do
-            newProgram <- withCompile participant n program
+            newProgram <- withCompile participant program
             return ( label, condition, newProgram )
 
     options <- mapM helper options_
@@ -174,6 +175,18 @@ option = (,)
 
 selection :: Label -> Value -> HighLevelProgram () -> (Label, Value, HighLevelProgram ())
 selection = (,,) 
+
+inParallel :: List (Participant, HighLevelProgram a) -> HighLevelProgram () 
+inParallel highlevelPrograms = do
+    programs <- mapM (\(participant, hProgram) -> withCompile participant hProgram) highlevelPrograms 
+
+    case programs of 
+        [] -> 
+            HighLevel.terminate
+
+        (first:rest) -> 
+            let program = List.foldl (\elem accum -> Fix $ Program.Parallel elem accum) first rest
+            in HighLevelProgram $ lift $ fixToFree program
     
 
 applyFunction :: Value -> Value -> HighLevelProgram a
