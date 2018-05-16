@@ -26,15 +26,14 @@ data ProgramF value next
     | Offer Participant (List (String, next))
     | Select Participant (List (String, value, next))
     | Parallel next next 
-    | Application Identifier value
-    | Let Identifier value next 
-    | IfThenElse value next next
+    | Application Participant Identifier value
+    | Let Participant Identifier value next 
+    | IfThenElse Participant value next next
     | Literal value -- needed to define multi-parameter functions
     | NoOp
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable, ToJSON, FromJSON, ElmType)
 
 deriving instance (ElmType a, ElmType b, ElmType c) => ElmType (a,b,c)
-
 
 type Program value = Fix (ProgramF value) 
 
@@ -115,15 +114,15 @@ renameVariable old new program =
         recursiveRename :: Program Value -> Program Value
         recursiveRename instruction = Fix $ 
             case unFix instruction of 
-                Application functionName variableName ->
-                    Application (rename functionName) (renameValue old new variableName)
+                Application owner functionName variableName ->
+                    Application owner (rename functionName) (renameValue old new variableName)
 
-                Let variableName value continuation ->  
+                Let owner variableName value continuation ->  
                     if old == variableName then
                         -- variable shadowing: don't rename in the body
-                        Let variableName (renameValue old new value) continuation 
+                        Let owner variableName (renameValue old new value) continuation 
                     else
-                        Let variableName (renameValue old new value) (recursiveRename continuation)
+                        Let owner variableName (renameValue old new value) (recursiveRename continuation)
 
                 Receive owner variableName continuation -> 
                     if old == variableName then
@@ -141,8 +140,8 @@ renameVariable old new program =
                 Literal literal  ->
                     Literal (renameValue old new literal)
 
-                IfThenElse condition thenBranch elseBranch -> 
-                    IfThenElse (renameValue old new condition) (recursiveRename thenBranch) (recursiveRename elseBranch)
+                IfThenElse owner condition thenBranch elseBranch -> 
+                    IfThenElse owner (renameValue old new condition) (recursiveRename thenBranch) (recursiveRename elseBranch)
 
                 Parallel a b -> 
                     Parallel (recursiveRename a) (recursiveRename b)

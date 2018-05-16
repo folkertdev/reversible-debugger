@@ -99,7 +99,8 @@ receive = do
 create :: Value -> HighLevelProgram Value
 create value = do
     variableName <- uniqueVariableName 
-    HighLevelProgram $ lift $ liftFree (Let variableName value ()) 
+    (owner, _) <- State.get
+    HighLevelProgram $ lift $ liftFree (Let owner variableName value ()) 
     return (VReference variableName)
 
 
@@ -108,7 +109,7 @@ ifThenElse condition thenBranch_ elseBranch_ = do
     (participant, n) <- State.get
     thenBranch :: Program Value <- withCompile participant thenBranch_
     elseBranch :: Program Value <- withCompile participant elseBranch_
-    let program = fixToFree $ Fix $ IfThenElse condition thenBranch elseBranch
+    let program = fixToFree $ Fix $ IfThenElse participant condition thenBranch elseBranch
     HighLevelProgram $ lift program 
 
 
@@ -121,7 +122,7 @@ function body_ = do
 
     (participant, n) <- State.get
     body <- withCompile participant (body_ (VReference argument))
-    HighLevelProgram $ lift $ liftFree (Let variableName (VFunction argument body) ())
+    HighLevelProgram $ lift $ liftFree (Let participant variableName (VFunction argument body) ())
     return (VReference variableName)
 
 recursiveFunction :: (Value -> Value -> HighLevelProgram a) -> HighLevelProgram Value 
@@ -131,7 +132,7 @@ recursiveFunction body_ = do
 
     (participant, n) <- State.get
     body <- withCompile participant (body_ (VReference variableName) (VReference argument))
-    HighLevelProgram $ lift $ liftFree (Let variableName (VFunction argument body) ())
+    HighLevelProgram $ lift $ liftFree (Let participant variableName (VFunction argument body) ())
     return (VReference variableName)
 
 recursive :: (HighLevelProgram a -> HighLevelProgram a) -> HighLevelProgram a
@@ -190,7 +191,9 @@ inParallel highlevelPrograms = do
     
 
 applyFunction :: Value -> Value -> HighLevelProgram a
-applyFunction (VReference f) argument = HighLevelProgram $ lift $ Free $ Application f argument
+applyFunction (VReference f) argument = do
+    (participant, _) <- State.get
+    HighLevelProgram $ lift $ Free $ Application participant f argument
 applyFunction _ _ = error "functions atm. can only be references" 
 
 uniqueVariableName :: HighLevelProgram String

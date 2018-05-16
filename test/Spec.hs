@@ -133,9 +133,9 @@ testBackward = describe "backward" $ do
                  )
                 ]
 
-            cont = "(LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"unit\", continuation = ()})) (Fix Hole))"
-            actual = "Assignment {visibleName = \"var0\", internalName = \"v1\", continuation = Fix " ++ cont ++ "}"
-            errorMessage = Session.SynchronizationError $ "the sender's previous instruction is not a Send, but " ++ actual
+            message = "the sender's previous instruction is not a Send, but "
+            actual = "Assignment {owner = \"A\", visibleName = \"var0\", internalName = \"v1\", continuation = Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"unit\", continuation = ()})) (Fix Hole))}"
+            errorMessage = Session.SynchronizationError $ message ++ actual
 
         in 
             (backwardN [ "B", "A" ] =<< forwardN ["A", "B", "A" ] state) `shouldBe` Left errorMessage 
@@ -180,7 +180,7 @@ testBackward = describe "backward" $ do
                 [("A", monitor, compileAlice $ H.ifThenElse condition thenBranch elseBranch) 
                 ]
 
-            newMonitor = createMonitor (Fix . LocalType.Branched condition verdict (compileAlice elseBranch), localType) Map.empty
+            newMonitor = createMonitor (Fix . LocalType.Branched "A" condition verdict (compileAlice elseBranch), localType) Map.empty
             newState = executionState Queue.empty
                 [("A", newMonitor, compileAlice $ H.send (VInt 42))
                 ]
@@ -199,7 +199,7 @@ testBackward = describe "backward" $ do
                 ]
 
             newMonitor = (createMonitor 
-                (Fix . LocalType.Application "v1" "k0" . Fix . LocalType.Assignment "var0" "v0", LocalType.end) $ 
+                (Fix . LocalType.Application "A" "v1" "k0" . Fix . LocalType.Assignment "A" "var0" "v0", LocalType.end) $ 
                 Map.fromList [ ("v0",VFunction "var1" (Fix NoOp)),("v1",VUnit) ]
                  ) { _applicationHistory = Map.fromList [("k0",("v0",VUnit))] }  
 
@@ -212,7 +212,7 @@ testBackward = describe "backward" $ do
             (backwardN [ "A", "A", "A" ] =<< forwardN [ "A", "A", "A" ] state) `shouldBe` Right state
             
 
-    it "choise behaves" $ 
+    it "choice behaves" $ 
         let 
             monitor name = createMonitor (id, RecursiveChoice.localTypes Map.! name) Map.empty
             monitor1 = monitor "A" 
@@ -227,7 +227,7 @@ testBackward = describe "backward" $ do
             let Right base = forwardN [ "A", "A", "A", "B", "B", "B" ]  state
             (backwardN [ "A", "B" ] =<< forwardN [ "B", "A" ] base) `shouldBe` Right base
 
-    it "choise fails when offerer is unsynced" $ 
+    it "choice fails when offerer is unsynced" $ 
         let 
             monitor name = createMonitor (id, RecursiveChoice.localTypes Map.! name) Map.empty
             monitor1 = monitor "A" 
@@ -238,17 +238,14 @@ testBackward = describe "backward" $ do
                 , ("B", monitor2, RecursiveChoice.bob) 
                 ]
 
-            errorMessage = 
-                "the offerer's previous instruction is not a Offer, but LocalType (Atom V) ("
-                    ++ "Fix (Offered {owner = \"A\", selector = \"B\", picked = Zipper ([],(\"recurse\","
-                    ++ "Fix (Application \"v0\" (VIntOperator (VReference \"v1\") Add (VInt (-1)))),Fix (Atom V)),[(\"end\",Fix NoOp,Fix (Atom End))]), continuation = "
-                    ++ "Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = ()})) (Fix (Application \"v1\" \"k0\" ("
-                    ++ "Fix (Assignment {visibleName = \"var0\", internalName = \"v0\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))"
+            message = 
+                "the offerer's previous instruction is not a Offer, but "
+            expected = "LocalType (Atom V) (Fix (Offered {owner = \"A\", selector = \"B\", picked = Zipper ([],(\"recurse\",Fix (Application \"A\" \"v0\" (VIntOperator (VReference \"v1\") Add (VInt (-1)))),Fix (Atom V)),[(\"end\",Fix NoOp,Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = ()})) (Fix (Application \"A\" \"v1\" \"k0\" (Fix (Assignment {owner = \"A\", visibleName = \"var0\", internalName = \"v0\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))"
         in do
             let Right base = forwardN [ "A", "A", "A", "B", "B", "B" ]  state
-            (backwardN [ "A", "B" ] =<< forwardN [ "B", "A", "A" ] base) `shouldBe` Left (SynchronizationError errorMessage)
+            (backwardN [ "A", "B" ] =<< forwardN [ "B", "A", "A" ] base) `shouldBe` Left (SynchronizationError $ message ++ expected )
 
-    it "choise fails when selector is unsynced" $ 
+    it "choice fails when selector is unsynced" $ 
         let 
             monitor name = createMonitor (id, RecursiveChoice.localTypes Map.! name) Map.empty
             monitor1 = monitor "A" 
@@ -259,20 +256,16 @@ testBackward = describe "backward" $ do
                 , ("B", monitor2, RecursiveChoice.bob) 
                 ]
 
-            errorMessage = 
-                "the selector's previous instruction is not a Select, but Application \"v5\" \"k2\" (Fix (LocalType (Atom V) ("
-                    ++ "Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",VComparison (VReference \"v4\") GT (VInt 0),"
-                    ++ "Fix (Application \"v2\" VUnit),Fix (Atom V)),[(\"end\",VBool True,Fix NoOp,Fix (Atom End))]), continuation = "
-                    ++ "Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", names = Just (\"var2\",\"v4\"), tipe = \"number\", continuation = ()})) ("
-                    ++ "Fix (Application \"v3\" \"k1\" (Fix (Assignment {visibleName = \"var0\", internalName = \"v2\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))))"
+            message = "the selector's previous instruction is not a Select, but " 
+            expected = "Application \"B\" \"v5\" \"k2\" (Fix (LocalType (Atom V) (Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",VComparison (VReference \"v4\") GT (VInt 0),Fix (Application \"B\" \"v2\" VUnit),Fix (Atom V)),[(\"end\",VBool True,Fix NoOp,Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", names = Just (\"var2\",\"v4\"), tipe = \"number\", continuation = ()})) (Fix (Application \"B\" \"v3\" \"k1\" (Fix (Assignment {owner = \"B\", visibleName = \"var0\", internalName = \"v2\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))))"
         in do
             let Right base = forwardN [ "A", "A", "A", "B", "B", "B" ]  state
-            (backwardN [ "A", "B" ] =<< forwardN [ "B", "A", "B" ] base) `shouldBe` Left (SynchronizationError errorMessage)
+            (backwardN [ "A", "B" ] =<< forwardN [ "B", "A", "B" ] base) `shouldBe` Left (SynchronizationError $ message ++ expected)
 
     it "assignment behaves" $ 
         let 
             monitor = createMonitor (id, LocalType.end) Map.empty
-            newMonitor = createMonitor (Fix . LocalType.Assignment "var0" "v0", LocalType.end) (Map.singleton "v0" VUnit) 
+            newMonitor = createMonitor (Fix . LocalType.Assignment "A" "var0" "v0", LocalType.end) (Map.singleton "v0" VUnit) 
 
             state = executionState Queue.empty
                 [("A", monitor, compileAlice $ do
@@ -402,8 +395,8 @@ testForward = describe "forward_" $ do
         let monitor = createMonitor (id, LocalType.end) Map.empty
             newMonitor = 
                 createMonitor 
-                (Fix . LocalType.Assignment "var0" "v0" , LocalType.end) 
-                (Map.singleton "v0" (VFunction "var1" (Fix (Application "v0" VUnit))))
+                (Fix . LocalType.Assignment "A" "var0" "v0" , LocalType.end) 
+                (Map.singleton "v0" (VFunction "var1" (Fix (Application "A" "v0" VUnit))))
 
             program = do
                 x <- H.recursiveFunction $ \self _ -> H.applyFunction self VUnit 
@@ -411,7 +404,7 @@ testForward = describe "forward_" $ do
 
             state = executionState Queue.empty [("A", monitor, compileAlice program)] 
 
-            newState = executionState Queue.empty [("A", newMonitor, Fix $ Program.Application "v0" VUnit )]
+            newState = executionState Queue.empty [("A", newMonitor, Fix $ Program.Application "A" "v0" VUnit )]
         in
             forwarder state `shouldBe` Right newState 
 
@@ -422,8 +415,8 @@ testForward = describe "forward_" $ do
 
             newMonitors = 
                 createMonitor 
-                (Fix . LocalType.Assignment "var0" "v0" , LocalType.end) 
-                (Map.singleton "v0" (VFunction "var1" (Fix (Application "v0" VUnit))))
+                (Fix . LocalType.Assignment "A" "var0" "v0" , LocalType.end) 
+                (Map.singleton "v0" (VFunction "var1" (Fix (Application "A" "v0" VUnit))))
 
             
             globalType = GlobalType.globalType $ do
@@ -467,11 +460,11 @@ testForward = describe "forward_" $ do
                 (LocalType.backwardSend "A" "B" "amount" . LocalType.backwardReceive "A" "B" "var0" "v3" "address", LocalType.end)
 
             bobType = 
-                ( LocalType.backwardReceive "B" "A" "var2" "v4" "amount" . LocalType.backwardSend "B" "A" "address" . LocalType.backwardSend "B" "C" "thunk" . Fix . LocalType.Assignment "var0" "v0", LocalType.end)
+                ( LocalType.backwardReceive "B" "A" "var2" "v4" "amount" . LocalType.backwardSend "B" "A" "address" . LocalType.backwardSend "B" "C" "thunk" . Fix . LocalType.Assignment "B" "var0" "v0", LocalType.end)
                 
 
             carolType = 
-                ( Fix . LocalType.Application "v2" "k0" . LocalType.backwardReceive "C" "B" "var0" "v1" "thunk", LocalType.end )
+                ( Fix . LocalType.Application "C" "v2" "k0" . LocalType.backwardReceive "C" "B" "var0" "v1" "thunk", LocalType.end )
 
             bobStore = 
                 Map.fromList [("v0",VFunction "var1" (Fix (Send {owner = "B", value = VString "Lucca, 55100", continuation = Fix (Receive {owner = "B", variableName = "var2", continuation = Fix NoOp})}))),("v4",VInt 42)]
@@ -524,7 +517,7 @@ testForward = describe "forward_" $ do
                 (_store . (Map.! "C") . participants ) <$> forwarded
 
             thunk = 
-                VFunction "var1" (Fix (Let "var2" (VInt 42) (Fix NoOp)))
+                VFunction "var1" (Fix (Let "X" "var2" (VInt 42) (Fix NoOp)))
 
         in 
             1 `shouldBe` 1
@@ -564,10 +557,10 @@ testForward = describe "forward_" $ do
                 (LocalType.backwardSend "A" "C" "fourtyTwo", LocalType.end)
 
             bType = 
-                (Fix . LocalType.Application "v2" "k0" . LocalType.backwardReceive "B" "C" "var0" "v1" "thunk", LocalType.end)
+                (Fix . LocalType.Application "B" "v2" "k0" . LocalType.backwardReceive "B" "C" "var0" "v1" "thunk", LocalType.end)
 
             cType = 
-                (LocalType.backwardReceive "C" "A" "var2" "v3" "fourtyTwo" . LocalType.backwardSend "C" "B" "thunk" . Fix . LocalType.Assignment "var0" "v0", LocalType.end)
+                (LocalType.backwardReceive "C" "A" "var2" "v3" "fourtyTwo" . LocalType.backwardSend "C" "B" "thunk" . Fix . LocalType.Assignment "C" "var0" "v0", LocalType.end)
 
             thunk = VFunction "var1" (Fix (Receive {owner = "C", variableName = "var2", continuation = Fix NoOp}))
 
@@ -725,17 +718,15 @@ testRenameVariable = describe "renameVariable" $ do
     let renamer = unFix . renameVariable "x" "y" . Fix
 
     it "renames function name" $
-          renamer (Program.Application "x" VUnit) `shouldBe` Program.Application "y" VUnit
+        renamer (Program.Application "A" "x" VUnit) `shouldBe` Program.Application "A" "y" VUnit
 
     it "renames reference in function argument" $
-        renamer (Program.Application "f" (VReference "x")) 
-            `shouldBe` Program.Application "f" (VReference "y")
-
-
+        renamer (Program.Application "A" "f" (VReference "x")) 
+            `shouldBe` Program.Application "A" "f" (VReference "y")
 
     it "renames in assignment right-hand side" $
-        renamer (Program.Let "v" (VReference "x") Program.terminate)
-            `shouldBe` Program.Let "v" (VReference "y") Program.terminate
+        renamer (Program.Let "A" "v" (VReference "x") Program.terminate)
+            `shouldBe` Program.Let "A" "v" (VReference "y") Program.terminate
 
     it "renames in send payload right-hand side" $
         renamer (Program.Send "owner" (VReference "x") Program.terminate)
@@ -752,7 +743,7 @@ testRenameVariable = describe "renameVariable" $ do
 
     it "renames in nested condition" $
         let lit = Fix . Program.Literal . VReference
-            example varname = Program.IfThenElse (VReference "q") (lit varname) (lit varname)
+            example varname = Program.IfThenElse "A" (VReference "q") (lit varname) (lit varname)
         in
             renamer (example "x") `shouldBe` example "y"
 

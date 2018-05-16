@@ -193,7 +193,7 @@ forward location participant program monitor = do
                 _ -> 
                     error $ "Offer needs a LocalType.Offer, but got " ++ show localType
         
-        (Application functionName argument, _) -> do
+        (Application owner functionName argument, _) -> do
             functionValue <- lookupVariable participant functionName 
             argumentName <- uniqueVariableName 
 
@@ -204,7 +204,7 @@ forward location participant program monitor = do
 
                 Just (variable, body) -> do
                     k <- uniqueApplicationName
-                    let newLocalType = LocalType.createState (Fix $ LocalType.Application argumentName k previous) fixedLocal
+                    let newLocalType = LocalType.createState (Fix $ LocalType.Application owner argumentName k previous) fixedLocal
                         newMonitor = 
                             monitor 
                                 { _store = Map.insert argumentName argument (_store monitor)
@@ -229,10 +229,10 @@ forward location participant program monitor = do
             setParticipant l1 participant ( newMonitor, p )
             setParticipant l2 participant ( newMonitor, q )
 
-        (Let visibleName value continuation, _) -> do
+        (Let owner visibleName value continuation, _) -> do
             variableName <- uniqueVariableName 
 
-            let newLocalType = LocalType.createState (Fix $ LocalType.Assignment visibleName variableName previous) fixedLocal
+            let newLocalType = LocalType.createState (Fix $ LocalType.Assignment owner visibleName variableName previous) fixedLocal
                 newMonitor = 
                     monitor 
                         { _store = Map.insert variableName (renameValue visibleName variableName value) (_store monitor)
@@ -241,16 +241,16 @@ forward location participant program monitor = do
             
             setParticipant location participant ( newMonitor, renameVariable visibleName variableName continuation )
 
-        (IfThenElse condition thenBranch elseBranch, _) -> do 
+        (IfThenElse owner condition thenBranch elseBranch, _) -> do 
             verdict <- unsafeCastToBool <$> evaluateValue participant condition 
             
             if verdict then do
-                let newLocalType = LocalType.createState (Fix $ LocalType.Branched condition verdict elseBranch previous) fixedLocal
+                let newLocalType = LocalType.createState (Fix $ LocalType.Branched owner condition verdict elseBranch previous) fixedLocal
                     newMonitor = monitor { _localType = newLocalType }  
                 
                 setParticipant location participant ( newMonitor, thenBranch )
             else do
-                let newLocalType = LocalType.createState (Fix $ LocalType.Branched condition verdict thenBranch previous) fixedLocal
+                let newLocalType = LocalType.createState (Fix $ LocalType.Branched owner condition verdict thenBranch previous) fixedLocal
                     newMonitor = monitor { _localType = newLocalType }  
             
                 setParticipant location participant ( newMonitor, elseBranch )
@@ -410,7 +410,7 @@ backward location participant program monitor =
         LocalType.Synchronized _ -> 
             error "type is synced, but the previous instruction is not a transaction or choice"
 
-        LocalType.Unsynchronized (LocalType.Application argumentName k rest) ->
+        LocalType.Unsynchronized (LocalType.Application owner argumentName k rest) ->
             case Map.lookup k (_applicationHistory monitor) of 
                 Nothing -> 
                     error "rolling function that does not exist"
@@ -421,7 +421,7 @@ backward location participant program monitor =
                             , _store = Map.delete argumentName (_store monitor)
                             , _applicationHistory = Map.delete k (_applicationHistory monitor) 
                             } 
-                        , Program.Application functionName argument
+                        , Program.Application owner functionName argument
                         )
 
 
@@ -443,7 +443,7 @@ backward location participant program monitor =
                 _ -> 
                     error "rolling a program that is not NoOp"
 
-        LocalType.Unsynchronized (LocalType.Assignment visibleName variableName rest) -> 
+        LocalType.Unsynchronized (LocalType.Assignment owner visibleName variableName rest) -> 
             let 
                 store = _store monitor 
 
@@ -459,17 +459,17 @@ backward location participant program monitor =
             in            
                 setParticipant_
                     ( newMonitor
-                    , Program.Let visibleName value $ renameVariable variableName visibleName program
+                    , Program.Let owner visibleName value $ renameVariable variableName visibleName program
                     )
 
-        LocalType.Unsynchronized (LocalType.Branched condition verdict otherBranch rest) -> 
+        LocalType.Unsynchronized (LocalType.Branched owner condition verdict otherBranch rest) -> 
             let 
                 newMonitor = 
                     monitor { _localType = LocalType.Unsynchronized (rest, next) }  
             in
                 setParticipant_
                     ( newMonitor
-                    , if verdict then Program.IfThenElse condition program otherBranch else Program.IfThenElse condition otherBranch program
+                    , if verdict then Program.IfThenElse owner condition program otherBranch else Program.IfThenElse owner condition otherBranch program
                     )
 
 

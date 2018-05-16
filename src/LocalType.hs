@@ -89,10 +89,10 @@ data TypeContextF program value a f
         , picked :: Zipper (String, program, LocalType a)
         , continuation :: f 
         }
-    | Branched { condition :: value, verdict :: Bool, otherBranch :: program, continuation :: f }
-    | Application Identifier Identifier f 
+    | Branched { owner :: Participant, condition :: value, verdict :: Bool, otherBranch :: program, continuation :: f }
+    | Application Participant Identifier Identifier f 
     | Spawning Location Location Location f
-    | Assignment { visibleName :: Identifier, internalName :: Identifier, continuation :: f }
+    | Assignment { owner :: Participant, visibleName :: Identifier, internalName :: Identifier, continuation :: f }
     | Literal a f
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
