@@ -54,8 +54,8 @@ backwardN (p:ps) state =
         Left e -> Left e
         Right v -> backwardN ps v
 
-compileAlice = H.compile "Location1" "A"
-compileBob = H.compile "Location1" "B"
+compileAlice = H.compile "A"
+compileBob = H.compile "B"
 
 testProjection = describe "projection" $ 
     it "projection of choice" $ 
@@ -195,7 +195,7 @@ testBackward = describe "backward" $ do
                 H.applyFunction function VUnit
 
             state = executionState Queue.empty
-                [ ("A", monitor, H.compile "Location1" "A" program) 
+                [ ("A", monitor, H.compile "A" program) 
                 ]
 
             newMonitor = (createMonitor 
@@ -204,7 +204,7 @@ testBackward = describe "backward" $ do
                  ) { _applicationHistory = Map.fromList [("k0",("v0",VUnit))] }  
 
             newState = executionState Queue.empty
-                [ ("A", newMonitor, H.compile "Location1" "A" H.terminate) 
+                [ ("A", newMonitor, H.compile "A" H.terminate) 
                 ]
 
         in do
@@ -346,11 +346,11 @@ testBackward = describe "backward" $ do
             monitorA = createMonitor (id, localTypes Map.! "A") Map.empty
             monitorB = createMonitor (id, localTypes Map.! "B") Map.empty
 
-            alice = H.compile "Location1" "A" $ do
+            alice = H.compile "A" $ do
                 H.send VUnit  
                 H.offer [ ("continue", H.send VUnit), ("end", H.terminate) ]
 
-            bob = H.compile "Location1" "B" $ do
+            bob = H.compile "B" $ do
                 y <- H.receive
                 H.select 
                     [ ("continue", VBool True, do
@@ -451,9 +451,9 @@ testForward = describe "forward_" $ do
 
             state = 
                 executionState Queue.empty 
-                    [ ("A", createMonitor (id, localTypes Map.! "A") Map.empty, H.compile "Location1" "A" alice)
-                    , ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "Location1" "B" bob)
-                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "Location1" "C" carol)
+                    [ ("A", createMonitor (id, localTypes Map.! "A") Map.empty, H.compile "A" alice)
+                    , ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "B" bob)
+                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "C" carol)
                     ]
 
             newQueue = 
@@ -481,9 +481,9 @@ testForward = describe "forward_" $ do
 
             newState = 
                 executionState newQueue 
-                    [ ("A", createMonitor aliceType (Map.fromList [("v3",VString "Lucca, 55100")]), H.compile "Location1" "A" H.terminate)
-                    , ("B", createMonitor bobType bobStore, H.compile "Location1" "B" H.terminate)
-                        , ("C", (createMonitor carolType carolStore) { _applicationHistory = Map.fromList [("k0",("v1",VUnit))] } , H.compile "Location1" "C" H.terminate)
+                    [ ("A", createMonitor aliceType (Map.fromList [("v3",VString "Lucca, 55100")]), H.compile "A" H.terminate)
+                    , ("B", createMonitor bobType bobStore, H.compile "B" H.terminate)
+                        , ("C", (createMonitor carolType carolStore) { _applicationHistory = Map.fromList [("k0",("v1",VUnit))] } , H.compile "C" H.terminate)
                     ]
         in
             forwardN ["B", "B", "C", "C", "C", "A", "A", "C" ]  state `shouldBe` Right newState 
@@ -510,8 +510,8 @@ testForward = describe "forward_" $ do
 
             state = 
                 executionState Queue.empty 
-                    [ ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "Location1" "B" bob)
-                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "Location1" "C" carol)
+                    [ ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "B" bob)
+                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "C" carol)
                     ]
 
             forwarded = 
@@ -555,9 +555,9 @@ testForward = describe "forward_" $ do
                 
             state = 
                 executionState Queue.empty 
-                    [ ("A", createMonitor (id, localTypes Map.! "A") Map.empty, H.compile "Location1" "A" alice)
-                    , ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "Location1" "B" bob)
-                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "Location1" "C" carol)
+                    [ ("A", createMonitor (id, localTypes Map.! "A") Map.empty, H.compile "A" alice)
+                    , ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "B" bob)
+                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "C" carol)
                     ]
 
             aType = 
@@ -576,9 +576,9 @@ testForward = describe "forward_" $ do
 
             newState = 
                 executionState (Queue.enqueueHistory ("A", "C", VInt 42) $ Queue.enqueueHistory ("C", "B", thunk) Queue.empty)
-                    [ ("A", createMonitor aType Map.empty, H.compile "Location1" "A" H.terminate)
-                    , ("B", (createMonitor bType  bStore) { _applicationHistory = Map.fromList [("k0",("v1",VUnit))] } , H.compile "Location1" "B" H.terminate)
-                    , ("C", createMonitor cType  cStore , H.compile "Location1" "C" H.terminate)
+                    [ ("A", createMonitor aType Map.empty, H.compile "A" H.terminate)
+                    , ("B", (createMonitor bType  bStore) { _applicationHistory = Map.fromList [("k0",("v1",VUnit))] } , H.compile "B" H.terminate)
+                    , ("C", createMonitor cType  cStore , H.compile "C" H.terminate)
                     ]
 
         in forwardN [ "C", "C", "A", "B", "B", "B", "B" ] state `shouldBe` Right newState

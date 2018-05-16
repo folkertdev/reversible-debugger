@@ -54,7 +54,7 @@ localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections $ GlobalType.mapType show globalType
 
 
-alice = H.compile "Location1" "A" $ do 
+alice = H.compile "A" $ do 
     let h = VInt 42 
     H.send (VString "Logicomix" )
     p <- H.receive 
@@ -63,7 +63,7 @@ alice = H.compile "Location1" "A" $ do
     H.terminate
             
 
-bob = H.compile "Location1" "B" $ do 
+bob = H.compile "B" $ do 
     thunk <- 
         H.function $ \_ -> do
             H.send (VString "Lucca, 55100")
@@ -85,12 +85,12 @@ bob = H.compile "Location1" "B" $ do
     H.send thunk 
 
 
-carol = H.compile "Location1" "C" $ do 
+carol = H.compile "C" $ do 
     h <- H.receive 
     code <- H.receive 
     H.applyFunction code VUnit
 
-vendor = H.compile "Location1" "V" $ do 
+vendor = H.compile "V" $ do 
     let price title = VInt 42
         date = VString "2018-03-14"
 

@@ -46,7 +46,7 @@ localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections recursiveGlobalType 
 
 
-alice = H.compile "Location1" "A" $ do 
+alice = H.compile "A" $ do 
     thunk <- 
         H.recursiveFunction $ \self x -> do 
             H.send x
@@ -64,7 +64,7 @@ alice = H.compile "Location1" "A" $ do
 
 
 
-bob = H.compile "Location1" "B" $ do 
+bob = H.compile "B" $ do 
     thunk <- 
         H.recursiveFunction $ \self x -> do 
             received <- H.receive

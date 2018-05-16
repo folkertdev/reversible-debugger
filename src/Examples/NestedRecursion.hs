@@ -47,7 +47,7 @@ localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections recursiveGlobalType 
 
 
-alice = H.compile "Location1" "A" $ 
+alice = H.compile "A" $ 
     let 
         decrement v = 
             VIntOperator v Add  (VInt (-1))
@@ -75,7 +75,7 @@ alice = H.compile "Location1" "A" $
         H.applyFunction f (VInt 3)
 
 
-bob = H.compile "Location1" "B" $ 
+bob = H.compile "B" $ 
     let 
         nested outer =
             H.recursiveFunction $ \self _ -> do

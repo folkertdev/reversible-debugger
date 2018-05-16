@@ -58,7 +58,7 @@ localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections $ GlobalType.mapType show globalType
 
 
-alice = H.compile "Location1" "A" $ 
+alice = H.compile "A" $ 
     H.recursive $ \self -> do
         let h = VInt 42 
         H.send (VString "Logicomix" )
@@ -70,7 +70,7 @@ alice = H.compile "Location1" "A" $
             ]
 
 
-bob = H.compile "Location1" "B" $ 
+bob = H.compile "B" $ 
     H.recursive $ \self -> do
         thunk <- 
             H.function $ \_ -> do
@@ -90,7 +90,7 @@ bob = H.compile "Location1" "B" $
             ]
 
 
-carol = H.compile "Location1" "C" $ 
+carol = H.compile "C" $ 
     H.recursive $ \self -> 
         H.offer 
             [ (,) "failure" self
@@ -100,7 +100,7 @@ carol = H.compile "Location1" "C" $
                 H.applyFunction code VUnit
             ]
 
-vendor = H.compile "Location1" "V" $ 
+vendor = H.compile "V" $ 
     H.recursive $ \self -> do
         let price title = VInt 42
             date = VString "2018-03-14"
