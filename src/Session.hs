@@ -24,7 +24,7 @@ data ExecutionState value =
         , locationCount :: Int
         , applicationCount :: Int
         , participants :: Map Participant (Monitor value String)
-        , locations :: Map Location (Map Participant (Program value))
+        , locations :: Map Location (Program value)
         , queue :: Queue value
         , isFunction :: value -> Maybe (Identifier, Program value)
         }
