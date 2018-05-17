@@ -24,7 +24,7 @@ data ExecutionState value =
         , locationCount :: Int
         , applicationCount :: Int
         , participants :: Map Participant (Monitor value String)
-        , locations :: Map Location (Program value)
+        , locations :: Map Location (Participant, Program value)
         , queue :: Queue value
         , isFunction :: value -> Maybe (Identifier, Program value)
         }
@@ -104,7 +104,7 @@ setParticipant location participant (monitor, program) =
     State.modify $ \state@ExecutionState { participants, locations } -> 
         state 
             { participants = Map.insert participant monitor participants
-            , locations = Map.update (Just . Map.insert participant program) location locations
+            , locations = Map.insert location (participant, program) locations
             }
 
 setMonitor :: Location -> Participant -> Monitor value String -> Session value ()
@@ -112,26 +112,18 @@ setMonitor location participant monitor =
     State.modify $ \state@ExecutionState { participants, locations } -> 
         state 
             { participants = Map.insert participant monitor participants
-            , locations = Map.update (Just . Map.insert participant Program.terminate) location locations
             }
 
 getParticipant :: Location -> Participant -> Session value (Monitor value String, Program value)
 getParticipant location participant = do
     state <- State.get
     monitor <- getMonitor participant
-    case Map.lookup location (locations state) >>= Map.lookup participant of 
+    case Map.lookup location (locations state) of 
         Nothing -> 
             error "location or participant does not exist"
 
-        Just program -> 
+        Just (_, program) -> 
             return ( monitor, program )
-
-removeParticipant :: Location -> Participant -> Session value () 
-removeParticipant location participant = 
-    State.modify $ \state@ExecutionState { locations } -> 
-        state 
-            { locations = Map.update (Just . Map.delete participant) location locations
-            }
 
 removeLocation :: Location -> Session value () 
 removeLocation location = 

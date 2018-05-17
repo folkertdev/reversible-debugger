@@ -154,3 +154,38 @@ renameVariable old new program =
 
     in
         recursiveRename program
+
+
+statementOwner :: ProgramF value x -> Maybe Participant
+statementOwner instruction = 
+    case instruction of 
+        Application owner functionName variableName ->
+            Just owner 
+
+        Let owner variableName value continuation ->  
+            Just owner 
+
+        Receive owner variableName continuation -> 
+            Just owner 
+
+        Send owner _ _ -> 
+            Just owner 
+
+        Select owner options -> 
+            Just owner 
+
+        Literal literal  ->
+            Nothing 
+
+        IfThenElse owner condition thenBranch elseBranch -> 
+            Just owner 
+
+        Parallel a b -> 
+            Nothing
+
+        Offer owner options -> 
+            Just owner 
+
+        NoOp -> 
+            Nothing
+
