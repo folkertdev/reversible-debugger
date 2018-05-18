@@ -40,7 +40,7 @@ validateLocalType location participant monitor =
             return x 
 
         LocalType.Synchronized _ -> 
-            Except.throwError $ SynchronizationError $ "cannot move forward a synchronized local type: it has to take a step back first. For participant " ++ participant ++ "at location " ++ location
+            Except.throwError $ SynchronizationError $ "cannot move forward a synchronized local type: it has to take a step back first. For participant " ++ participant ++ " at location " ++ location
 
 
 forward :: Location -> Session Value ()
@@ -150,7 +150,7 @@ forwardHelper location owner monitor (historyType, futureType) program =
                                 newMonitor = 
                                     monitor { _localType = newLocalType }  
                             in do
-                                pushToQueue ( offerer, owner, VLabel takenLabel )
+                                pushToQueue ( owner, offerer, VLabel takenLabel )
                                 setParticipant location owner ( newMonitor, takenProgram ) 
 
                 _ -> 
@@ -161,9 +161,7 @@ forwardHelper location owner monitor (historyType, futureType) program =
                 LocalType.Offer expectedOwner selector types -> do
                     ensure (owner == expectedOwner) (error $ "Offer: owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
 
-                    label <- popLabelFromQueue "Offer" owner selector
-
-
+                    label <- popLabelFromQueue "Offer" selector owner
 
                     let checkLabelHasImplemenation = 
                             let errorMessage = 
@@ -333,16 +331,38 @@ checkAndPerformReceive location participant monitor owner visibleName continuati
                 error $ "`" ++ participant ++ "`'s program wants to perform a receive, but its type is " ++ show localType
     else error "invalid owner in checkAndPerformReceive"
 
+backward :: Location -> Session Value ()
+backward location = do
+    -- get the program
+    ExecutionState { locations, participants } <- State.get
 
-backward :: Location -> Participant -> Program Value -> Monitor Value String -> Session Value ()  
-backward location participant program monitor = 
-    let (historyType, next) = LocalType.unwrapState $ _localType monitor 
-        setParticipant_ (m, progF) = setParticipant location participant (m, Fix progF)
+    case Map.lookup location locations of 
+        Nothing -> 
+            error $ "unknown location " ++ show location 
+
+        Just (defaultParticipant, program) -> do
+            -- get the owner/participant
+            let owner = statementOwner (unFix program) |> Maybe.withDefault defaultParticipant
+            case Map.lookup owner participants of 
+                Nothing -> 
+                    error $ "unknown participant " ++ show owner
+
+                Just monitor -> do
+                    let ( historyType, futureType ) = 
+                            case _localType monitor of 
+                                LocalType.Unsynchronized (x,y) -> (x,y)
+                                LocalType.Synchronized (x,y) -> (x,y)
+
+                    backwardHelper location owner monitor (historyType, futureType) program 
+
+backwardHelper location owner monitor (historyType, futureType) program =
+    let 
+        setParticipant_ (m, progF) = setParticipant location owner (m, Fix progF)
     in
     case fmap (unFix . fst) (_localType monitor) of 
         LocalType.Synchronized (LocalType.BackwardSend owner receiver tipe rest) -> do
             -- pop from the future! (not history; rolling the receive will put the action into the future)
-            let newLocalType = LocalType.Unsynchronized ( rest, Fix $ LocalType.Send owner receiver tipe next )
+            let newLocalType = LocalType.Unsynchronized ( rest, Fix $ LocalType.Send owner receiver tipe futureType )
             
             payload <- removeFromQueue "BackwardSend" owner receiver 
 
@@ -354,10 +374,10 @@ backward location participant program monitor =
         LocalType.Unsynchronized (LocalType.BackwardSend owner receiver tipe rest) -> do
             checkSynchronizedForTransaction owner receiver
             newMonitor <- getMonitor owner
-            backward location owner program newMonitor
+            backward location 
     
         LocalType.Synchronized (LocalType.BackwardReceive owner sender visibleName variableName tipe rest) -> do 
-            let newLocalType = LocalType.Unsynchronized ( rest, Fix $ LocalType.Receive owner sender tipe next ) 
+            let newLocalType = LocalType.Unsynchronized ( rest, Fix $ LocalType.Receive owner sender tipe futureType ) 
 
             _ <- rollQueueHistory "BackwardReceive" sender owner
 
@@ -369,11 +389,10 @@ backward location participant program monitor =
     
         LocalType.Unsynchronized (LocalType.BackwardReceive owner sender visibleName variableName tipe rest) -> do 
             checkSynchronizedForTransaction sender owner 
-            newMonitor <- getMonitor owner
-            backward location owner program newMonitor
+            backward location 
 
         LocalType.Synchronized LocalType.Selected{ owner, offerer, selection, continuation } -> do
-            _ <-  removeFromQueue "BackwardSelect" offerer owner 
+            _ <-  removeFromQueue "BackwardSelect" owner offerer 
             let 
                 combined = Zipper.toList selection 
                 types = List.map (\(l, _,_,t) -> (l, t)) combined 
@@ -387,11 +406,10 @@ backward location participant program monitor =
 
         LocalType.Unsynchronized LocalType.Selected{ owner, offerer } -> do
             checkSynchronizedForChoice offerer owner
-            newMonitor <- getMonitor owner
-            backward location owner program newMonitor
+            backward location 
 
         LocalType.Synchronized LocalType.Offered{ owner, selector, picked, continuation } -> do
-            _ <- rollQueueHistory "BackwardOffer" owner selector
+            _ <- rollQueueHistory "BackwardOffer" selector owner
             let 
                 combined = Zipper.toList picked 
                 (programs, types) =
@@ -408,7 +426,7 @@ backward location participant program monitor =
         LocalType.Unsynchronized LocalType.Offered{ owner, selector, picked, continuation } -> do
             checkSynchronizedForChoice owner selector
             newMonitor <- getMonitor owner
-            backward location owner program newMonitor
+            backward location 
 
         LocalType.Synchronized _ -> 
             error "type is synced, but the historyType instruction is not a transaction or choice"
@@ -420,7 +438,7 @@ backward location participant program monitor =
                 Just ( functionName, argument ) -> 
                     setParticipant_
                         ( monitor 
-                            { _localType = LocalType.Unsynchronized ( rest, next )
+                            { _localType = LocalType.Unsynchronized ( rest, futureType )
                             , _store = Map.delete argumentName (_store monitor)
                             , _applicationHistory = Map.delete k (_applicationHistory monitor) 
                             } 
@@ -432,12 +450,12 @@ backward location participant program monitor =
             error "rolling someone else's spawn"
 
         LocalType.Unsynchronized (LocalType.Spawning l l1 l2 rest) -> do
-            (_, p1) <- getParticipant l1 participant
-            (_, p2) <- getParticipant l2 participant
+            (_, p1) <- getParticipant l1 owner
+            (_, p2) <- getParticipant l2 owner
 
             case unFix program of 
                 NoOp -> do
-                    let newLocalType = LocalType.Unsynchronized ( rest, next )
+                    let newLocalType = LocalType.Unsynchronized ( rest, futureType )
                     removeLocation l1
                     removeLocation l2
 
@@ -457,7 +475,7 @@ backward location participant program monitor =
                 newMonitor = 
                     monitor 
                         { _store = Map.delete variableName store
-                        , _localType = LocalType.Unsynchronized (rest, next)
+                        , _localType = LocalType.Unsynchronized (rest, futureType)
                         }  
             in            
                 setParticipant_
@@ -468,7 +486,7 @@ backward location participant program monitor =
         LocalType.Unsynchronized (LocalType.Branched owner condition verdict otherBranch rest) -> 
             let 
                 newMonitor = 
-                    monitor { _localType = LocalType.Unsynchronized (rest, next) }  
+                    monitor { _localType = LocalType.Unsynchronized (rest, futureType) }  
             in
                 setParticipant_
                     ( newMonitor
@@ -487,7 +505,7 @@ backward location participant program monitor =
                 newMonitor = 
                     monitor 
                         { _store = Map.delete variableName store
-                        , _localType = LocalType.Unsynchronized (rest, next)
+                        , _localType = LocalType.Unsynchronized (rest, futureType)
                         }  
             in            
                 setParticipant_
@@ -499,7 +517,7 @@ backward location participant program monitor =
             let
                 newMonitor = 
                     monitor 
-                        { _localType = LocalType.Unsynchronized (rest, LocalType.recurse next)
+                        { _localType = LocalType.Unsynchronized (rest, LocalType.recurse futureType)
                         , _recursionPoints = drop 1 (_recursionPoints monitor)
                         }  
             in
@@ -512,7 +530,7 @@ backward location participant program monitor =
             let
                 newMonitor = 
                     monitor 
-                        { _localType = LocalType.Unsynchronized (rest, LocalType.broadenScope next) 
+                        { _localType = LocalType.Unsynchronized (rest, LocalType.broadenScope futureType) 
                         , _recursiveVariableNumber = _recursiveVariableNumber monitor - 1
                         }  
             in
@@ -628,28 +646,18 @@ backwardUntilTypeDecision = untilTypeDecision backward
 
 -}
 
-forward_ :: Location -> Participant -> Session Value ()        
-forward_ location participant = do
-    undefined
-    -- (program, monitor) <- validate location participant 
-    -- forward location participant program monitor
+forward_ :: Location -> Session Value ()        
+forward_ = forward 
 
 
-backward_ :: Location -> Participant -> Session Value ()        
-backward_ location participant = do
-    undefined
-    -- (program, monitor) <- validate location participant 
-    -- backward location participant program monitor
 
-forwardTestable :: Location -> Participant -> ExecutionState Value -> Either Error (ExecutionState Value)
-forwardTestable location participant state = 
-    undefined
-    -- fmap snd $ Except.runExcept $ State.runStateT (forward_ location participant) state
+forwardTestable :: Location -> ExecutionState Value -> Either Error (ExecutionState Value)
+forwardTestable location state = 
+    fmap snd $ Except.runExcept $ State.runStateT (forward location) state
 
-backwardTestable :: Location -> Participant -> ExecutionState Value -> Either Error (ExecutionState Value)
-backwardTestable location participant state = 
-    undefined
-    -- fmap snd $ Except.runExcept $ State.runStateT (backward_ location participant) state
+backwardTestable :: Location -> ExecutionState Value -> Either Error (ExecutionState Value)
+backwardTestable location state = 
+    fmap snd $ Except.runExcept $ State.runStateT (backward location) state
 
 
 

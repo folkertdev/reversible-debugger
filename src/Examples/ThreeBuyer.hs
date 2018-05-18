@@ -8,13 +8,14 @@ import qualified LocalType
 import qualified GlobalType
 
 import Data.Map as Map (Map)
+import Data.List as List
 import qualified Data.Map as Map
 import Data.Fix as Fix
 
-import Utils ((|>))
+import Utils ((|>), List)
 
 import Session (Monitor(..), ExecutionState(..), Session)
-import Semantics (forward_, backward_)
+import Semantics (forward) 
 import qualified Semantics
 import Program (ProgramF(..), Value(..), Program)
 import qualified Queue
@@ -22,7 +23,7 @@ import qualified Queue
 import qualified HighLevel as H
 import Debug.Trace as Debug
 
-data MyParticipants = A | B | C | V deriving (Show, Eq, Ord)
+data MyParticipants = A | B | C | V deriving (Show, Eq, Ord, Enum, Bounded)
 
 data MyType
     = Title
@@ -54,7 +55,7 @@ localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections $ GlobalType.mapType show globalType
 
 
-alice = H.compile "A" $ do 
+alice = do 
     let h = VInt 42 
     H.send (VString "Logicomix" )
     p <- H.receive 
@@ -63,7 +64,7 @@ alice = H.compile "A" $ do
     H.terminate
             
 
-bob = H.compile "B" $ do 
+bob = do 
     thunk <- 
         H.function $ \_ -> do
             H.send (VString "Lucca, 55100")
@@ -85,12 +86,12 @@ bob = H.compile "B" $ do
     H.send thunk 
 
 
-carol = H.compile "C" $ do 
+carol = do 
     h <- H.receive 
     code <- H.receive 
     H.applyFunction code VUnit
 
-vendor = H.compile "V" $ do 
+vendor = do 
     let price title = VInt 42
         date = VString "2018-03-14"
 
@@ -101,25 +102,29 @@ vendor = H.compile "V" $ do
     a <- H.receive 
     H.send date
 
-executionState = 
-    let createMonitor participant = Monitor 
+constructExecutionState :: List (Participant, H.HighLevelProgram ()) -> ExecutionState Value 
+constructExecutionState programs_ = 
+    let (participants, programs) = List.unzip programs_
+        createMonitor participant = Monitor 
             { _localType = LocalType.Unsynchronized (Fix LocalType.Hole, localTypes Map.! participant)
             , _store = Map.empty
             , _applicationHistory = Map.empty
             , _recursiveVariableNumber = 0
             , _recursionPoints = []
             }
-    in        
-    
+
+    in
         ExecutionState
             { variableCount = 0
-            , locationCount = 1 
+            , locationCount = List.length programs_
             , applicationCount = 0
-            , participants = Map.fromList [ ("A", createMonitor "A"), ("B", createMonitor "B"), ( "C", createMonitor "C"), ("V", createMonitor "V") ]
+            , participants = Map.fromList $ List.map (\p -> ( p, createMonitor p)) participants 
             , locations = 
-                [ ("A", alice), ("B", bob), ("C", carol), ("V", vendor) ]
+                programs_
+                    |> List.map (uncurry H.compile)
+                    |> zip participants
+                    |> zipWith (\i program -> ("l" ++ show i, program)) [1..]
                     |> Map.fromList
-                    |> Map.singleton "Location1" 
             , queue = Queue.empty
             , isFunction = \value -> 
                 case value of 
@@ -127,6 +132,9 @@ executionState =
                     _ -> Nothing
 
             }
+
+executionState = 
+    constructExecutionState $ zip (List.map show [minBound..(maxBound :: MyParticipants)]) [ alice, bob, carol, vendor]
 
 {-
 deriveSteps :: Int -> GlobalType.GlobalType String -> Session Value ()
@@ -150,42 +158,83 @@ derived =
         |> flip State.runStateT executionState
 -}
 
-
+{-
 steps = 
         ( do
             -- initialize thunk
-            forward_ "Location1" "B" 
+            forward "Location1" "B" 
 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "V" 
+            forward "Location1" "A" 
+            forward "Location1" "V" 
 
-            forward_ "Location1" "V" 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "V" 
-            forward_ "Location1" "B" 
+            forward "Location1" "V" 
+            forward "Location1" "A" 
+            forward "Location1" "V" 
+            forward "Location1" "B" 
 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "B" 
+            forward "Location1" "A" 
+            forward "Location1" "B" 
 
-            forward_ "Location1" "B" 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "B" 
-            forward_ "Location1" "V" 
+            forward "Location1" "B" 
+            forward "Location1" "A" 
+            forward "Location1" "B" 
+            forward "Location1" "V" 
 
-            forward_ "Location1" "B" 
-            forward_ "Location1" "C" 
+            forward "Location1" "B" 
+            forward "Location1" "C" 
             
-            forward_ "Location1" "B" 
-            forward_ "Location1" "C" 
+            forward "Location1" "B" 
+            forward "Location1" "C" 
 
             -- force thunk
-            forward_ "Location1" "C" 
+            forward "Location1" "C" 
 
             -- evaluate the thunk
-            forward_ "Location1" "C" 
-            forward_ "Location1" "V" 
+            forward "Location1" "C" 
+            forward "Location1" "V" 
 
-            forward_ "Location1" "V" 
-            forward_ "Location1" "C" 
+            forward "Location1" "V" 
+            forward "Location1" "C" 
         )
+
+-}
+steps = 
+    ( do
+            -- initialize thunk
+            forward "l2" 
+
+            forward "l1" 
+            forward "l4" 
+
+            forward "l4" 
+            forward "l1" 
+            forward "l4" 
+            forward "l2" 
+
+            forward "l1" 
+            forward "l2" 
+
+            forward "l2" 
+            forward "l2" 
+            forward "l1" 
+            forward "l2" 
+            forward "l4" 
+
+            forward "l2" 
+            forward "l3" 
+            
+            forward "l2" 
+            forward "l3" 
+
+            -- force thunk
+            forward "l3" 
+
+            -- evaluate the thunk
+            forward "l3" 
+            forward "l4" 
+
+            forward "l4" 
+            forward "l3" 
+    )
             |> flip State.runStateT executionState
+

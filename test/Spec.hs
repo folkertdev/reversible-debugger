@@ -7,13 +7,14 @@ import Control.Monad.Trans.State as State
 
 import Program (Program, ProgramF(..), Value(..), renameVariable, IntOperator(..), terminate)
 import Session (Monitor(..), ExecutionState(..), Session, Error(..))
-import Semantics (forward_, backward_)
+import Semantics (forward, backward)
 import qualified Semantics
 import qualified Queue
 import Zipper (Zipper(..))
 import LocalType (LocalType(..), TypeContext) 
 import qualified LocalType 
 import qualified GlobalType 
+import Utils ((|>), List)
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -25,7 +26,6 @@ import qualified Examples.NestedRecursion as NestedRecursion
 
 import qualified HighLevel as H
 
-type List = []
 
 main :: IO ()
 main = hspec $ describe "all" Main.all
@@ -34,28 +34,30 @@ data Participants = A | B | C | D | V
     deriving (Show, Eq, Ord)
 
 all = do 
-    testProjection
     testForward
     testBackward
 
     testRenameVariable
+    testProjection
 
 
 
+forwardN :: List Int -> ExecutionState Value -> Either Error (ExecutionState Value)
 forwardN []     state = Right state 
 forwardN (p:ps) state = 
-    case Semantics.forwardTestable "L1" p state of 
+    case Semantics.forwardTestable ("l" ++ show p) state of 
         Left e -> Left e
         Right v -> forwardN ps v
 
+backwardN :: List Int -> ExecutionState Value -> Either Error (ExecutionState Value)
 backwardN []     state = Right state 
 backwardN (p:ps) state = 
-    case Semantics.backwardTestable "L1" p state of 
+    case Semantics.backwardTestable ("l" ++ show p) state of 
         Left e -> Left e
         Right v -> backwardN ps v
 
-compileAlice = H.compile "A"
-compileBob = H.compile "B"
+compileAlice = id 
+compileBob = id 
 
 testProjection = describe "projection" $ 
     it "projection of choice" $ 
@@ -95,8 +97,8 @@ testBackward = describe "backward" $ do
             monitor1 = createMonitor (id, LocalType.send    "A" "B" "unit" LocalType.end) Map.empty
             monitor2 = createMonitor (id, LocalType.receive "B" "A" "unit" LocalType.end) Map.empty
             state = executionState Queue.empty
-                [("A", monitor1, compileAlice $ H.send VUnit)
-                ,("B", monitor2, compileBob $ do 
+                [("A", monitor1, H.send VUnit)
+                ,("B", monitor2, do 
                     x <- H.receive
                     H.terminate
                  )
@@ -113,8 +115,8 @@ testBackward = describe "backward" $ do
                 ,("B", newMonitor2, compileBob H.terminate)
                 ]
         in do
-            forwardN ["A", "B"] state `shouldBe` Right newState
-            (backwardN [ "B", "A" ] =<< forwardN ["A", "B"] state) `shouldBe` Right state
+            -- forwardN [ 1, 2 ] state `shouldBe` Right newState
+            (backwardN [ 2, 1 ] =<< forwardN [ 1, 2] state) `shouldBe` Right state
 
     it "send/receive fails when sender is not synced" $ 
         let 
@@ -138,7 +140,7 @@ testBackward = describe "backward" $ do
             errorMessage = Session.SynchronizationError $ message ++ actual
 
         in 
-            (backwardN [ "B", "A" ] =<< forwardN ["A", "B", "A" ] state) `shouldBe` Left errorMessage 
+            (backwardN [ 2,1 ] =<< forwardN [ 1, 2, 1 ] state) `shouldBe` Left errorMessage 
 
     it "send/receive fails when receiver is not synced" $ 
         let 
@@ -163,7 +165,7 @@ testBackward = describe "backward" $ do
 
         in 
 
-            ( backwardN [ "B", "B", "A" ] =<<  forwardN ["A", "B", "B" ] state) `shouldBe` Right state
+            ( backwardN [ 2,2,1 ] =<<  forwardN [ 1, 2, 2 ] state) `shouldBe` Right state
 
 
     it "IfThenElse behaves for then" $ 
@@ -180,13 +182,13 @@ testBackward = describe "backward" $ do
                 [("A", monitor, compileAlice $ H.ifThenElse condition thenBranch elseBranch) 
                 ]
 
-            newMonitor = createMonitor (Fix . LocalType.Branched "A" condition verdict (compileAlice elseBranch), localType) Map.empty
+            newMonitor = createMonitor (Fix . LocalType.Branched "A" condition verdict (H.compile "A" elseBranch), localType) Map.empty
             newState = executionState Queue.empty
                 [("A", newMonitor, compileAlice $ H.send (VInt 42))
                 ]
         in do
-            forwardN ["A"] state `shouldBe` Right newState
-            (backwardN [ "A" ] =<< forwardN ["A"] state) `shouldBe` Right state
+            forwardN [ 1] state `shouldBe` Right newState
+            (backwardN [ 1 ] =<< forwardN [1] state) `shouldBe` Right state
 
     it "application reverses correctly" $ 
         let monitor = createMonitor (id, LocalType.end) Map.empty
@@ -195,7 +197,7 @@ testBackward = describe "backward" $ do
                 H.applyFunction function VUnit
 
             state = executionState Queue.empty
-                [ ("A", monitor, H.compile "A" program) 
+                [ ("A", monitor, program) 
                 ]
 
             newMonitor = (createMonitor 
@@ -204,12 +206,12 @@ testBackward = describe "backward" $ do
                  ) { _applicationHistory = Map.fromList [("k0",("v0",VUnit))] }  
 
             newState = executionState Queue.empty
-                [ ("A", newMonitor, H.compile "A" H.terminate) 
+                [ ("A", newMonitor, H.terminate) 
                 ]
 
         in do
-            (forwardN [ "A", "A", "A" ] state) `shouldBe` Right newState
-            (backwardN [ "A", "A", "A" ] =<< forwardN [ "A", "A", "A" ] state) `shouldBe` Right state
+            (forwardN [ 1,1,1 ] state) `shouldBe` Right newState
+            (backwardN [ 1,1,1 ] =<< forwardN [ 1,1,1 ] state) `shouldBe` Right state
             
 
     it "choice behaves" $ 
@@ -224,8 +226,8 @@ testBackward = describe "backward" $ do
                 ]
 
         in do
-            let Right base = forwardN [ "A", "A", "A", "B", "B", "B" ]  state
-            (backwardN [ "A", "B" ] =<< forwardN [ "B", "A" ] base) `shouldBe` Right base
+            let Right base = forwardN [ 1,1,1, 2,2,2]  state
+            (backwardN [ 1,2 ] =<< forwardN [ 2, 1 ] base) `shouldBe` Right base
 
     it "choice fails when offerer is unsynced" $ 
         let 
@@ -242,8 +244,8 @@ testBackward = describe "backward" $ do
                 "the offerer's previous instruction is not a Offer, but "
             expected = "LocalType (Atom V) (Fix (Offered {owner = \"A\", selector = \"B\", picked = Zipper ([],(\"recurse\",Fix (Application \"A\" \"v0\" (VIntOperator (VReference \"v1\") Add (VInt (-1)))),Fix (Atom V)),[(\"end\",Fix NoOp,Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = ()})) (Fix (Application \"A\" \"v1\" \"k0\" (Fix (Assignment {owner = \"A\", visibleName = \"var0\", internalName = \"v0\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))"
         in do
-            let Right base = forwardN [ "A", "A", "A", "B", "B", "B" ]  state
-            (backwardN [ "A", "B" ] =<< forwardN [ "B", "A", "A" ] base) `shouldBe` Left (SynchronizationError $ message ++ expected )
+            let Right base = forwardN [ 1,1,1, 2,2,2]  state
+            (backwardN [ 1,2 ] =<< forwardN [ 2, 1,1 ] base) `shouldBe` Left (SynchronizationError $ message ++ expected )
 
     it "choice fails when selector is unsynced" $ 
         let 
@@ -259,8 +261,8 @@ testBackward = describe "backward" $ do
             message = "the selector's previous instruction is not a Select, but " 
             expected = "Application \"B\" \"v5\" \"k2\" (Fix (LocalType (Atom V) (Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",VComparison (VReference \"v4\") GT (VInt 0),Fix (Application \"B\" \"v2\" VUnit),Fix (Atom V)),[(\"end\",VBool True,Fix NoOp,Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", names = Just (\"var2\",\"v4\"), tipe = \"number\", continuation = ()})) (Fix (Application \"B\" \"v3\" \"k1\" (Fix (Assignment {owner = \"B\", visibleName = \"var0\", internalName = \"v2\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))))"
         in do
-            let Right base = forwardN [ "A", "A", "A", "B", "B", "B" ]  state
-            (backwardN [ "A", "B" ] =<< forwardN [ "B", "A", "B" ] base) `shouldBe` Left (SynchronizationError $ message ++ expected)
+            let Right base = forwardN [ 1,1,1, 2,2,2]  state
+            (backwardN [ 1,2 ] =<< forwardN [2,1,2] base) `shouldBe` Left (SynchronizationError $ message ++ expected)
 
     it "assignment behaves" $ 
         let 
@@ -278,8 +280,8 @@ testBackward = describe "backward" $ do
                 [("A", newMonitor, compileAlice H.terminate)
                 ]
         in do
-            forwardN ["A"] state `shouldBe` Right newState
-            (backwardN [ "A" ] =<< forwardN [ "A" ] state) `shouldBe` Right state
+            forwardN [ 1] state `shouldBe` Right newState
+            (backwardN [ 1 ] =<< forwardN [ 1 ] state) `shouldBe` Right state
 
     it "recursion behaves" $ 
         let 
@@ -297,8 +299,8 @@ testBackward = describe "backward" $ do
                     * a history for V, the recursion variable
                     in that order - which might be wrong. anyway, we have to thus move backward twice
             -} 
-            let Right base = forwardN [ "A", "A", "A", "B", "B", "B", "B", "B", "A"] state
-            (backwardN [ "A", "A" ] =<< forwardN [ "A" ] base) `shouldBe` Right base
+            let Right base = forwardN [ 1,1,1,  2,2,2,2,2, 1] state
+            (backwardN [ 1,1 ] =<< forwardN [ 1 ] base) `shouldBe` Right base
 
     it "nested recursion behaves" $ 
         let 
@@ -316,11 +318,11 @@ testBackward = describe "backward" $ do
                     * a history for V, the recursion variable
                     in that order - which might be wrong. anyway, we have to thus move backward twice
             -} 
-            let init = ["A", "B" ]  
-                unwrap = [ "A", "A", "B", "B" ] 
-                nested = unwrap ++ [  "B", "A" ]  
+            let init = [ 1,2 ]  
+                unwrap = [ 1,1,2,2] 
+                nested = unwrap ++ [ 2,1 ]  
                 Right base = forwardN (concat [ init, unwrap, nested, nested, nested, nested ]) state
-            (backwardN [ "A", "A", "A", "A" ] =<< forwardN [ "A"  ] base) `shouldBe` Right base
+            (backwardN [ 1,1,1,1 ] =<< forwardN [ 1 ] base) `shouldBe` Right base
             -- (backwardN [ "A", "A" ] =<< forwardN [ "A", "A"  ] base) `shouldBe` Right base
             -- print base
 
@@ -339,11 +341,11 @@ testBackward = describe "backward" $ do
             monitorA = createMonitor (id, localTypes Map.! "A") Map.empty
             monitorB = createMonitor (id, localTypes Map.! "B") Map.empty
 
-            alice = H.compile "A" $ do
+            alice = do
                 H.send VUnit  
                 H.offer [ ("continue", H.send VUnit), ("end", H.terminate) ]
 
-            bob = H.compile "B" $ do
+            bob = do 
                 y <- H.receive
                 H.select 
                     [ ("continue", VBool True, do
@@ -364,25 +366,25 @@ testBackward = describe "backward" $ do
                     * a history for V, the recursion variable
                     in that order - which might be wrong. anyway, we have to thus move backward twice
             -} 
-            let Right base = forwardN [ "A", "B", "B", "A"] state
+            -- print $ forwardN [ 1, 2, 2, 1, 1, 2 ] state
+            let Right base = forwardN [ 1, 2 ] state
             -- (backwardN [ "A", "A" ] =<< forwardN [ "A" ] base) `shouldBe` Right base
-            (backwardN [ "B", "A", "B", "A" ] =<< forwardN [ "A", "B" ] base) `shouldBe` Right base
+            (backwardN [ 2, 1, 1, 2, 1, 2 ] =<< forwardN [ 2, 1, 1, 2 ] base) `shouldBe` Right base
+            -- 2,1,2,1 and 1,2
+            {-
+            -}
+            return ()
 
 testForward = describe "forward_" $ do 
-    let forwarder = Semantics.forwardTestable "L1" "A" 
-
-        forwarderN []     state = Right state 
-        forwarderN (p:ps) state = 
-            case Semantics.forwardTestable "L1" p state of 
-                Left e -> Left e
-                Right v -> forwarderN ps v
+    let forwarder = Semantics.forwardTestable "l1" 
 
     it "terminate doesn't change state" $ 
         let monitor = createMonitor (id, LocalType.end) Map.empty
-            state = executionState Queue.empty [("A", monitor, Program.terminate)]
+            state = executionState Queue.empty [("A", monitor, H.terminate)]
         in
             forwarder state `shouldBe` Right state 
 
+    {- TODO add tests on literals
     it "literal doesn't change state" $ 
         let monitor = createMonitor (id, LocalType.end) Map.empty
             state = executionState Queue.empty [("A", monitor, Fix $ Program.Literal VUnit)]
@@ -390,6 +392,7 @@ testForward = describe "forward_" $ do
             newState = executionState Queue.empty [("A", monitor, Program.terminate)]
         in
             forwarder state `shouldBe` Right newState 
+    -}
 
     it "let renames in function bodies" $ 
         let monitor = createMonitor (id, LocalType.end) Map.empty
@@ -404,7 +407,7 @@ testForward = describe "forward_" $ do
 
             state = executionState Queue.empty [("A", monitor, compileAlice program)] 
 
-            newState = executionState Queue.empty [("A", newMonitor, Fix $ Program.Application "A" "v0" VUnit )]
+            newState = executionState Queue.empty [("A", newMonitor, H.applyFunction (VReference "v0") VUnit)] -- Fix $ Program.Application "A" "v0" VUnit )]
         in
             forwarder state `shouldBe` Right newState 
 
@@ -444,9 +447,9 @@ testForward = describe "forward_" $ do
 
             state = 
                 executionState Queue.empty 
-                    [ ("A", createMonitor (id, localTypes Map.! "A") Map.empty, H.compile "A" alice)
-                    , ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "B" bob)
-                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "C" carol)
+                    [ ("A", createMonitor (id, localTypes Map.! "A") Map.empty, alice)
+                    , ("B", createMonitor (id, localTypes Map.! "B") Map.empty, bob)
+                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, carol)
                     ]
 
             newQueue = 
@@ -474,12 +477,12 @@ testForward = describe "forward_" $ do
 
             newState = 
                 executionState newQueue 
-                    [ ("A", createMonitor aliceType (Map.fromList [("v3",VString "Lucca, 55100")]), H.compile "A" H.terminate)
-                    , ("B", createMonitor bobType bobStore, H.compile "B" H.terminate)
-                        , ("C", (createMonitor carolType carolStore) { _applicationHistory = Map.fromList [("k0",("v1",VUnit))] } , H.compile "C" H.terminate)
+                    [ ("A", createMonitor aliceType (Map.fromList [("v3",VString "Lucca, 55100")]), H.terminate) 
+                    , ("B", createMonitor bobType bobStore, H.terminate)
+                    , ("C", (createMonitor carolType carolStore) { _applicationHistory = Map.fromList [("k0",("v1",VUnit))] } , H.terminate)
                     ]
         in
-            forwardN ["B", "B", "C", "C", "C", "A", "A", "C" ]  state `shouldBe` Right newState 
+            forwardN [2,2, 3,3,3, 1,1, 3 ]  state `shouldBe` Right newState 
 
     it "let in thunk assigns to the correct participant" $
         let
@@ -503,12 +506,12 @@ testForward = describe "forward_" $ do
 
             state = 
                 executionState Queue.empty 
-                    [ ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "B" bob)
-                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "C" carol)
+                    [ ("B", createMonitor (id, localTypes Map.! "B") Map.empty, bob)
+                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, carol)
                     ]
 
             forwarded = 
-                forwardN ["B", "B", "C", "C", "C", "C"]   state 
+                forwardN [ 2,2, 3,3,3,3 ]   state 
 
             bStore = 
                 (_store . (Map.! "B") . participants ) <$> forwarded
@@ -548,9 +551,9 @@ testForward = describe "forward_" $ do
                 
             state = 
                 executionState Queue.empty 
-                    [ ("A", createMonitor (id, localTypes Map.! "A") Map.empty, H.compile "A" alice)
-                    , ("B", createMonitor (id, localTypes Map.! "B") Map.empty, H.compile "B" bob)
-                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, H.compile "C" carol)
+                    [ ("A", createMonitor (id, localTypes Map.! "A") Map.empty, alice)
+                    , ("B", createMonitor (id, localTypes Map.! "B") Map.empty, bob)
+                    , ("C", createMonitor (id, localTypes Map.! "C") Map.empty, carol)
                     ]
 
             aType = 
@@ -569,12 +572,12 @@ testForward = describe "forward_" $ do
 
             newState = 
                 executionState (Queue.enqueueHistory ("A", "C", VInt 42) $ Queue.enqueueHistory ("C", "B", thunk) Queue.empty)
-                    [ ("A", createMonitor aType Map.empty, H.compile "A" H.terminate)
-                    , ("B", (createMonitor bType  bStore) { _applicationHistory = Map.fromList [("k0",("v1",VUnit))] } , H.compile "B" H.terminate)
-                    , ("C", createMonitor cType  cStore , H.compile "C" H.terminate)
+                    [ ("A", createMonitor aType Map.empty, H.terminate)
+                    , ("B", (createMonitor bType  bStore) { _applicationHistory = Map.fromList [("k0",("v1",VUnit))] } , H.terminate)
+                    , ("C", createMonitor cType  cStore , H.terminate)
                     ]
 
-        in forwardN [ "C", "C", "A", "B", "B", "B", "B" ] state `shouldBe` Right newState
+        in forwardN [ 3,3, 1, 2,2,2,2 ] state `shouldBe` Right newState
 
     it "send behaves" $ 
         let monitor = createMonitor (id, LocalType.send "A" "A" "unit" LocalType.end) Map.empty
@@ -583,7 +586,7 @@ testForward = describe "forward_" $ do
             newMonitor = createMonitor (LocalType.backwardSend "A" "A" "unit", LocalType.end) Map.empty
             newState = executionState 
                 (Queue.enqueue ("A", "A", VUnit) Queue.empty) 
-                [("A", newMonitor, Program.terminate)]
+                [("A", newMonitor, H.terminate)]
         in
             forwarder state `shouldBe` Right newState 
 
@@ -612,11 +615,11 @@ testForward = describe "forward_" $ do
 
             newState = executionState 
                 (Queue.enqueueHistory ("A", "B", VUnit) Queue.empty) 
-                [("A", newMonitor1, Program.terminate)
-                ,("B", newMonitor2, Program.terminate)
+                [("A", newMonitor1, H.terminate)
+                ,("B", newMonitor2, H.terminate)
                 ]
         in
-            forwarderN [ "A", "B" ] state `shouldBe` Right newState 
+            forwardN [ 1,2 ] state `shouldBe` Right newState 
 
     it "receive errors when sender owner is incorrect" $ 
         let monitor1 = createMonitor (id, LocalType.send    "A" "C" "unit" LocalType.end) Map.empty
@@ -626,7 +629,7 @@ testForward = describe "forward_" $ do
             errorMessage = 
                 QueueError "Receive" (Queue.InvalidBackwardQueueItem "receiver mismatch; the type expects B but the queue contains C")
         in
-            forwarderN [ "A", "B" ] state `shouldBe` Left errorMessage 
+            forwardN [ 1,2 ] state `shouldBe` Left errorMessage 
 
     it "receive errors when sender owner is incorrect" $ 
         let monitor1 = createMonitor (id, LocalType.send    "A" "B" "unit" LocalType.end) Map.empty
@@ -636,7 +639,7 @@ testForward = describe "forward_" $ do
             errorMessage = 
                 QueueError "Receive" (Queue.InvalidBackwardQueueItem "sender mismatch; the type expects C but the queue contains A")
         in
-            forwarderN [ "A", "B" ] state `shouldBe` Left errorMessage 
+            forwardN [ 1,2 ] state `shouldBe` Left errorMessage 
 
     let offerSelectProgram monitor1 monitor2 = 
             executionState Queue.empty
@@ -673,14 +676,14 @@ testForward = describe "forward_" $ do
             newMonitor2 = createMonitor (Fix . LocalType.Selected "B" "A" selection, LocalType.end) Map.empty
 
             newState = executionState 
-                (Queue.enqueueHistory ("A", "B", VLabel "x") Queue.empty) 
-                [("A", newMonitor1, Program.terminate)
-                ,("B", newMonitor2, Program.terminate)
+                (Queue.enqueueHistory ("B", "A", VLabel "x") Queue.empty) 
+                [("A", newMonitor1, H.terminate)
+                ,("B", newMonitor2, H.terminate)
                 ]
         in
-            forwarderN [ "B", "A" ] state `shouldBe` Right newState 
+            forwardN [ 2,1 ] state `shouldBe` Right newState 
 
-    it "offer errors when offerer owner is incorrect" $ 
+    it "offer errors when selector owner is incorrect" $ 
         let globalType = 
                 GlobalType.oneOf A B [ (,) "x" GlobalType.end , (,) "y" GlobalType.end ]
 
@@ -693,9 +696,9 @@ testForward = describe "forward_" $ do
             state = offerSelectProgram monitor1 monitor2
 
             errorMessage =
-                QueueError "Offer" (Queue.InvalidBackwardQueueItem "receiver mismatch; the type expects C but the queue contains B")
+                QueueError "Offer" (Queue.InvalidBackwardQueueItem "sender mismatch; the type expects C but the queue contains B")
         in
-            forwarderN [ "B", "A" ] state `shouldBe` Left errorMessage
+            forwardN [ 2,1] state `shouldBe` Left errorMessage
 
     it "offer errors when offerer owner is incorrect" $ 
         let globalType = 
@@ -710,9 +713,9 @@ testForward = describe "forward_" $ do
             state = offerSelectProgram monitor1 monitor2
 
             errorMessage =
-                QueueError "Offer" (Queue.InvalidBackwardQueueItem "sender mismatch; the type expects A but the queue contains C")
+                QueueError "Offer" (Queue.InvalidBackwardQueueItem "receiver mismatch; the type expects A but the queue contains C")
         in
-            forwarderN [ "B", "A" ] state `shouldBe` Left errorMessage
+            forwardN [ 2,1 ] state `shouldBe` Left errorMessage
 
 testRenameVariable = describe "renameVariable" $ do
     let renamer = unFix . renameVariable "x" "y" . Fix
@@ -760,25 +763,28 @@ createMonitor (previous, localType) store = Monitor
             }
 
 
-executionState :: Queue.Queue Value -> List (String, Monitor Value String, Program Value) -> ExecutionState Value
+executionState :: Queue.Queue Value 
+               -> List (String, Monitor Value String, H.HighLevelProgram ()) 
+               -> ExecutionState Value 
 executionState queue values = 
-    let
-        participants = Map.fromList $ List.map (\(name, monitor, program) -> (name, monitor)) values
-
-        locations = Map.singleton "L1" 
-            $ Map.fromList 
-            $ List.map (\(name, monitor, program) -> (name, program)) values
+    let (participants, monitors, programs) = List.unzip3 values
     in
         ExecutionState
             { variableCount = 0
-            , locationCount = 1 
+            , locationCount = List.length values
             , applicationCount = 0
-            , participants = participants 
-            , locations =  locations
-                , queue = queue -- Queue.empty
+            , participants = Map.fromList $ List.zip participants monitors 
+            , locations = 
+                zipWith H.compile participants programs
+                    |> zip participants
+                    |> zipWith (\i program -> ("l" ++ show i, program)) [1..]
+                    |> Map.fromList
+            , queue = queue 
             , isFunction = \value -> 
                 case value of 
                     VFunction arg body -> Just (arg, body)
                     _ -> Nothing
 
             }
+
+

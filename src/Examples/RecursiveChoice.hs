@@ -13,6 +13,7 @@ import Data.Maybe (fromMaybe)
 import Data.Map as Map (Map)
 import qualified Data.Map as Map
 import Data.Fix as Fix
+import Data.List as List
 
 import Utils ((|>), List)
 import Debug.Trace as Debug
@@ -22,14 +23,14 @@ import Data.Proxy
 import Data.Aeson (ToJSON, FromJSON, toJSON, fromJSON, (.=), (.:), object)
 
 import Session (Monitor(..), ExecutionState(..), Session)
-import Semantics (forward_, backward_)
+import Semantics (forward)
 import qualified Semantics
 import Program (ProgramF(..), Value(..), Program, IntOperator(Add))
 import qualified Queue
 
 import qualified HighLevel as H
 
-data Participants = A | B deriving (Show, Eq, Ord)
+data Participants = A | B deriving (Show, Eq, Ord, Enum, Bounded)
 
 
 recursiveGlobalType :: GlobalType.GlobalType Participants String
@@ -46,7 +47,7 @@ localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections recursiveGlobalType 
 
 
-alice = H.compile "A" $ do 
+alice = do
     thunk <- 
         H.recursiveFunction $ \self x -> do 
             H.send x
@@ -64,7 +65,7 @@ alice = H.compile "A" $ do
 
 
 
-bob = H.compile "B" $ do 
+bob = do 
     thunk <- 
         H.recursiveFunction $ \self x -> do 
             received <- H.receive
@@ -78,26 +79,29 @@ bob = H.compile "B" $ do
 
     H.applyFunction thunk VUnit
 
-
-executionState = 
-    let createMonitor participant = Monitor 
+constructExecutionState :: List (Participant, H.HighLevelProgram ()) -> ExecutionState Value 
+constructExecutionState programs_ = 
+    let (participants, programs) = List.unzip programs_
+        createMonitor participant = Monitor 
             { _localType = LocalType.Unsynchronized (Fix LocalType.Hole, localTypes Map.! participant)
             , _store = Map.empty
             , _applicationHistory = Map.empty
             , _recursiveVariableNumber = 0
             , _recursionPoints = []
             }
-    in        
-    
+
+    in
         ExecutionState
             { variableCount = 0
-            , locationCount = 1 
+            , locationCount = List.length programs_
             , applicationCount = 0
-            , participants = Map.fromList [ ("A", createMonitor "A"), ("B", createMonitor "B") ]
+            , participants = Map.fromList $ List.map (\p -> ( p, createMonitor p)) participants 
             , locations = 
-                [ ("A", alice), ("B", bob) ]
+                programs_
+                    |> List.map (uncurry H.compile)
+                    |> zip participants
+                    |> zipWith (\i program -> ("l" ++ show i, program)) [1..]
                     |> Map.fromList
-                    |> Map.singleton "Location1" 
             , queue = Queue.empty
             , isFunction = \value -> 
                 case value of 
@@ -106,6 +110,10 @@ executionState =
 
             }
 
+executionState = 
+    constructExecutionState $ zip (List.map show [minBound..(maxBound :: Participants)]) [ alice, bob ]
+
+
 {-| This program can be forwarded an arbitrary number of times, and still typecheck
 
 The even forwards will force the thunk, odd forwards perform a send
@@ -113,37 +121,37 @@ The even forwards will force the thunk, odd forwards perform a send
 steps = 
         ( do
             -- define thunks 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "B" 
+            forward "l1"
+            forward "l2" 
             -- round 1
 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "A" 
+            forward "l1"
+            forward "l1"
 
-            forward_ "Location1" "B" 
-            forward_ "Location1" "B" 
+            forward "l2" 
+            forward "l2" 
 
             {-
-            forward_ "Location1" "A" 
-            forward_ "Location1" "B" 
+                forward "l1"
+            forward "l2" 
 
-            forward_ "Location1" "B" 
-            forward_ "Location1" "A" 
+            forward "l2" 
+            forward "l1"
 
             -- round 2
-            forward_ "Location1" "A" 
-            forward_ "Location1" "B" 
+            forward "l1"
+            forward "l2" 
 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "B" 
+            forward "l1"
+            forward "l2" 
 
             -- select & offer
-            forward_ "Location1" "B" 
-            forward_ "Location1" "A" 
+            forward "l2" 
+            forward "l1"
 
             -- terminate
-            forward_ "Location1" "A" 
-            forward_ "Location1" "B" 
+            forward "l1"
+            forward "l2" 
             -}
         )
             |> flip State.runStateT executionState

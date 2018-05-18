@@ -13,7 +13,8 @@ import LocalType (LocalTypeState, LocalType, Participant, Location, Identifier)
 import Program (Program, terminate, Value(..), IntOperator(..))
 import Queue (Queue, QueueError)
 import qualified Queue
-import Utils (List)
+import Utils (List, (|>))
+import qualified Utils.Maybe as Maybe
 
 type Session value a = StateT (ExecutionState value) (Except Error) a
 
@@ -100,11 +101,17 @@ evaluateValue participant value =
 
 
 setParticipant :: Location -> Participant -> (Monitor value String, Program value) -> Session value ()
-setParticipant location participant (monitor, program) = 
+setParticipant location backupParticipant (monitor, program) =
     State.modify $ \state@ExecutionState { participants, locations } -> 
+        let defaultParticipant = 
+                locations
+                    |> Map.lookup location 
+                    |> fmap fst
+                    |> Maybe.withDefault backupParticipant
+        in
         state 
-            { participants = Map.insert participant monitor participants
-            , locations = Map.insert location (participant, program) locations
+            { participants = Map.insert backupParticipant monitor participants
+            , locations = Map.insert location (defaultParticipant, program) locations
             }
 
 setMonitor :: Location -> Participant -> Monitor value String -> Session value ()

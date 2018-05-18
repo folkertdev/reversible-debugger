@@ -10,11 +10,12 @@ import qualified GlobalType
 import Data.Map as Map (Map)
 import qualified Data.Map as Map
 import Data.Fix as Fix
+import Data.List as List
 
-import Utils ((|>))
+import Utils ((|>), List)
 
 import Session (Monitor(..), ExecutionState(..), Session)
-import Semantics (forward_, backward_)
+import Semantics (forward)
 import qualified Semantics
 import Program (ProgramF(..), Value(..), Program)
 import qualified Queue
@@ -22,7 +23,7 @@ import qualified Queue
 import qualified HighLevel as H
 import Debug.Trace as Debug
 
-data MyParticipants = A | B | C | V deriving (Show, Eq, Ord)
+data MyParticipants = A | B | C | V deriving (Show, Eq, Ord, Enum, Bounded)
 
 data MyType
     = Title
@@ -58,7 +59,7 @@ localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections $ GlobalType.mapType show globalType
 
 
-alice = H.compile "A" $ 
+alice = 
     H.recursive $ \self -> do
         let h = VInt 42 
         H.send (VString "Logicomix" )
@@ -70,7 +71,7 @@ alice = H.compile "A" $
             ]
 
 
-bob = H.compile "B" $ 
+bob = 
     H.recursive $ \self -> do
         thunk <- 
             H.function $ \_ -> do
@@ -90,7 +91,7 @@ bob = H.compile "B" $
             ]
 
 
-carol = H.compile "C" $ 
+carol = 
     H.recursive $ \self -> 
         H.offer 
             [ (,) "failure" self
@@ -100,7 +101,7 @@ carol = H.compile "C" $
                 H.applyFunction code VUnit
             ]
 
-vendor = H.compile "V" $ 
+vendor = 
     H.recursive $ \self -> do
         let price title = VInt 42
             date = VString "2018-03-14"
@@ -122,25 +123,30 @@ vendor = H.compile "V" $
 shorter label rest = 
     H.select [ (label, VBool True, rest ) ]
 
-executionState = 
-    let createMonitor participant = Monitor 
+
+constructExecutionState :: List (Participant, H.HighLevelProgram ()) -> ExecutionState Value 
+constructExecutionState programs_ = 
+    let (participants, programs) = List.unzip programs_
+        createMonitor participant = Monitor 
             { _localType = LocalType.Unsynchronized (Fix LocalType.Hole, localTypes Map.! participant)
             , _store = Map.empty
             , _applicationHistory = Map.empty
             , _recursiveVariableNumber = 0
             , _recursionPoints = []
             }
-    in        
-    
+
+    in
         ExecutionState
             { variableCount = 0
-            , locationCount = 1 
+            , locationCount = List.length programs_
             , applicationCount = 0
-            , participants = Map.fromList [ ("A", createMonitor "A"), ("B", createMonitor "B"), ( "C", createMonitor "C"), ("V", createMonitor "V") ]
+            , participants = Map.fromList $ List.map (\p -> ( p, createMonitor p)) participants 
             , locations = 
-                [ ("A", alice), ("B", bob), ("C", carol), ("V", vendor) ]
+                programs_
+                    |> List.map (uncurry H.compile)
+                    |> zip participants
+                    |> zipWith (\i program -> ("l" ++ show i, program)) [1..]
                     |> Map.fromList
-                    |> Map.singleton "Location1" 
             , queue = Queue.empty
             , isFunction = \value -> 
                 case value of 
@@ -148,6 +154,9 @@ executionState =
                     _ -> Nothing
 
             }
+
+executionState = 
+    constructExecutionState $ zip (List.map show [minBound..(maxBound :: MyParticipants)]) [ alice, bob ]
 
 {-
 deriveSteps :: Int -> GlobalType.GlobalType String -> Session Value ()
@@ -175,58 +184,58 @@ derived =
 steps = 
         ( do
             -- do recursive steps
-            forward_ "Location1" "A" 
-            forward_ "Location1" "A" 
+            forward "l1"
+            forward "l1"
 
-            forward_ "Location1" "B" 
-            forward_ "Location1" "B" 
+            forward "l2"
+            forward "l2"
 
-            forward_ "Location1" "C" 
-            forward_ "Location1" "C" 
+            forward "l3"
+            forward "l3"
 
-            forward_ "Location1" "V" 
-            forward_ "Location1" "V" 
+            forward "l4"
+            forward "l4"
 
             -- initialize thunk
-            forward_ "Location1" "B" 
+            forward "l2"
 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "V" 
+            forward "l1"
+            forward "l4"
 
-            forward_ "Location1" "V" 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "V" 
-            forward_ "Location1" "B" 
+            forward "l4"
+            forward "l1"
+            forward "l4"
+            forward "l2"
 
-            forward_ "Location1" "A" 
-            forward_ "Location1" "B" 
+            forward "l1"
+            forward "l2"
 
             -- first select/offer
-            forward_ "Location1" "B" 
-            forward_ "Location1" "V" 
+            forward "l2"
+            forward "l4"
 
             -- communicate choice
-            forward_ "Location1" "V" 
-            forward_ "Location1" "A" 
+            forward "l4"
+            forward "l1"
 
-            forward_ "Location1" "V" 
-            forward_ "Location1" "C" 
+            forward "l4"
+            forward "l3"
 
-            forward_ "Location1" "B" 
-            forward_ "Location1" "C" 
+            forward "l2"
+            forward "l3"
             
-            forward_ "Location1" "B" 
-            forward_ "Location1" "C" 
+            forward "l2"
+            forward "l3"
 
             -- force thunk
-            forward_ "Location1" "C" 
+            forward "l3"
 
             -- evaluate the thunk
-            forward_ "Location1" "C" 
-            forward_ "Location1" "V" 
+            forward "l3"
+            forward "l4"
 
-            forward_ "Location1" "V" 
-            forward_ "Location1" "C" 
+            forward "l4"
+            forward "l3"
             {-
             -}
         )
