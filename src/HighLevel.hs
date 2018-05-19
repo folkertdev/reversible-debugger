@@ -191,10 +191,9 @@ inParallel highlevelPrograms = do
     
 
 applyFunction :: Value -> Value -> HighLevelProgram a
-applyFunction (VReference f) argument = do
+applyFunction f argument = do
     (participant, _) <- State.get
     HighLevelProgram $ lift $ Free $ Application participant f argument
-applyFunction _ _ = error "functions atm. can only be references" 
 
 uniqueVariableName :: HighLevelProgram String
 uniqueVariableName = do

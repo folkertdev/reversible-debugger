@@ -47,7 +47,7 @@ data Monitor value tipe =
         , _recursiveVariableNumber :: Int
         , _recursionPoints :: List (LocalType tipe)
         , _store :: Map Identifier value 
-        , _applicationHistory :: Map Identifier (Identifier, value)
+        , _applicationHistory :: Map Identifier (value, value)
         }
         deriving (Show, Eq)
 

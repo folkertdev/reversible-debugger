@@ -208,9 +208,10 @@ forwardHelper location owner monitor (historyType, futureType) program =
                 _ -> 
                     error $ "Offer needs a LocalType.Offer, but got " ++ show (unFix futureType)
         
-        (Application owner functionName argument, _) -> do
-            functionValue <- lookupVariable owner functionName 
+        (Application owner unevaluatedFunctionValue argument, _) -> do
             argumentName <- uniqueVariableName 
+
+            functionValue <- evaluateValue owner unevaluatedFunctionValue
 
             convertToFunction <- isFunction <$> State.get
             case convertToFunction functionValue of
@@ -224,7 +225,7 @@ forwardHelper location owner monitor (historyType, futureType) program =
                             monitor 
                                 { _store = Map.insert argumentName argument (_store monitor)
                                 , _localType = newLocalType
-                                , _applicationHistory = Map.insert k (functionName, argument) (_applicationHistory monitor)
+                                , _applicationHistory = Map.insert k (unevaluatedFunctionValue, argument) (_applicationHistory monitor)
                                 }  
                     setParticipant location owner (newMonitor, renameVariable variable argumentName body)
 
@@ -435,14 +436,14 @@ backwardHelper location owner monitor (historyType, futureType) program =
             case Map.lookup k (_applicationHistory monitor) of 
                 Nothing -> 
                     error "rolling function that does not exist"
-                Just ( functionName, argument ) -> 
+                Just ( functionValue, argument ) -> 
                     setParticipant_
                         ( monitor 
                             { _localType = LocalType.Unsynchronized ( rest, futureType )
                             , _store = Map.delete argumentName (_store monitor)
                             , _applicationHistory = Map.delete k (_applicationHistory monitor) 
                             } 
-                        , Program.Application owner functionName argument
+                        , Program.Application owner functionValue argument
                         )
 
 

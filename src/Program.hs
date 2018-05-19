@@ -26,7 +26,7 @@ data ProgramF value next
     | Offer Participant (List (String, next))
     | Select Participant (List (String, value, next))
     | Parallel next next 
-    | Application Participant Identifier value
+    | Application Participant value value
     | Let Participant Identifier value next 
     | IfThenElse Participant value next next
     | Literal value -- needed to define multi-parameter functions
@@ -114,8 +114,8 @@ renameVariable old new program =
         recursiveRename :: Program Value -> Program Value
         recursiveRename instruction = Fix $ 
             case unFix instruction of 
-                Application owner functionName variableName ->
-                    Application owner (rename functionName) (renameValue old new variableName)
+                Application owner function variableName ->
+                    Application owner (renameValue old new function) (renameValue old new variableName)
 
                 Let owner variableName value continuation ->  
                     if old == variableName then
