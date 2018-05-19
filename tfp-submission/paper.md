@@ -11,7 +11,14 @@ abstract: |
     Prior work has addressed this challenge in the context of a process model of multiparty protocols (choreographies) following a so-called \emph{monitors-as-memories} approach.
     In this paper, we describe our ongoing efforts aimed at implementing this operational semantics in Haskell. 
     \keywords{Reversible computation \and Message-passing concurrency \and Session Types \and Haskell.}
-usepackage: graphicx,hyperref, xcolor,xspace,amsmath,amsfonts,stmaryrd,amssymb,enumerate, mathpartir
+usepackage: graphicx,hyperref, xcolor,xspace,amsmath,amsfonts,stmaryrd,amssymb,enumerate, mathpartir, fancyvrb
+header-includes:
+    - \newcommand{\hideFromPandoc}[1]{#1}
+    - \hideFromPandoc{
+        \let\Begin\begin
+        \let\End\end
+      }
+    - \input{macrosCR}
 ...
 
 
@@ -60,6 +67,15 @@ _The code shown in this section is available at
 The Global type describes interactions between participants. 
 The definition of global types is given by
 
+
+\begin{align*}
+    G, G'  \bnfis & \gtcom{p}{q}{U}{G} %\bnfbar 
+    \sbnfbar
+    \gtcho{p}{q}{\lbl_i}{G_i} %\\
+    \sbnfbar %& 
+    \mu X. G \sbnfbar X \sbnfbar \gend \\
+\end{align*}
+
 ```haskell
 type GlobalType u = Fix (GlobalTypeF u)
 
@@ -81,6 +97,8 @@ data GlobalTypeF u next
     | End
     deriving (Show, Functor)
 ```
+
+
 
 The recursive constructors are taken from @cloud-haskell. `R` introduces 
 a recursion point, `V` jumps back to a recursion point and `Wk` weakens the recursion, making it possible 

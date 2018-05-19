@@ -125,6 +125,7 @@ function body_ = do
     HighLevelProgram $ lift $ liftFree (Let participant variableName (VFunction argument body) ())
     return (VReference variableName)
 
+
 recursiveFunction :: (Value -> Value -> HighLevelProgram a) -> HighLevelProgram Value 
 recursiveFunction body_ = do
     variableName <- uniqueVariableName 
@@ -134,6 +135,7 @@ recursiveFunction body_ = do
     body <- withCompile participant (body_ (VReference variableName) (VReference argument))
     HighLevelProgram $ lift $ liftFree (Let participant variableName (VFunction argument body) ())
     return (VReference variableName)
+
 
 recursive :: (HighLevelProgram a -> HighLevelProgram a) -> HighLevelProgram a
 recursive body = do

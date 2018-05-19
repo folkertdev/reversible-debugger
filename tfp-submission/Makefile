@@ -3,7 +3,7 @@ all: pandoc
 	@latexmk -pdf paper.tex
 
 pandoc:
-	pandoc --biblio paper.bib --csl ieee.csl -N -o paper.tex --template=llncs paper.md 
+	pandoc -R --biblio paper.bib --csl ieee.csl -N -o paper.tex --template=llncs mapping.md 
 
 install:
 	mkdir -p ~/.pandoc/templates
@@ -17,7 +17,7 @@ clean:
 	latexmk -c paper.tex
 
 filewatch: all
-	ls paper.md | entr make
+	ls *.md | entr make
 
 mymain:
 	pdflatex --jobname=tfp-draft-submission mymain.tex 
