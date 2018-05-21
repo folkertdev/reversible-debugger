@@ -265,3 +265,5 @@ only used for proofs?
     but there is no mechanism for that.
 
 * We should go over how function creation/calling works. I'd like to turn let-bindings and ifThenElse into function applications, but I'm not sure whether we can. 
+
+* guarded vs non-guarded choice. 
