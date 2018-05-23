@@ -2,6 +2,12 @@ all: pandoc
 	rm -f paper.pdf
 	@latexmk -pdf paper.tex
 
+mapping:
+	pandoc -R --biblio paper.bib --csl ieee.csl -N -o mapping.tex --template=llncs mapping.md 
+	rm -f mapping.pdf
+	@latexmk -pdf mapping.tex
+
+
 pandoc:
 	pandoc -R --biblio paper.bib --csl ieee.csl -N -o paper.tex --template=llncs mapping.md 
 
