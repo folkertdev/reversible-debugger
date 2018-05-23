@@ -71,14 +71,6 @@ withCompile participant (HighLevelProgram program) = do
     State.modify (\(p, n) -> (p, n + addedVariables))
     return $ freeToFix newProgram
 
-myProgram :: HighLevelProgram ()
-myProgram = do
-    send (VInt 4)
-    x <- receive
-    send x
-    return ()
-
-
 
 liftFree :: Functor f => f a -> Free f a
 liftFree action = Free (fmap Pure action)
@@ -123,6 +115,39 @@ function body_ = do
     (participant, n) <- State.get
     body <- withCompile participant (body_ (VReference argument))
     HighLevelProgram $ lift $ liftFree (Let participant variableName (VFunction argument body) ())
+    return (VReference variableName)
+
+function2 :: (Value -> Value -> HighLevelProgram a) -> HighLevelProgram Value 
+function2 body_ = do
+    variableName <- uniqueVariableName 
+    nestedName <- uniqueVariableName 
+    argument1 <- uniqueVariableName 
+    argument2 <- uniqueVariableName 
+
+    (participant, _) <- State.get
+    body <- withCompile participant (body_ (VReference argument1) (VReference argument2))
+    let v1 = Let participant nestedName (VFunction argument2 body) (Fix NoOp)
+        v2 = Let participant variableName (VFunction argument2 (Fix v1)) ()
+            
+    HighLevelProgram $ lift $ liftFree v2 
+    return (VReference variableName)
+
+function3 :: (Value -> Value -> Value -> HighLevelProgram a) -> HighLevelProgram Value 
+function3 body_ = do
+    variableName <- uniqueVariableName 
+    nested1Name <- uniqueVariableName 
+    nested2Name <- uniqueVariableName 
+    argument1 <- uniqueVariableName 
+    argument2 <- uniqueVariableName 
+    argument3 <- uniqueVariableName 
+
+    (participant, _) <- State.get
+    body <- withCompile participant (body_ (VReference argument1) (VReference argument2) (VReference argument3))
+    let v1 = Let participant nested1Name (VFunction argument2 body) (Fix NoOp)
+        v2 = Let participant nested2Name (VFunction argument2 (Fix v1)) (Fix NoOp)
+        v3 = Let participant variableName (VFunction argument2 (Fix v2)) ()
+            
+    HighLevelProgram $ lift $ liftFree v3
     return (VReference variableName)
 
 
