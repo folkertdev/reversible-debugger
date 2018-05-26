@@ -220,7 +220,7 @@ forwardHelper location owner monitor (historyType, futureType) program =
 
                 Just (variable, body) -> do
                     k <- uniqueApplicationName
-                    let newLocalType = LocalType.createState (Fix $ LocalType.Application owner argumentName k historyType) futureType
+                    let newLocalType = LocalType.createState (Fix $ LocalType.Application owner k historyType) futureType
                         newMonitor = 
                             monitor 
                                 { _store = Map.insert argumentName argument (_store monitor)
@@ -249,7 +249,7 @@ forwardHelper location owner monitor (historyType, futureType) program =
         (Let owner visibleName value continuation, _) -> do
             variableName <- uniqueVariableName 
 
-            let newLocalType = LocalType.createState (Fix $ LocalType.Assignment owner visibleName variableName historyType) futureType
+            let newLocalType = LocalType.createState (Fix $ LocalType.Assignment owner historyType) futureType
                 newMonitor = 
                     monitor 
                         { _store = Map.insert variableName (renameValue visibleName variableName value) (_store monitor)
@@ -443,7 +443,7 @@ backwardHelper location owner monitor (historyType, futureType) program =
         LocalType.Synchronized _ -> 
             error "type is synced, but the historyType instruction is not a transaction or choice"
 
-        LocalType.Unsynchronized (LocalType.Application owner _ k rest) ->
+        LocalType.Unsynchronized (LocalType.Application owner k rest) ->
             case (Map.lookup k (_applicationHistory monitor), _usedVariables monitor) of 
                 ( Just ( functionValue, argument ), Binding{_internalName}:usedVariables ) -> 
                     setParticipant_
@@ -480,7 +480,7 @@ backwardHelper location owner monitor (historyType, futureType) program =
                 _ -> 
                     error "rolling a program that is not NoOp"
 
-        LocalType.Unsynchronized (LocalType.Assignment owner visibleName variableName rest) -> 
+        LocalType.Unsynchronized (LocalType.Assignment owner rest) -> 
             case _usedVariables monitor of 
                 Binding{_visibleName, _internalName} : usedVariables -> 
                     case Map.lookup _internalName (_store monitor) of 
@@ -495,7 +495,7 @@ backwardHelper location owner monitor (historyType, futureType) program =
                             in            
                                 setParticipant_
                                     ( newMonitor
-                                    , Program.Let owner visibleName value $ renameVariable _internalName _visibleName program
+                                    , Program.Let owner _visibleName value $ renameVariable _internalName _visibleName program
                                     )
 
                         Nothing -> 

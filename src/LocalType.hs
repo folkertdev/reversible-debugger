@@ -90,9 +90,9 @@ data TypeContextF program value a f
         , continuation :: f 
         }
     | Branched { owner :: Participant, condition :: value, verdict :: Bool, otherBranch :: program, continuation :: f }
-    | Application Participant Identifier Identifier f 
+    | Application Participant Identifier f 
     | Spawning Location Location Location f
-    | Assignment { owner :: Participant, visibleName :: Identifier, internalName :: Identifier, continuation :: f }
+    | Assignment { owner :: Participant, continuation :: f }
     | Literal a f
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
