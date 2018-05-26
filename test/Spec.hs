@@ -247,7 +247,7 @@ testBackward = describe "backward" $ do
 
             message = 
                 "the offerer's previous instruction is not a Offer, but "
-            expected = "LocalType (Atom V) (Fix (Offered {owner = \"A\", selector = \"B\", picked = Zipper ([],(\"recurse\",Fix (Application \"A\" (VReference \"v0\") (VIntOperator (VReference \"v1\") Add (VInt (-1)))),Fix (Atom V)),[(\"end\",Fix NoOp,Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = ()})) (Fix (Application \"A\" \"k0\" (Fix (Assignment {owner = \"A\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))"
+            expected = "LocalType (Atom V) (Fix (Offered {owner = \"A\", selector = \"B\", picked = Zipper ([],(\"recurse\",Fix (Atom V)),[(\"end\",Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = ()})) (Fix (Application \"A\" \"k0\" (Fix (Assignment {owner = \"A\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))"
         in do
             let Right base = forwardN [ 1,1,1, 2,2,2]  state
             (backwardN [ 1,2 ] =<< forwardN [ 2, 1,1 ] base) `shouldBe` Left (SynchronizationError $ message ++ expected )
@@ -264,7 +264,7 @@ testBackward = describe "backward" $ do
                 ]
 
             message = "the selector's previous instruction is not a Select, but " 
-            expected = "Application \"B\" \"k2\" (Fix (LocalType (Atom V) (Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",VComparison (VReference \"v4\") GT (VInt 0),Fix (Application \"B\" (VReference \"v2\") VUnit),Fix (Atom V)),[(\"end\",VBool True,Fix NoOp,Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", tipe = \"number\", continuation = ()})) (Fix (Application \"B\" \"k1\" (Fix (Assignment {owner = \"B\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))))"
+            expected = "Application \"B\" \"k2\" (Fix (LocalType (Atom V) (Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",Fix (Atom V)),[(\"end\",Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", tipe = \"number\", continuation = ()})) (Fix (Application \"B\" \"k1\" (Fix (Assignment {owner = \"B\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))))"
         in do
             let Right base = forwardN [ 1,1,1, 2,2,2]  state
             (backwardN [ 1,2 ] =<< forwardN [2,1,2] base) `shouldBe` Left (SynchronizationError $ message ++ expected)
@@ -711,11 +711,17 @@ testForward = describe "forward_" $ do
 
             state = offerSelectProgram monitor1 monitor2
 
-            picked = Zipper ([],("x",Fix NoOp,LocalType.end),[("y",Fix NoOp, LocalType.end)])
-            selection = Zipper ([],("x",VBool True,Fix NoOp,LocalType.end),[("y",VBool False,Fix NoOp,LocalType.end)])
+            -- picked = Zipper ([],("x",Fix NoOp,LocalType.end),[("y",Fix NoOp, LocalType.end)])
+            -- selection = Zipper ([],("x",VBool True,Fix NoOp,LocalType.end),[("y",VBool False,Fix NoOp,LocalType.end)])
+
+            picked = Zipper ([],("x", LocalType.end),[("y", LocalType.end)])
+            selection = Zipper ([],("x", LocalType.end),[("y", LocalType.end)])
 
             newMonitor1 = createMonitor (Fix . LocalType.Offered "A" "B" picked, LocalType.end)    Map.empty
+                |> Session.storeOfferOtherOptions (Zipper ([],("x",Fix NoOp),[("y",Fix NoOp)]))
+
             newMonitor2 = createMonitor (Fix . LocalType.Selected "B" "A" selection, LocalType.end) Map.empty
+                |> Session.storeSelectOtherOptions (Zipper ([],("x",VBool True,Fix NoOp),[("y",VBool False,Fix NoOp)]))
 
             newState = executionState 
                 (Queue.enqueueHistory ("B", "A", VLabel "x") Queue.empty) 

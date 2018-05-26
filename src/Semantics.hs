@@ -146,9 +146,14 @@ forwardHelper location owner monitor (historyType, futureType) program =
                             let 
                                 f (l, a,b,c,d) = (l, b,c,d)
                                 selection = Zipper.fromSegments (f <$> notTaken) (f taken) (f <$> alsoNotTaken)
-                                newLocalType = LocalType.createState (LocalType.backwardSelect owner offerer selection historyType) takenType
+
+                                processSelection = Zipper.map (\(label, value, process, tipe) -> (label, value, process)) selection
+                                typeSelection = Zipper.map (\(label, value, process, tipe) -> (label, tipe)) selection 
+
+                                newLocalType = LocalType.createState (LocalType.backwardSelect owner offerer typeSelection historyType) takenType
                                 newMonitor = 
                                     monitor { _localType = newLocalType }  
+                                        |> storeSelectOtherOptions processSelection
                             in do
                                 pushToQueue ( owner, offerer, VLabel takenLabel )
                                 setParticipant location owner ( newMonitor, takenProgram ) 
@@ -197,11 +202,15 @@ forwardHelper location owner monitor (historyType, futureType) program =
                         notChosen (l, _,_) = l /= label
                         selection = Zipper.fromSegments (takeWhile notChosen combined) (label, program, tipe) (drop 1 $ dropWhile notChosen combined)
 
+                        processSelection = Zipper.map (\(label, process, tipe) -> (label, process)) selection
+                        typeSelection = Zipper.map (\(label, process, tipe) -> (label, tipe)) selection 
+
                         newLocalType = 
-                            LocalType.createState (LocalType.backwardOffer owner selector selection historyType) tipe
+                            LocalType.createState (LocalType.backwardOffer owner selector typeSelection historyType) tipe
 
                         newMonitor = 
                             monitor { _localType = newLocalType }  
+                                |> storeOfferOtherOptions processSelection
 
                     setParticipant location owner ( newMonitor, program ) 
 
@@ -405,15 +414,20 @@ backwardHelper location owner monitor (historyType, futureType) program =
 
         LocalType.Synchronized LocalType.Selected{ owner, offerer, selection, continuation } -> do
             _ <-  removeFromQueue "BackwardSelect" owner offerer 
-            let 
-                combined = Zipper.toList selection 
-                types = List.map (\(l, _,_,t) -> (l, t)) combined 
-                options = List.map (\(label, condition, program, _) -> (label, condition, program)) combined
+            let types = Zipper.toList selection 
+            case _choiceOtherOptions monitor of 
+                Left programs : choiceOtherOptions -> 
 
-            setParticipant_
-                ( monitor { _localType = LocalType.Unsynchronized ( continuation,  LocalType.select owner offerer types )}
-                , Program.Select owner options 
-                )
+                    setParticipant_
+                        ( monitor 
+                            { _localType = LocalType.Unsynchronized ( continuation, LocalType.select owner offerer types )                            
+                            , _choiceOtherOptions = choiceOtherOptions 
+                            }
+                        , Program.Select owner (Zipper.toList programs) 
+                        )
+                _ -> 
+                    error "backward select failed"
+
 
 
         LocalType.Unsynchronized LocalType.Selected{ owner, offerer } -> do
@@ -422,17 +436,19 @@ backwardHelper location owner monitor (historyType, futureType) program =
 
         LocalType.Synchronized LocalType.Offered{ owner, selector, picked, continuation } -> do
             _ <- rollQueueHistory "BackwardOffer" selector owner
-            let 
-                combined = Zipper.toList picked 
-                (programs, types) =
-                   combined
-                        |> List.map (\(label, program, tipe) -> ((label, program), (label, tipe)))
-                        |> List.unzip
+            let types = Zipper.toList picked 
+            case _choiceOtherOptions monitor of 
+                Right programs : choiceOtherOptions -> 
 
-            setParticipant_
-                ( monitor { _localType = LocalType.Unsynchronized ( continuation,  LocalType.offer owner selector types )}
-                , Program.Offer owner programs 
-                )
+                    setParticipant_
+                        ( monitor 
+                            { _localType = LocalType.Unsynchronized ( continuation,  LocalType.offer owner selector types )
+                            , _choiceOtherOptions = choiceOtherOptions 
+                            }
+                        , Program.Offer owner (Zipper.toList programs) 
+                        )
+                _ -> 
+                    error "backward offer failed"
 
 
         LocalType.Unsynchronized LocalType.Offered{ owner, selector, picked, continuation } -> do

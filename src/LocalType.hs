@@ -80,13 +80,13 @@ data TypeContextF program value a f
     | Selected 
         { owner :: Participant
         , offerer :: Participant 
-        , selection :: Zipper (String, value, program, LocalType a)
+        , selection :: Zipper (String, LocalType a)
         , continuation :: f 
         }
     | Offered 
         { owner :: Participant
         , selector :: Participant 
-        , picked :: Zipper (String, program, LocalType a)
+        , picked :: Zipper (String, LocalType a)
         , continuation :: f 
         }
     | Branched { owner :: Participant, condition :: value, verdict :: Bool, otherBranch :: program, continuation :: f }
@@ -112,7 +112,7 @@ backwardReceive owner sender tipe base =
 
 backwardSelect :: Participant
                -> Participant
-               -> Zipper (String, v, p, LocalType u) 
+               -> Zipper (String, LocalType u) 
                -> TypeContext p v u 
                -> TypeContext p v u
 backwardSelect owner offerer selection continuation =  
@@ -120,7 +120,7 @@ backwardSelect owner offerer selection continuation =
 
 backwardOffer :: Participant 
               -> Participant
-              -> Zipper (String, p, LocalType u) 
+              -> Zipper (String, LocalType u) 
               -> TypeContext p v u 
               -> TypeContext p v u
 backwardOffer owner selector picked continuation = 

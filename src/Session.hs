@@ -15,6 +15,8 @@ import Queue (Queue, QueueError)
 import qualified Queue
 import Utils (List, (|>))
 import qualified Utils.Maybe as Maybe
+import Zipper (Zipper)
+import qualified Zipper 
 
 type Session value a = StateT (ExecutionState value) (Except Error) a
 
@@ -48,7 +50,7 @@ data Monitor value tipe =
         , _recursionPoints :: List (LocalType tipe)
         , _store :: Map Identifier value 
         , _usedVariables :: List Binding 
-        , _choiceOtherOptions :: List (Either (List (String, Value, Program Value)) (List (String, Program Value)))
+        , _choiceOtherOptions :: List (Either (Zipper (String, Value, Program Value)) (Zipper (String, Program Value)))
         , _applicationHistory :: Map Identifier (value, value)
         }
         deriving (Show, Eq)
@@ -63,11 +65,11 @@ addApplication :: (Identifier, (Value, Value)) -> Monitor Value a -> Monitor Val
 addApplication (k, v) monitor@Monitor{_applicationHistory} = 
     monitor { _applicationHistory = Map.insert k v _applicationHistory }
 
-storeSelectOtherOptions :: List (String, Value, Program Value) -> Monitor Value b -> Monitor Value b
+storeSelectOtherOptions :: Zipper (String, Value, Program Value) -> Monitor Value b -> Monitor Value b
 storeSelectOtherOptions var monitor@Monitor{_choiceOtherOptions} = 
     monitor { _choiceOtherOptions = Left var : _choiceOtherOptions }
 
-storeOfferOtherOptions :: List (String, Program Value) -> Monitor Value b -> Monitor Value b
+storeOfferOtherOptions :: Zipper (String, Program Value) -> Monitor Value b -> Monitor Value b
 storeOfferOtherOptions var monitor@Monitor{_choiceOtherOptions} = 
     monitor { _choiceOtherOptions = Right var : _choiceOtherOptions }
 

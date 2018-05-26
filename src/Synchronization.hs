@@ -107,8 +107,8 @@ checkSynchronizedForChoice offerer selector = checkSynchronized synchronizer off
                     checkParties ForTransaction (expectedOfferer, offerer) (expectedSelector, selector)
 
                     -- both parties must have the same options
-                    let strippedSelection = Zipper.map (\(label, condition, program, localType) -> (label, localType)) selection
-                        strippedOptions = Zipper.map (\(label, program, localType) -> (label, localType)) picked
+                    let strippedSelection = selection 
+                        strippedOptions = picked
 
                     if strippedOptions == strippedSelection then
                         return ()
