@@ -227,6 +227,7 @@ forwardHelper location owner monitor (historyType, futureType) program =
                                 , _localType = newLocalType
                                 , _applicationHistory = Map.insert k (unevaluatedFunctionValue, argument) (_applicationHistory monitor)
                                 }  
+                                |> Session.markVariableAsUsed argumentName argumentName
                     setParticipant location owner (newMonitor, renameVariable variable argumentName body)
 
         (Parallel p q, _) -> do
@@ -254,6 +255,7 @@ forwardHelper location owner monitor (historyType, futureType) program =
                         { _store = Map.insert variableName (renameValue visibleName variableName value) (_store monitor)
                         , _localType = newLocalType
                         }  
+                        |> Session.markVariableAsUsed visibleName variableName
             
             setParticipant location owner ( newMonitor, renameVariable visibleName variableName continuation )
 
@@ -322,9 +324,13 @@ checkAndPerformReceive location participant monitor owner visibleName continuati
                 variableName <- uniqueVariableName
                 let newBindings = Map.insert variableName payload $ _store monitor 
                     newLocalTypeState = 
-                        LocalType.createState (Fix $ LocalType.BackwardReceive owner sender visibleName variableName tipe historyType) continuationType
+                        LocalType.createState (Fix $ LocalType.BackwardReceive owner sender tipe historyType) continuationType
 
-                    newMonitor = monitor { _store = newBindings, _localType = newLocalTypeState }  
+                    newMonitor = monitor 
+                        { _store = newBindings
+                        , _localType = newLocalTypeState 
+                        }  
+                        |> Session.markVariableAsUsed visibleName variableName
                     
                 setParticipant location participant (newMonitor, renameVariable visibleName variableName continuation )
 
@@ -377,18 +383,23 @@ backwardHelper location owner monitor (historyType, futureType) program =
             newMonitor <- getMonitor owner
             backward location 
     
-        LocalType.Synchronized (LocalType.BackwardReceive owner sender visibleName variableName tipe rest) -> do 
+        LocalType.Synchronized (LocalType.BackwardReceive owner sender tipe rest) -> do 
             let newLocalType = LocalType.Unsynchronized ( rest, Fix $ LocalType.Receive owner sender tipe futureType ) 
 
             _ <- rollQueueHistory "BackwardReceive" sender owner
 
-            setParticipant_
-                ( monitor { _localType = newLocalType, _store = Map.delete variableName (_store monitor) } 
-                , Program.Receive { owner = owner, variableName = visibleName, continuation = program } 
-                )
+            case _usedVariables monitor of 
+                Binding{_visibleName, _internalName} : usedVariables -> 
+                    setParticipant_
+                        ( monitor { _localType = newLocalType, _store = Map.delete _internalName (_store monitor), _usedVariables = usedVariables } 
+                        , Program.Receive { owner = owner, variableName = _visibleName, continuation = program } 
+                        )
+
+                [] -> 
+                    error "no variable to bind"
 
     
-        LocalType.Unsynchronized (LocalType.BackwardReceive owner sender visibleName variableName tipe rest) -> do 
+        LocalType.Unsynchronized (LocalType.BackwardReceive owner sender tipe rest) -> do 
             checkSynchronizedForTransaction sender owner 
             backward location 
 
@@ -432,20 +443,24 @@ backwardHelper location owner monitor (historyType, futureType) program =
         LocalType.Synchronized _ -> 
             error "type is synced, but the historyType instruction is not a transaction or choice"
 
-        LocalType.Unsynchronized (LocalType.Application owner argumentName k rest) ->
-            case Map.lookup k (_applicationHistory monitor) of 
-                Nothing -> 
-                    error "rolling function that does not exist"
-                Just ( functionValue, argument ) -> 
+        LocalType.Unsynchronized (LocalType.Application owner _ k rest) ->
+            case (Map.lookup k (_applicationHistory monitor), _usedVariables monitor) of 
+                ( Just ( functionValue, argument ), Binding{_internalName}:usedVariables ) -> 
                     setParticipant_
                         ( monitor 
                             { _localType = LocalType.Unsynchronized ( rest, futureType )
-                            , _store = Map.delete argumentName (_store monitor)
+                            , _store = Map.delete _internalName (_store monitor)
                             , _applicationHistory = Map.delete k (_applicationHistory monitor) 
+                            , _usedVariables = usedVariables
                             } 
                         , Program.Application owner functionValue argument
                         )
 
+                ( Nothing, _ ) -> 
+                    error "rolling function that does not exist"
+
+                ( _, [] ) -> 
+                    error "rolling function application but not argument was bound"
 
         LocalType.Unsynchronized (LocalType.Spawning l l1 l2 rest) | l /= location -> 
             error "rolling someone else's spawn"
@@ -466,23 +481,28 @@ backwardHelper location owner monitor (historyType, futureType) program =
                     error "rolling a program that is not NoOp"
 
         LocalType.Unsynchronized (LocalType.Assignment owner visibleName variableName rest) -> 
-            let 
-                store = _store monitor 
+            case _usedVariables monitor of 
+                Binding{_visibleName, _internalName} : usedVariables -> 
+                    case Map.lookup _internalName (_store monitor) of 
+                        Just value -> 
+                            let 
+                                newMonitor = 
+                                    monitor 
+                                        { _store = Map.delete _internalName (_store monitor)
+                                        , _localType = LocalType.Unsynchronized (rest, futureType)
+                                        , _usedVariables = usedVariables 
+                                        }  
+                            in            
+                                setParticipant_
+                                    ( newMonitor
+                                    , Program.Let owner visibleName value $ renameVariable _internalName _visibleName program
+                                    )
 
-                value = 
-                    Map.lookup variableName store
-                        |> fromMaybe (error "undoing assignment to variable that does not exist")
+                        Nothing -> 
+                            error "undoing assignment to variable that does not exist"
 
-                newMonitor = 
-                    monitor 
-                        { _store = Map.delete variableName store
-                        , _localType = LocalType.Unsynchronized (rest, futureType)
-                        }  
-            in            
-                setParticipant_
-                    ( newMonitor
-                    , Program.Let owner visibleName value $ renameVariable variableName visibleName program
-                    )
+                [] -> 
+                    error "rolling an assignment, but no variables are used"
 
         LocalType.Unsynchronized (LocalType.Branched owner condition verdict otherBranch rest) -> 
             let 

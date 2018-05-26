@@ -111,6 +111,8 @@ constructExecutionState programs_ =
             , _applicationHistory = Map.empty
             , _recursiveVariableNumber = 0
             , _recursionPoints = []
+            , _usedVariables = []
+            , _choiceOtherOptions = []
             }
 
     in

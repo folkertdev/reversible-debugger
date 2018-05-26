@@ -40,7 +40,7 @@ data Atom f = R f | V | Wk f | End
 
 data Transaction u f 
     = TSend { owner :: Participant, receiver :: Participant, tipe :: u, continuation :: f } 
-    | TReceive { owner :: Participant, sender :: Participant, names :: Maybe (Identifier, Identifier), tipe ::  u, continuation :: f } 
+    | TReceive { owner :: Participant, sender :: Participant, tipe ::  u, continuation :: f } 
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 
@@ -49,14 +49,14 @@ data Transaction u f
 pattern BackwardSend owner participant tipe continuation = 
     LocalType (Transaction (TSend owner participant tipe ())) continuation
 
-pattern BackwardReceive owner participant visibleName variableName tipe continuation = 
-    LocalType (Transaction (TReceive owner participant (Just (visibleName, variableName)) tipe ())) continuation
+pattern BackwardReceive owner participant tipe continuation = 
+    LocalType (Transaction (TReceive owner participant tipe ())) continuation
 
 pattern Send owner receiver tipe continuation = 
     Transaction (TSend owner receiver tipe continuation)
 
 pattern Receive owner sender tipe continuation = 
-    Transaction (TReceive owner sender Nothing tipe continuation)
+    Transaction (TReceive owner sender tipe continuation)
 
 pattern RecursionPoint rest = Atom (R rest)
 pattern WeakenRecursion rest = Atom (Wk rest)
@@ -105,10 +105,10 @@ backwardSend owner sender tipe base =
         Fix $ LocalType local base
 
 
-backwardReceive :: Participant ->  Participant -> Identifier -> Identifier -> u -> TypeContext p v u 
+backwardReceive :: Participant ->  Participant -> u -> TypeContext p v u 
                 -> TypeContext p v u 
-backwardReceive owner sender visibleName variableName tipe base = 
-    Fix $ BackwardReceive owner sender visibleName variableName tipe base  
+backwardReceive owner sender tipe base = 
+    Fix $ BackwardReceive owner sender tipe base  
 
 backwardSelect :: Participant
                -> Participant
@@ -167,7 +167,7 @@ send owner sender tipe = Fix . Transaction . TSend owner sender tipe
 
 
 receive :: Participant -> Participant -> u -> LocalType u -> LocalType u 
-receive owner receiver tipe = Fix . Transaction . TReceive owner receiver Nothing tipe
+receive owner receiver tipe = Fix . Transaction . TReceive owner receiver tipe
 
 offer :: Participant -> Participant -> List (String, LocalType u) -> LocalType u 
 offer owner offerer options = 

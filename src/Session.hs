@@ -47,9 +47,29 @@ data Monitor value tipe =
         , _recursiveVariableNumber :: Int
         , _recursionPoints :: List (LocalType tipe)
         , _store :: Map Identifier value 
+        , _usedVariables :: List Binding 
+        , _choiceOtherOptions :: List (Either (List (String, Value, Program Value)) (List (String, Program Value)))
         , _applicationHistory :: Map Identifier (value, value)
         }
         deriving (Show, Eq)
+
+data Binding = Binding { _visibleName :: Identifier, _internalName :: Identifier } deriving (Show, Eq) 
+
+markVariableAsUsed :: Identifier -> Identifier -> Monitor a b -> Monitor a b
+markVariableAsUsed visible internal monitor@Monitor{_usedVariables} = 
+    monitor { _usedVariables = Binding visible internal : _usedVariables }
+
+addApplication :: (Identifier, (Value, Value)) -> Monitor Value a -> Monitor Value a 
+addApplication (k, v) monitor@Monitor{_applicationHistory} = 
+    monitor { _applicationHistory = Map.insert k v _applicationHistory }
+
+storeSelectOtherOptions :: List (String, Value, Program Value) -> Monitor Value b -> Monitor Value b
+storeSelectOtherOptions var monitor@Monitor{_choiceOtherOptions} = 
+    monitor { _choiceOtherOptions = Left var : _choiceOtherOptions }
+
+storeOfferOtherOptions :: List (String, Program Value) -> Monitor Value b -> Monitor Value b
+storeOfferOtherOptions var monitor@Monitor{_choiceOtherOptions} = 
+    monitor { _choiceOtherOptions = Right var : _choiceOtherOptions }
 
 
 

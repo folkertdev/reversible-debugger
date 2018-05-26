@@ -6,6 +6,7 @@ import Control.Monad
 import Control.Monad.Trans.State as State 
 
 import Program (Program, ProgramF(..), Value(..), renameVariable, IntOperator(..), terminate)
+import qualified Session
 import Session (Monitor(..), ExecutionState(..), Session, Error(..))
 import Semantics (forward, backward)
 import qualified Semantics
@@ -107,8 +108,9 @@ testBackward = describe "backward" $ do
             newMonitor1 = createMonitor (LocalType.backwardSend "A" "B" "unit", LocalType.end) Map.empty
             newMonitor2 = 
                 createMonitor 
-                    (LocalType.backwardReceive "B" "A" "var0" "v0" "unit", LocalType.end) 
+                    (LocalType.backwardReceive "B" "A" "unit", LocalType.end) 
                     (Map.singleton "v0" VUnit)
+                    |> Session.markVariableAsUsed "var0" "v0"
 
             newState = executionState (Queue.enqueueHistory ("A", "B", VUnit) Queue.empty)
                 [("A", newMonitor1, compileAlice  H.terminate)
@@ -146,6 +148,7 @@ testBackward = describe "backward" $ do
         let 
             monitor1 = createMonitor (id, LocalType.send    "A" "B" "unit" LocalType.end) Map.empty
             monitor2 = createMonitor (id, LocalType.receive "B" "A" "unit" LocalType.end) Map.empty
+
             state = executionState Queue.empty
                 [("A", monitor1, compileAlice $ do
                     H.send VUnit
@@ -204,6 +207,8 @@ testBackward = describe "backward" $ do
                 (Fix . LocalType.Application "A" "v1" "k0" . Fix . LocalType.Assignment "A" "var0" "v0", LocalType.end) $ 
                 Map.fromList [ ("v0",VFunction "var1" (Fix NoOp)),("v1",VUnit) ]
                  ) { _applicationHistory = Map.fromList [("k0",(VReference "v0",VUnit))] }  
+                    |> Session.markVariableAsUsed "var0" "v0"
+                    |> Session.markVariableAsUsed "v1" "v1"
 
             newState = executionState Queue.empty
                 [ ("A", newMonitor, H.terminate) 
@@ -259,7 +264,7 @@ testBackward = describe "backward" $ do
                 ]
 
             message = "the selector's previous instruction is not a Select, but " 
-            expected = "Application \"B\" \"v5\" \"k2\" (Fix (LocalType (Atom V) (Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",VComparison (VReference \"v4\") GT (VInt 0),Fix (Application \"B\" (VReference \"v2\") VUnit),Fix (Atom V)),[(\"end\",VBool True,Fix NoOp,Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", names = Just (\"var2\",\"v4\"), tipe = \"number\", continuation = ()})) (Fix (Application \"B\" \"v3\" \"k1\" (Fix (Assignment {owner = \"B\", visibleName = \"var0\", internalName = \"v2\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))))"
+            expected = "Application \"B\" \"v5\" \"k2\" (Fix (LocalType (Atom V) (Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",VComparison (VReference \"v4\") GT (VInt 0),Fix (Application \"B\" (VReference \"v2\") VUnit),Fix (Atom V)),[(\"end\",VBool True,Fix NoOp,Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", tipe = \"number\", continuation = ()})) (Fix (Application \"B\" \"v3\" \"k1\" (Fix (Assignment {owner = \"B\", visibleName = \"var0\", internalName = \"v2\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))))"
         in do
             let Right base = forwardN [ 1,1,1, 2,2,2]  state
             (backwardN [ 1,2 ] =<< forwardN [2,1,2] base) `shouldBe` Left (SynchronizationError $ message ++ expected)
@@ -268,6 +273,7 @@ testBackward = describe "backward" $ do
         let 
             monitor = createMonitor (id, LocalType.end) Map.empty
             newMonitor = createMonitor (Fix . LocalType.Assignment "A" "var0" "v0", LocalType.end) (Map.singleton "v0" VUnit) 
+                |> Session.markVariableAsUsed "var0" "v0"
 
             state = executionState Queue.empty
                 [("A", monitor, compileAlice $ do
@@ -400,6 +406,7 @@ testForward = describe "forward_" $ do
                 createMonitor 
                 (Fix . LocalType.Assignment "A" "var0" "v0" , LocalType.end) 
                 (Map.singleton "v0" (VFunction "var1" (Fix (Application "A" (VReference "v0") VUnit))))
+                |> Session.markVariableAsUsed "var0" "v0"
 
             program = do
                 x <- H.recursiveFunction $ \self _ -> H.applyFunction self VUnit 
@@ -459,27 +466,50 @@ testForward = describe "forward_" $ do
                     ,("B","C",VFunction "var1" (Fix (Send {owner = "B", value = VString "Lucca, 55100", continuation = Fix (Receive {owner = "B", variableName = "var2", continuation = Fix NoOp})})))
                     ]
 
-            aliceType = 
-                (LocalType.backwardSend "A" "B" "amount" . LocalType.backwardReceive "A" "B" "var0" "v3" "address", LocalType.end)
-
-            bobType = 
-                ( LocalType.backwardReceive "B" "A" "var2" "v4" "amount" . LocalType.backwardSend "B" "A" "address" . LocalType.backwardSend "B" "C" "thunk" . Fix . LocalType.Assignment "B" "var0" "v0", LocalType.end)
-                
-
-            carolType = 
-                ( Fix . LocalType.Application "C" "v2" "k0" . LocalType.backwardReceive "C" "B" "var0" "v1" "thunk", LocalType.end )
-
             bobStore = 
                 Map.fromList [("v0",VFunction "var1" (Fix (Send {owner = "B", value = VString "Lucca, 55100", continuation = Fix (Receive {owner = "B", variableName = "var2", continuation = Fix NoOp})}))),("v4",VInt 42)]
 
             carolStore = 
                 Map.fromList [("v1",VFunction "var1" (Fix (Send {owner = "B", value = VString "Lucca, 55100", continuation = Fix (Receive {owner = "B", variableName = "var2", continuation = Fix NoOp})}))), ("v2",VUnit)]
 
+            aliceMonitor = 
+                let tipe = 
+                        ( LocalType.backwardSend "A" "B" "amount" . LocalType.backwardReceive "A" "B" "address"
+                        , LocalType.end
+                        )
+                in
+                createMonitor tipe (Map.fromList [("v3",VString "Lucca, 55100")])
+                    |> Session.markVariableAsUsed "var0" "v3"
+
+            bobMonitor = 
+                let tipe = 
+                        ( LocalType.backwardReceive "B" "A" "amount" 
+                        . LocalType.backwardSend "B" "A" "address" 
+                        . LocalType.backwardSend "B" "C" "thunk" 
+                        . Fix . LocalType.Assignment "B" "var0" "v0"
+                        , LocalType.end
+                        )
+                in
+                createMonitor tipe bobStore
+                    |> Session.markVariableAsUsed "var0" "v0"
+                    |> Session.markVariableAsUsed "var2" "v4"
+
+            carolMonitor = 
+                let tipe = 
+                        ( Fix . LocalType.Application "C" "v2" "k0" . LocalType.backwardReceive "C" "B" "thunk"
+                        , LocalType.end 
+                        )
+                in
+                createMonitor tipe carolStore
+                    |> Session.markVariableAsUsed "var0" "v1"
+                    |> Session.addApplication ("k0",(VReference "v1",VUnit))
+                    |> Session.markVariableAsUsed "v2" "v2"
+
             newState = 
                 executionState newQueue 
-                    [ ("A", createMonitor aliceType (Map.fromList [("v3",VString "Lucca, 55100")]), H.terminate) 
-                    , ("B", createMonitor bobType bobStore, H.terminate)
-                        , ("C", (createMonitor carolType carolStore) { _applicationHistory = Map.fromList [("k0",(VReference "v1",VUnit))] } , H.terminate)
+                    [ ("A", aliceMonitor, H.terminate) 
+                    , ("B", bobMonitor, H.terminate)
+                    , ("C", carolMonitor, H.terminate)
                     ]
         in
             forwardN [2,2, 3,3,3, 1,1, 3 ]  state `shouldBe` Right newState 
@@ -560,21 +590,32 @@ testForward = describe "forward_" $ do
                 (LocalType.backwardSend "A" "C" "fourtyTwo", LocalType.end)
 
             bType = 
-                (Fix . LocalType.Application "B" "v2" "k0" . LocalType.backwardReceive "B" "C" "var0" "v1" "thunk", LocalType.end)
+                (Fix . LocalType.Application "B" "v2" "k0" . LocalType.backwardReceive "B" "C" "thunk", LocalType.end)
 
             cType = 
-                (LocalType.backwardReceive "C" "A" "var2" "v3" "fourtyTwo" . LocalType.backwardSend "C" "B" "thunk" . Fix . LocalType.Assignment "C" "var0" "v0", LocalType.end)
+                (LocalType.backwardReceive "C" "A" "fourtyTwo" . LocalType.backwardSend "C" "B" "thunk" . Fix . LocalType.Assignment "C" "var0" "v0", LocalType.end)
 
             thunk = VFunction "var1" (Fix (Receive {owner = "C", variableName = "var2", continuation = Fix NoOp}))
 
             bStore = Map.fromList [ ("v1", thunk), ("v2", VUnit) ]
             cStore = Map.fromList [ ("v0", thunk) , ("v3", VInt 42) ]
 
+            bobMonitor = 
+                createMonitor bType  bStore 
+                    |> Session.markVariableAsUsed "var0" "v1"
+                    |> Session.addApplication ("k0",(VReference "v1",VUnit)) 
+                    |> Session.markVariableAsUsed "v2" "v2"
+
+            carolMonitor = 
+                createMonitor cType cStore
+                    |> Session.markVariableAsUsed "var0" "v0"
+                    |> Session.markVariableAsUsed "var2" "v3"
+
             newState = 
                 executionState (Queue.enqueueHistory ("A", "C", VInt 42) $ Queue.enqueueHistory ("C", "B", thunk) Queue.empty)
                     [ ("A", createMonitor aType Map.empty, H.terminate)
-                    , ("B", (createMonitor bType  bStore) { _applicationHistory = Map.fromList [("k0",(VReference "v1",VUnit))] } , H.terminate)
-                    , ("C", createMonitor cType  cStore , H.terminate)
+                    , ("B", bobMonitor, H.terminate)
+                    , ("C", carolMonitor, H.terminate)
                     ]
 
         in forwardN [ 3,3, 1, 2,2,2,2 ] state `shouldBe` Right newState
@@ -610,8 +651,9 @@ testForward = describe "forward_" $ do
             newMonitor1 = createMonitor (LocalType.backwardSend "A" "B" "unit", LocalType.end) Map.empty
             newMonitor2 = 
                 createMonitor 
-                    (LocalType.backwardReceive "B" "A" "var0" "v0" "unit", LocalType.end) 
+                    (LocalType.backwardReceive "B" "A" "unit", LocalType.end) 
                     (Map.singleton "v0" VUnit)
+                    |> Session.markVariableAsUsed "var0" "v0"
 
             newState = executionState 
                 (Queue.enqueueHistory ("A", "B", VUnit) Queue.empty) 
@@ -760,6 +802,8 @@ createMonitor (previous, localType) store = Monitor
             , _applicationHistory = Map.empty
             , _recursiveVariableNumber = 0
             , _recursionPoints = []
+            , _usedVariables = []
+            , _choiceOtherOptions = []
             }
 
 

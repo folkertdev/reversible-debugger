@@ -69,7 +69,7 @@ checkSynchronizedForTransaction sender receiver =
                      -> Session Value ()
         synchronizer senderType receiverType =
             case (unFix senderType, unFix receiverType) of 
-                (LocalType.BackwardSend sOwner expectedReceiver sType _, LocalType.BackwardReceive rOwner expectedSender _ _ rType _) -> do
+                (LocalType.BackwardSend sOwner expectedReceiver sType _, LocalType.BackwardReceive rOwner expectedSender rType _) -> do
                     -- owners have to be the expected owners  
                     checkOwners ForTransaction (sOwner, sender) (rOwner, receiver)
 
