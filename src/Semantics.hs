@@ -52,7 +52,7 @@ forward location = do
         Nothing -> 
             error $ "unknown location " ++ show location 
 
-        Just (defaultParticipant, program) -> do
+        Just (defaultParticipant, otherOptionsStack, program) -> do
             -- get the owner/participant
             let owner = statementOwner (unFix program) |> Maybe.withDefault defaultParticipant
             case Map.lookup owner participants of 
@@ -61,10 +61,15 @@ forward location = do
 
                 Just monitor -> do
                     ( historyType, futureType ) <- validateLocalType location owner monitor
-                    forwardHelper location owner monitor (historyType, futureType) program 
+                    forwardHelper location owner monitor (historyType, futureType) program otherOptionsStack
 
             
-forwardHelper location owner monitor (historyType, futureType) program =
+forwardHelper location owner monitor (historyType, futureType) program otherOptionsStack = do
+    let setParticipantDefault location owner ( newMonitor, newProgram ) = 
+            setParticipant location owner ( newMonitor, otherOptionsStack, newProgram )
+
+        setParticipantWithNewStack = setParticipant 
+
     case ( unFix program, unFix futureType ) of 
         ( _, LocalType.RecursionPoint rest ) ->
             let 
@@ -76,7 +81,7 @@ forwardHelper location owner monitor (historyType, futureType) program =
                         }  
                 
             in do
-                setParticipant location owner ( newMonitor, program ) 
+                setParticipantDefault location owner ( newMonitor, program ) 
                 forward location 
 
         ( _, LocalType.WeakenRecursion rest ) ->
@@ -89,7 +94,7 @@ forwardHelper location owner monitor (historyType, futureType) program =
                         }  
                 
             in do
-                setParticipant location owner ( newMonitor, program ) 
+                setParticipantDefault location owner ( newMonitor, program ) 
                 forward location 
 
         ( _, LocalType.RecursionVariable ) ->
@@ -110,14 +115,14 @@ forwardHelper location owner monitor (historyType, futureType) program =
                         }  
                 
             in do
-                setParticipant location owner ( newMonitor, program ) 
+                setParticipantDefault location owner ( newMonitor, program ) 
                 forward location 
 
-        (Send owner payload continuation, _) ->
-            checkAndPerformSend location owner monitor owner payload continuation 
+        (Send owner payload continuation, _) -> 
+            setParticipantDefault location owner =<< checkAndPerformSend location owner monitor owner payload continuation 
 
         (Receive owner visibleName continuation, _) ->
-            checkAndPerformReceive location owner monitor owner visibleName continuation 
+            setParticipantDefault location owner =<< checkAndPerformReceive location owner monitor owner visibleName continuation 
 
         (Select owner options, _) -> 
             case unFix futureType of 
@@ -151,12 +156,16 @@ forwardHelper location owner monitor (historyType, futureType) program =
                                 typeSelection = Zipper.map (\(label, value, process, tipe) -> (label, tipe)) selection 
 
                                 newLocalType = LocalType.createState (LocalType.backwardSelect owner offerer typeSelection historyType) takenType
+
                                 newMonitor = 
                                     monitor { _localType = newLocalType }  
-                                        |> storeSelectOtherOptions processSelection
                             in do
                                 pushToQueue ( owner, offerer, VLabel takenLabel )
-                                setParticipant location owner ( newMonitor, takenProgram ) 
+                                setParticipantWithNewStack location owner 
+                                    ( newMonitor
+                                    , OtherSelections processSelection : otherOptionsStack 
+                                    , takenProgram 
+                                    ) 
 
                 _ -> 
                     error $ "Select for owner " ++ owner ++ " needs a LocalType.Select, but got " ++ show (unFix futureType)
@@ -210,9 +219,13 @@ forwardHelper location owner monitor (historyType, futureType) program =
 
                         newMonitor = 
                             monitor { _localType = newLocalType }  
-                                |> storeOfferOtherOptions processSelection
 
-                    setParticipant location owner ( newMonitor, program ) 
+                    setParticipantWithNewStack location owner 
+                        ( newMonitor
+                        , OtherOffers processSelection : otherOptionsStack 
+                        , program 
+                        ) 
+
 
                 _ -> 
                     error $ "Offer needs a LocalType.Offer, but got " ++ show (unFix futureType)
@@ -237,7 +250,7 @@ forwardHelper location owner monitor (historyType, futureType) program =
                                 , _applicationHistory = Map.insert k (unevaluatedFunctionValue, argument) (_applicationHistory monitor)
                                 }  
                                 |> Session.markVariableAsUsed argumentName argumentName
-                    setParticipant location owner (newMonitor, renameVariable variable argumentName body)
+                    setParticipantDefault location owner (newMonitor, renameVariable variable argumentName body)
 
         (Parallel p q, _) -> do
             l1 <- uniqueLocation 
@@ -251,9 +264,9 @@ forwardHelper location owner monitor (historyType, futureType) program =
 
             let newMonitor = monitor { _localType = LocalType.createState ( Fix $ LocalType.Spawning location l1 l2 historyType) futureType  } 
 
-            setParticipant location owner ( newMonitor, Fix NoOp )
-            setParticipant l1 owner ( newMonitor, p )
-            setParticipant l2 owner ( newMonitor, q )
+            setParticipantDefault location owner ( newMonitor, Fix NoOp )
+            setParticipantDefault l1 owner ( newMonitor, p )
+            setParticipantDefault l2 owner ( newMonitor, q )
 
         (Let owner visibleName value continuation, _) -> do
             variableName <- uniqueVariableName 
@@ -266,21 +279,21 @@ forwardHelper location owner monitor (historyType, futureType) program =
                         }  
                         |> Session.markVariableAsUsed visibleName variableName
             
-            setParticipant location owner ( newMonitor, renameVariable visibleName variableName continuation )
+            setParticipantDefault location owner ( newMonitor, renameVariable visibleName variableName continuation )
 
         (IfThenElse owner condition thenBranch elseBranch, _) -> do 
             verdict <- unsafeCastToBool <$> evaluateValue owner condition 
             
             if verdict then do
-                let newLocalType = LocalType.createState (Fix $ LocalType.Branched owner condition verdict elseBranch historyType) futureType
+                let newLocalType = LocalType.createState (Fix $ LocalType.Branched historyType) futureType
                     newMonitor = monitor { _localType = newLocalType }  
                 
-                setParticipant location owner ( newMonitor, thenBranch )
+                setParticipantWithNewStack location owner ( newMonitor, OtherBranch condition verdict elseBranch : otherOptionsStack, thenBranch )
             else do
-                let newLocalType = LocalType.createState (Fix $ LocalType.Branched owner condition verdict thenBranch historyType) futureType
+                let newLocalType = LocalType.createState (Fix $ LocalType.Branched historyType) futureType
                     newMonitor = monitor { _localType = newLocalType }  
             
-                setParticipant location owner ( newMonitor, elseBranch )
+                setParticipantWithNewStack location owner ( newMonitor, OtherBranch condition verdict thenBranch : otherOptionsStack, elseBranch )
 
 
         (Literal lit, _) -> do
@@ -296,14 +309,14 @@ forwardHelper location owner monitor (historyType, futureType) program =
                         }  
             -}
             
-            setParticipant location owner ( monitor, Fix NoOp )
+            setParticipantDefault location owner ( monitor, Fix NoOp )
 
         ( NoOp, _ ) -> 
             return () 
 
 
 
-checkAndPerformSend :: Location -> Participant -> Monitor Value String -> Participant -> Value -> Program Value -> Session Value ()
+checkAndPerformSend :: Location -> Participant -> Monitor Value String -> Participant -> Value -> Program Value -> Session Value (Monitor Value String, Program Value)
 checkAndPerformSend location participant monitor owner payload continuation = 
     if participant == owner then do
         (historyType, localType) <- second unFix <$> validateLocalType location participant monitor
@@ -315,14 +328,14 @@ checkAndPerformSend location participant monitor owner payload continuation =
                         LocalType.createState (Fix $ LocalType.BackwardSend owner target tipe historyType) continuationType
 
                 pushToQueue ( participant, target, value )
-                setParticipant location participant (monitor { _localType = newLocalTypeState }, continuation)
+                return (monitor { _localType = newLocalTypeState }, continuation)
 
             _ -> 
                 error $ "`" ++ participant ++ "`'s program wants to perform a send, but its type is " ++ show localType
     else error "invalid owner in checkAndPerformSend"
 
 
-checkAndPerformReceive :: Location -> Participant -> Monitor Value String -> Participant -> Identifier -> Program Value -> Session Value ()
+checkAndPerformReceive :: Location -> Participant -> Monitor Value String -> Participant -> Identifier -> Program Value -> Session Value (Monitor Value String, Program Value)
 checkAndPerformReceive location participant monitor owner visibleName continuation = 
     if participant == owner then do
         (historyType, localType) <- second unFix <$> validateLocalType location participant monitor
@@ -341,7 +354,7 @@ checkAndPerformReceive location participant monitor owner visibleName continuati
                         }  
                         |> Session.markVariableAsUsed visibleName variableName
                     
-                setParticipant location participant (newMonitor, renameVariable visibleName variableName continuation )
+                return (newMonitor, renameVariable visibleName variableName continuation )
 
             _ -> 
                 error $ "`" ++ participant ++ "`'s program wants to perform a receive, but its type is " ++ show localType
@@ -356,7 +369,7 @@ backward location = do
         Nothing -> 
             error $ "unknown location " ++ show location 
 
-        Just (defaultParticipant, program) -> do
+        Just (defaultParticipant, otherOptionsStack, program) -> do
             -- get the owner/participant
             let owner = statementOwner (unFix program) |> Maybe.withDefault defaultParticipant
             case Map.lookup owner participants of 
@@ -369,11 +382,15 @@ backward location = do
                                 LocalType.Unsynchronized (x,y) -> (x,y)
                                 LocalType.Synchronized (x,y) -> (x,y)
 
-                    backwardHelper location owner monitor (historyType, futureType) program 
+                    backwardHelper location owner monitor (historyType, futureType) program otherOptionsStack
 
-backwardHelper location owner monitor (historyType, futureType) program =
+backwardHelper location owner monitor (historyType, futureType) program otherOptionsStack =
     let 
-        setParticipant_ (m, progF) = setParticipant location owner (m, Fix progF)
+        setParticipant_ (newMonitor, newProgram) = 
+            setParticipant location owner (newMonitor, otherOptionsStack, Fix newProgram)
+
+        setParticipantWithNewStack ( newMonitor, newStack, newProgram) = 
+            setParticipant location owner ( newMonitor, newStack, Fix newProgram )
     in
     case fmap (unFix . fst) (_localType monitor) of 
         LocalType.Synchronized (LocalType.BackwardSend owner receiver tipe rest) -> do
@@ -415,14 +432,14 @@ backwardHelper location owner monitor (historyType, futureType) program =
         LocalType.Synchronized LocalType.Selected{ owner, offerer, selection, continuation } -> do
             _ <-  removeFromQueue "BackwardSelect" owner offerer 
             let types = Zipper.toList selection 
-            case _choiceOtherOptions monitor of 
-                Left programs : choiceOtherOptions -> 
+            case otherOptionsStack of 
+                OtherSelections programs : newOtherOptionsStack -> 
 
-                    setParticipant_
+                    setParticipantWithNewStack
                         ( monitor 
                             { _localType = LocalType.Unsynchronized ( continuation, LocalType.select owner offerer types )                            
-                            , _choiceOtherOptions = choiceOtherOptions 
                             }
+                        , newOtherOptionsStack 
                         , Program.Select owner (Zipper.toList programs) 
                         )
                 _ -> 
@@ -437,14 +454,14 @@ backwardHelper location owner monitor (historyType, futureType) program =
         LocalType.Synchronized LocalType.Offered{ owner, selector, picked, continuation } -> do
             _ <- rollQueueHistory "BackwardOffer" selector owner
             let types = Zipper.toList picked 
-            case _choiceOtherOptions monitor of 
-                Right programs : choiceOtherOptions -> 
+            case otherOptionsStack of 
+                OtherOffers programs : newOtherOptionsStack -> 
 
-                    setParticipant_
+                    setParticipantWithNewStack
                         ( monitor 
                             { _localType = LocalType.Unsynchronized ( continuation,  LocalType.offer owner selector types )
-                            , _choiceOtherOptions = choiceOtherOptions 
                             }
+                        , newOtherOptionsStack
                         , Program.Offer owner (Zipper.toList programs) 
                         )
                 _ -> 
@@ -520,15 +537,20 @@ backwardHelper location owner monitor (historyType, futureType) program =
                 [] -> 
                     error "rolling an assignment, but no variables are used"
 
-        LocalType.Unsynchronized (LocalType.Branched owner condition verdict otherBranch rest) -> 
+        LocalType.Unsynchronized (LocalType.Branched rest) -> 
             let 
                 newMonitor = 
                     monitor { _localType = LocalType.Unsynchronized (rest, futureType) }  
-            in
-                setParticipant_
-                    ( newMonitor
-                    , if verdict then Program.IfThenElse owner condition program otherBranch else Program.IfThenElse owner condition otherBranch program
-                    )
+            in 
+                case otherOptionsStack of 
+                    OtherBranch condition verdict otherBranch : rest -> 
+                        setParticipantWithNewStack
+                            ( newMonitor
+                            , rest
+                            , if verdict then Program.IfThenElse owner condition program otherBranch else Program.IfThenElse owner condition otherBranch program
+                            )
+                    _ -> 
+                        error "no other branch"
 
 
         LocalType.Unsynchronized (LocalType.Literal variableName rest) -> 
@@ -604,7 +626,7 @@ validate location participant = do
             error "unknown participant"
         Just monitor -> 
             case Map.lookup location (locations state) of 
-                Just (_, program) -> 
+                Just (_, _, program) -> 
                     return (program, monitor)
 
                 Nothing -> 

@@ -27,7 +27,7 @@ data ExecutionState value =
         , locationCount :: Int
         , applicationCount :: Int
         , participants :: Map Participant (Monitor value String)
-        , locations :: Map Location (Participant, Program value)
+        , locations :: Map Location (Participant, List OtherOptions, Program value)
         , queue :: Queue value
         , isFunction :: value -> Maybe (Identifier, Program value)
         }
@@ -43,6 +43,12 @@ instance Show v => Show (ExecutionState v) where
 instance Eq v => Eq (ExecutionState v) where 
     a == b = locations a == locations b && participants a == participants b && queue a == queue b
 
+data OtherOptions  
+    = OtherSelections (Zipper (String, Value, Program Value))
+    | OtherOffers (Zipper (String, Program Value))
+    | OtherBranch Value Bool (Program Value)
+    deriving (Show, Eq)
+
 data Monitor value tipe = 
     Monitor 
         { _localType :: LocalTypeState (Program value) value tipe
@@ -50,7 +56,6 @@ data Monitor value tipe =
         , _recursionPoints :: List (LocalType tipe)
         , _store :: Map Identifier value 
         , _usedVariables :: List Binding 
-        , _choiceOtherOptions :: List (Either (Zipper (String, Value, Program Value)) (Zipper (String, Program Value)))
         , _applicationHistory :: Map Identifier (value, value)
         }
         deriving (Show, Eq)
@@ -65,6 +70,7 @@ addApplication :: (Identifier, (Value, Value)) -> Monitor Value a -> Monitor Val
 addApplication (k, v) monitor@Monitor{_applicationHistory} = 
     monitor { _applicationHistory = Map.insert k v _applicationHistory }
 
+{-
 storeSelectOtherOptions :: Zipper (String, Value, Program Value) -> Monitor Value b -> Monitor Value b
 storeSelectOtherOptions var monitor@Monitor{_choiceOtherOptions} = 
     monitor { _choiceOtherOptions = Left var : _choiceOtherOptions }
@@ -72,7 +78,7 @@ storeSelectOtherOptions var monitor@Monitor{_choiceOtherOptions} =
 storeOfferOtherOptions :: Zipper (String, Program Value) -> Monitor Value b -> Monitor Value b
 storeOfferOtherOptions var monitor@Monitor{_choiceOtherOptions} = 
     monitor { _choiceOtherOptions = Right var : _choiceOtherOptions }
-
+-}
 
 
 data Error 
@@ -121,19 +127,18 @@ evaluateValue participant value =
             return value
 
 
-
-setParticipant :: Location -> Participant -> (Monitor value String, Program value) -> Session value ()
-setParticipant location backupParticipant (monitor, program) =
+setParticipant :: Location -> Participant -> (Monitor value String, List OtherOptions, Program value) -> Session value ()
+setParticipant location backupParticipant (monitor, otherOptionsStack, program) =
     State.modify $ \state@ExecutionState { participants, locations } -> 
         let defaultParticipant = 
                 locations
                     |> Map.lookup location 
-                    |> fmap fst
+                    |> fmap (\(p, _,_) -> p) 
                     |> Maybe.withDefault backupParticipant
         in
         state 
             { participants = Map.insert backupParticipant monitor participants
-            , locations = Map.insert location (defaultParticipant, program) locations
+            , locations = Map.insert location (defaultParticipant, otherOptionsStack, program) locations
             }
 
 setMonitor :: Location -> Participant -> Monitor value String -> Session value ()
@@ -151,7 +156,7 @@ getParticipant location participant = do
         Nothing -> 
             error "location or participant does not exist"
 
-        Just (_, program) -> 
+        Just (_, _, program) -> 
             return ( monitor, program )
 
 removeLocation :: Location -> Session value () 

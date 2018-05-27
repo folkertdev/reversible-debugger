@@ -7,7 +7,7 @@ import Control.Monad.Trans.State as State
 
 import Program (Program, ProgramF(..), Value(..), renameVariable, IntOperator(..), terminate)
 import qualified Session
-import Session (Monitor(..), ExecutionState(..), Session, Error(..))
+import Session (Monitor(..), ExecutionState(..), Session, Error(..), OtherOptions(..))
 import Semantics (forward, backward)
 import qualified Semantics
 import qualified Queue
@@ -185,9 +185,9 @@ testBackward = describe "backward" $ do
                 [("A", monitor, compileAlice $ H.ifThenElse condition thenBranch elseBranch) 
                 ]
 
-            newMonitor = createMonitor (Fix . LocalType.Branched "A" condition verdict (H.compile "A" elseBranch), localType) Map.empty
-            newState = executionState Queue.empty
-                [("A", newMonitor, compileAlice $ H.send (VInt 42))
+            newMonitor = createMonitor (Fix . LocalType.Branched, localType) Map.empty
+            newState = executionStateWithStack Queue.empty
+                [("A", newMonitor, [ OtherBranch condition verdict (H.compile "A" elseBranch) ], compileAlice $ H.send (VInt 42))
                 ]
         in do
             forwardN [ 1] state `shouldBe` Right newState
@@ -718,15 +718,13 @@ testForward = describe "forward_" $ do
             selection = Zipper ([],("x", LocalType.end),[("y", LocalType.end)])
 
             newMonitor1 = createMonitor (Fix . LocalType.Offered "A" "B" picked, LocalType.end)    Map.empty
-                |> Session.storeOfferOtherOptions (Zipper ([],("x",Fix NoOp),[("y",Fix NoOp)]))
 
             newMonitor2 = createMonitor (Fix . LocalType.Selected "B" "A" selection, LocalType.end) Map.empty
-                |> Session.storeSelectOtherOptions (Zipper ([],("x",VBool True,Fix NoOp),[("y",VBool False,Fix NoOp)]))
 
-            newState = executionState 
+            newState = executionStateWithStack
                 (Queue.enqueueHistory ("B", "A", VLabel "x") Queue.empty) 
-                [("A", newMonitor1, H.terminate)
-                ,("B", newMonitor2, H.terminate)
+                [("A", newMonitor1, [ OtherOffers $ Zipper ([],("x",Fix NoOp),[("y",Fix NoOp)]) ], H.terminate)
+                ,("B", newMonitor2, [ OtherSelections $ Zipper ([],("x",VBool True,Fix NoOp),[("y",VBool False,Fix NoOp)]) ], H.terminate)
                 ]
         in
             forwardN [ 2,1 ] state `shouldBe` Right newState 
@@ -809,15 +807,19 @@ createMonitor (previous, localType) store = Monitor
             , _recursiveVariableNumber = 0
             , _recursionPoints = []
             , _usedVariables = []
-            , _choiceOtherOptions = []
             }
-
 
 executionState :: Queue.Queue Value 
                -> List (String, Monitor Value String, H.HighLevelProgram ()) 
                -> ExecutionState Value 
 executionState queue values = 
-    let (participants, monitors, programs) = List.unzip3 values
+    executionStateWithStack queue (List.map (\(a,b,c) -> (a,b,[],c)) values)
+
+executionStateWithStack :: Queue.Queue Value 
+               -> List (String, Monitor Value String, List OtherOptions, H.HighLevelProgram ()) 
+               -> ExecutionState Value 
+executionStateWithStack queue values = 
+    let (participants, monitors, stacks, programs) = List.unzip4 values
     in
         ExecutionState
             { variableCount = 0
@@ -826,7 +828,7 @@ executionState queue values =
             , participants = Map.fromList $ List.zip participants monitors 
             , locations = 
                 zipWith H.compile participants programs
-                    |> zip participants
+                    |> zip3 participants stacks
                     |> zipWith (\i program -> ("l" ++ show i, program)) [1..]
                     |> Map.fromList
             , queue = queue 
@@ -836,5 +838,3 @@ executionState queue values =
                     _ -> Nothing
 
             }
-
-

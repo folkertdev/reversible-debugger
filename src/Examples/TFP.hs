@@ -134,7 +134,6 @@ constructExecutionState programs_ =
             , _recursiveVariableNumber = 0
             , _recursionPoints = []
             , _usedVariables = []
-            , _choiceOtherOptions = []
             }
 
     in
@@ -146,7 +145,7 @@ constructExecutionState programs_ =
             , locations = 
                 programs_
                     |> List.map (uncurry H.compile)
-                    |> zip participants
+                    |> zip3 participants (repeat [])
                     |> zipWith (\i program -> ("l" ++ show i, program)) [1..]
                     |> Map.fromList
             , queue = Queue.empty
