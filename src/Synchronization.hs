@@ -42,7 +42,7 @@ participantNames context =
         ForChoice -> ("offerer", "selector") 
 
 
-type TypeState = LocalType.TypeContext (Program Value) Value String 
+type TypeState = LocalType.TypeContext String 
 
 
 {-| Check whether two types are already synchronized, and synchronize them if not -}
@@ -64,8 +64,8 @@ checkSynchronized synchronizer partyA partyB = do
 checkSynchronizedForTransaction :: Participant -> Participant -> Session Value ()
 checkSynchronizedForTransaction sender receiver = 
     let 
-        synchronizer :: LocalType.TypeContext (Program Value) Value String 
-                     -> LocalType.TypeContext (Program Value) Value String 
+        synchronizer :: LocalType.TypeContext String 
+                     -> LocalType.TypeContext String 
                      -> Session Value ()
         synchronizer senderType receiverType =
             case (unFix senderType, unFix receiverType) of 
@@ -94,9 +94,9 @@ checkSynchronizedForTransaction sender receiver =
 checkSynchronizedForChoice :: Participant -> Participant -> Session Value ()
 checkSynchronizedForChoice offerer selector = checkSynchronized synchronizer offerer selector
   where
-        synchronizer :: LocalType.TypeContext (Program Value) Value String
-               -> LocalType.TypeContext (Program Value) Value String
-               -> Session Value ()
+        synchronizer :: LocalType.TypeContext String
+                     -> LocalType.TypeContext String
+                     -> Session Value ()
         synchronizer offererType selectorType =
             case (unFix offererType, unFix selectorType) of 
                 (LocalType.Offered oOwner expectedSelector picked _, LocalType.Selected sOwner expectedOfferer selection _) -> do

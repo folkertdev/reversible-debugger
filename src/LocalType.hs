@@ -72,9 +72,9 @@ pattern Select owner offerer  options = Choice (CSelect owner offerer options)
 
 
 {-| Data structure containing the information needed to roll an action -}
-type TypeContext program value a = Fix (TypeContextF program value a)
+type TypeContext a = Fix (TypeContextF a)
 
-data TypeContextF program value a f 
+data TypeContextF a f 
     = Hole 
     | LocalType (LocalTypeF a ()) f 
     | Selected 
@@ -96,7 +96,7 @@ data TypeContextF program value a f
     | Literal a f
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
-backwardSend :: Participant ->  Participant -> u -> TypeContext p v u -> TypeContext p v u 
+backwardSend :: Participant ->  Participant -> u -> TypeContext u -> TypeContext u 
 backwardSend owner sender tipe base = 
     let 
         -- local :: LocalTypeF u ()
@@ -105,24 +105,24 @@ backwardSend owner sender tipe base =
         Fix $ LocalType local base
 
 
-backwardReceive :: Participant ->  Participant -> u -> TypeContext p v u 
-                -> TypeContext p v u 
+backwardReceive :: Participant ->  Participant -> u -> TypeContext u 
+                -> TypeContext u 
 backwardReceive owner sender tipe base = 
     Fix $ BackwardReceive owner sender tipe base  
 
 backwardSelect :: Participant
                -> Participant
                -> Zipper (String, LocalType u) 
-               -> TypeContext p v u 
-               -> TypeContext p v u
+               -> TypeContext u 
+               -> TypeContext u
 backwardSelect owner offerer selection continuation =  
     Fix $ Selected owner offerer selection continuation   
 
 backwardOffer :: Participant 
               -> Participant
               -> Zipper (String, LocalType u) 
-              -> TypeContext p v u 
-              -> TypeContext p v u
+              -> TypeContext u 
+              -> TypeContext u
 backwardOffer owner selector picked continuation = 
     Fix $ Offered owner selector picked continuation 
 
@@ -131,12 +131,12 @@ backwardOffer owner selector picked continuation =
  * the information needed to roll, the TypeContext
  * the information needed to step forward, the LocalType
 -}
-type LocalTypeState program value u  = Synchronizable ( TypeContext program value u, LocalType u ) 
+type LocalTypeState u  = Synchronizable ( TypeContext u, LocalType u ) 
 
 
 data Synchronizable a = Synchronized a | Unsynchronized a deriving (Show, Eq, Functor)
 
-createState :: TypeContext program value u -> LocalType u -> LocalTypeState program value u
+createState :: TypeContext u -> LocalType u -> LocalTypeState u
 createState = curry Unsynchronized 
 
 unwrapState state = 
@@ -147,7 +147,7 @@ unwrapState state =
         Synchronized x -> 
             x
 
-mapState :: (TypeContext program value u -> LocalType u -> (TypeContext program value u, LocalType u)) -> LocalTypeState program value u -> LocalTypeState program value u 
+mapState :: (TypeContext u -> LocalType u -> (TypeContext u, LocalType u)) -> LocalTypeState u -> LocalTypeState u 
 mapState tagger = fmap (uncurry tagger) 
 
 recurse :: LocalType a -> LocalType a 

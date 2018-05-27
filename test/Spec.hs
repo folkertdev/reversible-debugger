@@ -796,9 +796,7 @@ testRenameVariable = describe "renameVariable" $ do
         in
             renamer (example "x") `shouldBe` example "y"
 
-createMonitor :: ( TypeContext (Program Value) Value String -> TypeContext (Program Value) Value  String
-                 , LocalType String
-                 ) 
+createMonitor :: (TypeContext String -> TypeContext String , LocalType String) 
               -> Map.Map String Value -> Monitor Value String
 createMonitor (previous, localType) store = Monitor 
             { _localType = LocalType.Unsynchronized (previous $ Fix LocalType.Hole,  localType) 

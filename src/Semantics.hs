@@ -33,7 +33,7 @@ import Session
 import Synchronization (checkSynchronizedForTransaction, checkSynchronizedForChoice)
 
 
-validateLocalType :: Location -> Participant -> Monitor Value String -> Session Value (LocalType.TypeContext (Program Value) Value String, LocalType String)
+validateLocalType :: Location -> Participant -> Monitor Value String -> Session Value (LocalType.TypeContext String, LocalType String)
 validateLocalType location participant monitor = 
     case _localType monitor of 
         LocalType.Unsynchronized x -> 

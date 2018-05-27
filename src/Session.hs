@@ -51,7 +51,7 @@ data OtherOptions
 
 data Monitor value tipe = 
     Monitor 
-        { _localType :: LocalTypeState (Program value) value tipe
+        { _localType :: LocalTypeState tipe
         , _recursiveVariableNumber :: Int
         , _recursionPoints :: List (LocalType tipe)
         , _store :: Map Identifier value 
