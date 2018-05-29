@@ -390,16 +390,6 @@ testForward = describe "forward_" $ do
         in
             forwarder state `shouldBe` Right state 
 
-    {- TODO add tests on literals
-    it "literal doesn't change state" $ 
-        let monitor = createMonitor (id, LocalType.end) Map.empty
-            state = executionState Queue.empty [("A", monitor, Fix $ Program.Literal VUnit)]
-
-            newState = executionState Queue.empty [("A", monitor, Program.terminate)]
-        in
-            forwarder state `shouldBe` Right newState 
-    -}
-
     it "let renames in function bodies" $ 
         let monitor = createMonitor (id, LocalType.end) Map.empty
             newMonitor = 
@@ -780,19 +770,14 @@ testRenameVariable = describe "renameVariable" $ do
     it "renames in send payload right-hand side" $
         renamer (Program.Send "owner" (VReference "x") Program.terminate)
             `shouldBe` Program.Send "owner" (VReference "y") Program.terminate
-    {-
-    it "renames in IfThenElse condition" $
-        renamer (Semantics.ifThenElse (VReference "x") Program.terminate Program.terminate)
-            `shouldBe` Semantics.ifThenElse (VReference "y") Program.terminate Program.terminate
-    -}
 
-    it "renames in literal" $
-        renamer (Program.Literal (VReference "x")) 
-            `shouldBe` Program.Literal (VReference "y") 
+    it "renames in IfThenElse condition" $
+        renamer (Program.IfThenElse "owner" (VReference "x") Program.terminate Program.terminate)
+            `shouldBe` Program.IfThenElse "owner" (VReference "y") Program.terminate Program.terminate
 
     it "renames in nested condition" $
-        let lit = Fix . Program.Literal . VReference
-            example varname = Program.IfThenElse "A" (VReference "q") (lit varname) (lit varname)
+        let lit name = Fix $ Program.Application "owner" (VReference name) VUnit
+            example varname = Program.IfThenElse "owner" (VReference "q") (lit varname) (lit varname)
         in
             renamer (example "x") `shouldBe` example "y"
 

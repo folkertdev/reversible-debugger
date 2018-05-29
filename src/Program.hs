@@ -29,7 +29,6 @@ data ProgramF value next
     | Application Participant value value
     | Let Participant Identifier value next 
     | IfThenElse Participant value next next
-    | Literal value -- needed to define multi-parameter functions
     | NoOp
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable, ToJSON, FromJSON, ElmType)
 
@@ -137,9 +136,6 @@ renameVariable old new program =
                 Send owner variable cont ->
                     Send owner (renameValue old new variable) (recursiveRename cont)
 
-                Literal literal  ->
-                    Literal (renameValue old new literal)
-
                 IfThenElse owner condition thenBranch elseBranch -> 
                     IfThenElse owner (renameValue old new condition) (recursiveRename thenBranch) (recursiveRename elseBranch)
 
@@ -173,9 +169,6 @@ statementOwner instruction =
 
         Select owner options -> 
             Just owner 
-
-        Literal literal  ->
-            Nothing 
 
         IfThenElse owner condition thenBranch elseBranch -> 
             Just owner 

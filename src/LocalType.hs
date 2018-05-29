@@ -93,7 +93,6 @@ data TypeContextF a f
     | Application Participant Identifier f 
     | Spawning Location Location Location f
     | Assignment { owner :: Participant, continuation :: f }
-    | Literal a f
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 backwardSend :: Participant ->  Participant -> u -> TypeContext u -> TypeContext u 

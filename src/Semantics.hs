@@ -295,22 +295,6 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
             
                 setParticipantWithNewStack location owner ( newMonitor, OtherBranch condition verdict thenBranch : otherOptionsStack, elseBranch )
 
-
-        (Literal lit, _) -> do
-            variableName <- uniqueVariableName 
-
-            {-
-            let  
-                newLocalType = (Fix $ LocalType.Literal variableName historyType, fixedLocal) 
-                newMonitor = 
-                    monitor 
-                        { _store = Map.insert variableName lit (_store monitor)
-                        , _localType = newLocalType
-                        }  
-            -}
-            
-            setParticipantDefault location owner ( monitor, Fix NoOp )
-
         ( NoOp, _ ) -> 
             return () 
 
@@ -551,26 +535,6 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                             )
                     _ -> 
                         error "no other branch"
-
-
-        LocalType.Unsynchronized (LocalType.Literal variableName rest) -> 
-            let 
-                store = _store monitor 
-
-                value = 
-                    Map.lookup variableName store
-                        |> fromMaybe (error "undoing literal that does not exist")
-
-                newMonitor = 
-                    monitor 
-                        { _store = Map.delete variableName store
-                        , _localType = LocalType.Unsynchronized (rest, futureType)
-                        }  
-            in            
-                setParticipant_
-                    ( newMonitor
-                    , Program.Literal value 
-                    )
 
         LocalType.Unsynchronized (LocalType.BackwardRecursionPoint rest) -> 
             let
