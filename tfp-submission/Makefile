@@ -1,6 +1,6 @@
 all: pandoc
 	rm -f paper.pdf
-	@latexmk -pdf paper.tex
+	@latexmk -pdf paper.tex -halt-on-error
 
 mapping:
 	pandoc -R --biblio paper.bib --csl ieee.csl -N -o mapping.tex --template=llncs mapping.md 

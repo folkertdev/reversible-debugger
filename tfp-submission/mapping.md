@@ -143,6 +143,7 @@ data Value
 
 ## Process/Program
 
+The formal definition is given by
 
 \begin{figure}
 \begin{align*}
@@ -158,36 +159,44 @@ P,Q \bnfis &
 \end{align*}
 \end{figure}
 
-**Question:** Function application is `Value -> Name -> Process`. 
-Is there a reason the argument is only a name, and not a `Value`?
+**Question:** Function application is `Value -> Name -> Process`.  Is there a reason the argument is only a name, and not a `Value`?
+
+Which is encoded as this data type
 
 ```haskell
 data ProgramF value next 
     -- passing messages
     = Send { owner :: Participant, value :: value, continuation :: next }
     | Receive { owner :: Participant, variableName :: Identifier, continuation :: next  }
+
     -- choice
     | Offer Participant (List (String, next))
     | Select Participant (List (String, value, next))
 
     | Parallel next next 
-
-    -- recursion omitted, see note
-
-
     | Application Participant Identifier value
     | NoOp
+
+    -- recursion omitted, see note
 
     -- syntactic sugar for better examples
     | Let Participant Identifier value next 
     | IfThenElse Participant value next next
-    | Literal value -- needed to define multi-parameter functions
 ```
+
+The four communication operations, `send`, `receive`, `offer` and `select` are constructors. Likewise, parallel execution, function application and 
+unit (the empty program) have their own constructors. 
+
+To create slightly more interesting examples, we've also introduced constructors for let-bindings and if-then-else statements. 
+These constructions can be reduced to function applications, so they don't add new semantics. They are purely syntactic sugar, but 
+do show how one might extend this language with new constructors.
+
+Name restriction is not needed because we use generated variable names that are guaranteed to be unique. 
 
 because values already allow recursion, process recursion can be implemented with value recursion
 and function calls, to the point that we've defined
 
-```
+```haskell
 recursive :: (HighLevelProgram a -> HighLevelProgram a) -> HighLevelProgram a
 recursive body = do
     thunk <- recursiveFunction $ \self _ ->
@@ -196,8 +205,130 @@ recursive body = do
     applyFunction thunk VUnit
 ```
 
+## Type Context 
+
+Now that we've defined session types and programs that can go forward, we need to construct the memory that allows us to go backward. 
+The first step is backward types.
+
+Formal definition: 
+
+\begin{definition} 
+\added{Let $k, k', \ldots$ denote fresh name identifiers.} We define 
+\textit{type contexts} as (local) types with one hole, denoted ``$\bullet$'':
+\begin{figure}
+\begin{align*}
+\ctx{T},\ctx{S}   \bnfis  &\bullet 
+    \sbnfbar q\btsel{\lbl_w:\ctx{T} \;;\; \lbl_i:S_i}_{i \in I\setminus w}
+    \sbnfbar q\btbra{\lbl_w:\ctx{T} \, , \, \lbl_i:S_i}_{i \in I\setminus w}
+ \\
+  &\sbnfbar   \alpha.\ctx{T} \sbnfbar    k.\ctx{T} \sbnfbar (\loc,\loc_1,\loc_2).\ctx{T} 
+ \end{align*}
+\end{figure}
+\end{definition} 
+
+Data type
+
+```haskell
+data TypeContextF a f 
+    = Hole 
+    | LocalType (LocalTypeF a ()) f 
+    | Selected 
+        { owner :: Participant
+        , offerer :: Participant 
+        , selection :: Zipper (String, LocalType a)
+        , continuation :: f 
+        }
+    | Offered 
+        { owner :: Participant
+        , selector :: Participant 
+        , picked :: Zipper (String, LocalType a)
+        , continuation :: f 
+        }
+    | Application Participant Identifier f 
+    | Spawning Location Location Location f
+
+    -- sugar
+    | Branched { continuation :: f }
+    | Assignment { owner :: Participant, continuation :: f }
+```
+
+The `Zipper` data type stores the labels and types for each option in-order. A zipper is essentially a triplet `(List a, a, List a)`. 
+The order is important in the implementation because every option comes with a condition, and the first option that evaluates to `True` is picked.
+
+The `Branched` and `Assignment` constructors are empty tags - because those operations don't influence the type. 
+
+The `TypeContext` doesn't store any program/value information, only type information
+
+## Reversing programs
+
+There are a couple of ways that information is stored 
+
+**Free Variable Stack**
+
+Bit of a misnomer, because it's actualy a stack of used variable names. When reversing a `receive` or `let`-binding, we use it to get the 
+name the programer originally used and the name that internally was assigned to the value. 
+
+**Program Stack**
+
+A stack used to store pieces of program that aren't evaluated: The remaining options in a `select` or `offer`, or the other case in an `ifThenElse`.
+
+**Application History**
+
+A map that stores the function and the argument of a function application. 
+
+**History Queue**
+
+Whenever an element is `receive`d, the element isn't acually removed from the message queue, but moved to the history queue. 
 
 ## Monitor
+
+```haskell
+data Monitor value tipe = 
+    Monitor 
+        { _localType :: LocalTypeState tipe
+        , _usedVariables :: List Binding 
+        , _store :: Map Identifier value 
+        , _recursiveVariableNumber :: Int
+        , _recursionPoints :: List (LocalType tipe)
+        , _applicationHistory :: Map Identifier (value, value)
+        }
+
+data Binding = 
+    Binding { _visibleName :: Identifier, _internalName :: Identifier } 
+```
+
+The monitor uses a type context, where the hole is substituted with a local type. To store the structure with the hole, and the value that shoudl go in the hole, 
+we use a 2-tuple to combine them.
+
+The PPDP paper omits reduction rules for recursive local types, but in the actual implementation we need to keep track of the 
+recursion points, and what the type from that point would be, so we can later return to them. The application history is also moved into
+the monitor. 
+
+The free (i.e. used) variable list is stored in the monitor. Our variables are globally unique, so technically we could store this list globally, but 
+we've chosen to follow the PPDP implementation here.
+
+## Global State 
+
+Finally we need some global state that contains all the programs and types and the queue and such.
+
+```haskell
+data ExecutionState value = 
+    ExecutionState 
+        { variableCount :: Int
+        , locationCount :: Int
+        , applicationCount :: Int
+        , participants :: Map Participant (Monitor value String)
+        , locations :: Map Location (Participant, List OtherOptions, Program value)
+        , queue :: Queue value
+        , isFunction :: value -> Maybe (Identifier, Program value)
+        }
+
+data OtherOptions  
+    = OtherSelections (Zipper (String, Value, Program Value))
+    | OtherOffers (Zipper (String, Program Value))
+    | OtherBranch Value Bool (Program Value)
+    deriving (Show, Eq)
+```
 
 ## 
 
