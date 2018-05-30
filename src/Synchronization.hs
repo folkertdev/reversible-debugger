@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables, PatternSynonyms #-}
 module Synchronization (checkSynchronizedForTransaction, checkSynchronizedForChoice) where
 
 import Control.Monad.State as State
@@ -6,8 +7,10 @@ import Control.Arrow (first, second)
 
 import Data.Fix
 
-import LocalType (LocalType, LocalTypeState, TypeContextF(Selected, Offered), Location, Participant, Identifier, Choice(..))
+import LocalType (LocalType, Location, Participant, Identifier, Choice(..))
 import qualified LocalType
+import TypeContext (TypeContext, LocalTypeState, Synchronizable(..), pattern Selected, pattern Offered)
+import qualified TypeContext
 import Session
 import Program
 import Zipper
@@ -20,10 +23,10 @@ synchronizeLocalType participant = do
     let localType = _localType monitor
         newLocalType = 
             case localType of 
-                LocalType.Unsynchronized (history, future) -> 
-                    LocalType.Synchronized (history, future)
+                TypeContext.Unsynchronized (history, future) -> 
+                    TypeContext.Synchronized (history, future)
 
-                LocalType.Synchronized {} -> 
+                TypeContext.Synchronized {} -> 
                     localType
 
     putMonitor participant (monitor { _localType = newLocalType })
@@ -42,20 +45,17 @@ participantNames context =
         ForChoice -> ("offerer", "selector") 
 
 
-type TypeState = LocalType.TypeContext String 
-
-
 {-| Check whether two types are already synchronized, and synchronize them if not -}
-checkSynchronized :: (TypeState -> TypeState -> Session Value ()) -> Participant -> Participant -> Session Value ()
+checkSynchronized :: (TypeContext String -> TypeContext String -> Session Value ()) -> Participant -> Participant -> Session Value ()
 checkSynchronized synchronizer partyA partyB = do
     wrappedA <- _localType <$> getMonitor partyA
     wrappedB <- _localType <$> getMonitor partyB
     case ( wrappedA, wrappedB) of 
-        (LocalType.Synchronized {}, LocalType.Synchronized {}) -> 
+        (TypeContext.Synchronized {}, TypeContext.Synchronized {}) -> 
             -- already synchronized
             return ()
         _ -> do
-            synchronizer (fst $ LocalType.unwrapState wrappedA) (fst $ LocalType.unwrapState wrappedB)   
+            synchronizer (fst $ TypeContext.unwrapState wrappedA) (fst $ TypeContext.unwrapState wrappedB)   
             -- if the above did not error, the types are synchronized; lets put that into the model
             synchronizeLocalType partyA  
             synchronizeLocalType partyB
@@ -64,12 +64,12 @@ checkSynchronized synchronizer partyA partyB = do
 checkSynchronizedForTransaction :: Participant -> Participant -> Session Value ()
 checkSynchronizedForTransaction sender receiver = 
     let 
-        synchronizer :: LocalType.TypeContext String 
-                     -> LocalType.TypeContext String 
+        synchronizer :: TypeContext String 
+                     -> TypeContext String 
                      -> Session Value ()
         synchronizer senderType receiverType =
-            case (unFix senderType, unFix receiverType) of 
-                (LocalType.BackwardSend sOwner expectedReceiver sType _, LocalType.BackwardReceive rOwner expectedSender rType _) -> do
+            case (senderType, receiverType) of 
+                (TypeContext.Sent sOwner expectedReceiver sType _, TypeContext.Received rOwner expectedSender rType _) -> do
                     -- owners have to be the expected owners  
                     checkOwners ForTransaction (sOwner, sender) (rOwner, receiver)
 
@@ -79,10 +79,10 @@ checkSynchronizedForTransaction sender receiver =
                     -- both parties must send a value of the same type
                     ensure (sType == rType) (SynchronizationError $ "type mismatch: sender sends " ++ sType ++ " but the receiver expects " ++ rType)
 
-                (LocalType.BackwardSend {}, other) -> 
+                (TypeContext.Sent {}, other) -> 
                     Except.throwError $ SynchronizationError $ "the receiver's previous instruction is not a Receive, but " ++ show other
 
-                (other, LocalType.BackwardReceive {}) -> 
+                (other, TypeContext.Received {}) -> 
                     Except.throwError $ SynchronizationError $ "the sender's previous instruction is not a Send, but " ++ show other
         
                 (s, r) -> 
@@ -94,12 +94,12 @@ checkSynchronizedForTransaction sender receiver =
 checkSynchronizedForChoice :: Participant -> Participant -> Session Value ()
 checkSynchronizedForChoice offerer selector = checkSynchronized synchronizer offerer selector
   where
-        synchronizer :: LocalType.TypeContext String
-                     -> LocalType.TypeContext String
+        synchronizer :: TypeContext String
+                     -> TypeContext String
                      -> Session Value ()
         synchronizer offererType selectorType =
-            case (unFix offererType, unFix selectorType) of 
-                (LocalType.Offered oOwner expectedSelector picked _, LocalType.Selected sOwner expectedOfferer selection _) -> do
+            case (offererType, selectorType) of 
+                (TypeContext.Offered oOwner expectedSelector picked _, TypeContext.Selected sOwner expectedOfferer selection _) -> do
                     -- owners have to be the expected owners
                     checkOwners ForTransaction (oOwner, offerer) (sOwner, selector)
 
@@ -120,10 +120,10 @@ checkSynchronizedForChoice offerer selector = checkSynchronized synchronizer off
                                 ++ show strippedSelection ++ "`"
 
 
-                (other, LocalType.Selected {}) ->
+                (other, TypeContext.Selected {}) ->
                     Except.throwError $ SynchronizationError $ "the offerer's previous instruction is not a Offer, but " ++ show other
 
-                (LocalType.Offered {}, other) -> 
+                (TypeContext.Offered {}, other) -> 
                     Except.throwError $ SynchronizationError $ "the selector's previous instruction is not a Select, but " ++ show other
 
                 (s, r) -> 

@@ -8,9 +8,12 @@ import Control.Monad.Except as Except
 import Control.Arrow (first, second)
 import Control.Monad.Free as Free
 
-import LocalType (LocalType, LocalTypeState, TypeContextF(Selected, Offered), Location, Participant, Identifier, Choice(..))
+import LocalType (LocalType, Location, Participant, Identifier, Choice(..))
 import qualified LocalType
 import qualified GlobalType
+
+import qualified TypeContext
+import TypeContext (TypeContext, LocalTypeState, Synchronizable(..)) 
 
 import Data.Maybe (fromMaybe)
 import Data.Map as Map (Map)
@@ -33,13 +36,13 @@ import Session
 import Synchronization (checkSynchronizedForTransaction, checkSynchronizedForChoice)
 
 
-validateLocalType :: Location -> Participant -> Monitor Value String -> Session Value (LocalType.TypeContext String, LocalType String)
+validateLocalType :: Location -> Participant -> Monitor Value String -> Session Value (TypeContext String, LocalType String)
 validateLocalType location participant monitor = 
     case _localType monitor of 
-        LocalType.Unsynchronized x -> 
+        TypeContext.Unsynchronized x -> 
             return x 
 
-        LocalType.Synchronized _ -> 
+        TypeContext.Synchronized _ -> 
             Except.throwError $ SynchronizationError $ "cannot move forward a synchronized local type: it has to take a step back first. For participant " ++ participant ++ " at location " ++ location
 
 
@@ -63,7 +66,7 @@ forward location = do
                     ( historyType, futureType ) <- validateLocalType location owner monitor
                     forwardHelper location owner monitor (historyType, futureType) program otherOptionsStack
 
-            
+forwardHelper :: Location -> Participant -> Monitor Value String -> (TypeContext String, LocalType String) -> Program Value -> List OtherOptions -> Session Value () 
 forwardHelper location owner monitor (historyType, futureType) program otherOptionsStack = do
     let setParticipantDefault location owner ( newMonitor, newProgram ) = 
             setParticipant location owner ( newMonitor, otherOptionsStack, newProgram )
@@ -73,7 +76,7 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
     case ( unFix program, unFix futureType ) of 
         ( _, LocalType.RecursionPoint rest ) ->
             let 
-                newLocalType = LocalType.createState (Fix $ LocalType.BackwardRecursionPoint historyType) rest
+                newLocalType = TypeContext.createState (TypeContext.RecursionPoint historyType) rest
                 newMonitor = 
                     monitor 
                         { _recursionPoints = rest : _recursionPoints monitor 
@@ -86,7 +89,7 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
 
         ( _, LocalType.WeakenRecursion rest ) ->
             let 
-                newLocalType = LocalType.createState (Fix $ LocalType.BackwardWeakenRecursion historyType) rest 
+                newLocalType = TypeContext.createState (TypeContext.WeakenRecursion historyType) rest 
                 newMonitor = 
                     monitor 
                         { _recursiveVariableNumber = 1 + _recursiveVariableNumber monitor 
@@ -107,7 +110,7 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
                         x:xs -> 
                             x
 
-                newLocalType = LocalType.createState (Fix $ LocalType.BackwardRecursionVariable historyType) continuationType
+                newLocalType = TypeContext.createState (TypeContext.RecursionVariable historyType) continuationType
                 newMonitor = 
                     monitor 
                         { _localType = newLocalType
@@ -155,7 +158,7 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
                                 processSelection = Zipper.map (\(label, value, process, tipe) -> (label, value, process)) selection
                                 typeSelection = Zipper.map (\(label, value, process, tipe) -> (label, tipe)) selection 
 
-                                newLocalType = LocalType.createState (LocalType.backwardSelect owner offerer typeSelection historyType) takenType
+                                newLocalType = TypeContext.createState (TypeContext.Selected owner offerer typeSelection historyType) takenType
 
                                 newMonitor = 
                                     monitor { _localType = newLocalType }  
@@ -215,7 +218,7 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
                         typeSelection = Zipper.map (\(label, process, tipe) -> (label, tipe)) selection 
 
                         newLocalType = 
-                            LocalType.createState (LocalType.backwardOffer owner selector typeSelection historyType) tipe
+                            TypeContext.createState (TypeContext.Offered owner selector typeSelection historyType) tipe
 
                         newMonitor = 
                             monitor { _localType = newLocalType }  
@@ -242,7 +245,7 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
 
                 Just (variable, body) -> do
                     k <- uniqueApplicationName
-                    let newLocalType = LocalType.createState (Fix $ LocalType.Application owner k historyType) futureType
+                    let newLocalType = TypeContext.createState (TypeContext.Application owner k historyType) futureType
                         newMonitor = 
                             monitor 
                                 { _store = Map.insert argumentName argument (_store monitor)
@@ -262,7 +265,7 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
                         |> Map.insert l2 q
                         |> Map.insert location (Fix NoOp) 
 
-            let newMonitor = monitor { _localType = LocalType.createState ( Fix $ LocalType.Spawning location l1 l2 historyType) futureType  } 
+            let newMonitor = monitor { _localType = TypeContext.createState ( TypeContext.Spawned location l1 l2 historyType) futureType  } 
 
             setParticipantDefault location owner ( newMonitor, Fix NoOp )
             setParticipantDefault l1 owner ( newMonitor, p )
@@ -271,7 +274,7 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
         (Let owner visibleName value continuation, _) -> do
             variableName <- uniqueVariableName 
 
-            let newLocalType = LocalType.createState (Fix $ LocalType.Assignment owner historyType) futureType
+            let newLocalType = TypeContext.createState (TypeContext.Assigned owner historyType) futureType
                 newMonitor = 
                     monitor 
                         { _store = Map.insert variableName (renameValue visibleName variableName value) (_store monitor)
@@ -285,12 +288,12 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
             verdict <- unsafeCastToBool <$> evaluateValue owner condition 
             
             if verdict then do
-                let newLocalType = LocalType.createState (Fix $ LocalType.Branched owner historyType) futureType
+                let newLocalType = TypeContext.createState (TypeContext.Branched owner historyType) futureType
                     newMonitor = monitor { _localType = newLocalType }  
                 
                 setParticipantWithNewStack location owner ( newMonitor, OtherBranch condition verdict elseBranch : otherOptionsStack, thenBranch )
             else do
-                let newLocalType = LocalType.createState (Fix $ LocalType.Branched owner historyType) futureType
+                let newLocalType = TypeContext.createState (TypeContext.Branched owner historyType) futureType
                     newMonitor = monitor { _localType = newLocalType }  
             
                 setParticipantWithNewStack location owner ( newMonitor, OtherBranch condition verdict thenBranch : otherOptionsStack, elseBranch )
@@ -309,7 +312,7 @@ checkAndPerformSend location participant monitor owner payload continuation =
                 ensure (owner == expectedOwner) (error $ "Send owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
                 value <- evaluateValue participant payload 
                 let newLocalTypeState = 
-                        LocalType.createState (Fix $ LocalType.BackwardSend owner target tipe historyType) continuationType
+                        TypeContext.createState (TypeContext.Sent owner target tipe historyType) continuationType
 
                 pushToQueue ( participant, target, value )
                 return (monitor { _localType = newLocalTypeState }, continuation)
@@ -330,7 +333,7 @@ checkAndPerformReceive location participant monitor owner visibleName continuati
                 variableName <- uniqueVariableName
                 let newBindings = Map.insert variableName payload $ _store monitor 
                     newLocalTypeState = 
-                        LocalType.createState (Fix $ LocalType.BackwardReceive owner sender tipe historyType) continuationType
+                        TypeContext.createState (TypeContext.Received owner sender tipe historyType) continuationType
 
                     newMonitor = monitor 
                         { _store = newBindings
@@ -363,8 +366,8 @@ backward location = do
                 Just monitor -> do
                     let ( historyType, futureType ) = 
                             case _localType monitor of 
-                                LocalType.Unsynchronized (x,y) -> (x,y)
-                                LocalType.Synchronized (x,y) -> (x,y)
+                                TypeContext.Unsynchronized (x,y) -> (x,y)
+                                TypeContext.Synchronized (x,y) -> (x,y)
 
                     backwardHelper location owner monitor (historyType, futureType) program otherOptionsStack
 
@@ -376,10 +379,10 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
         setParticipantWithNewStack ( newMonitor, newStack, newProgram) = 
             setParticipant location owner ( newMonitor, newStack, Fix newProgram )
     in
-    case fmap (unFix . fst) (_localType monitor) of 
-        LocalType.Synchronized (LocalType.BackwardSend owner receiver tipe rest) -> do
+    case fmap fst (_localType monitor) of 
+        TypeContext.Synchronized (TypeContext.Sent owner receiver tipe rest) -> do
             -- pop from the future! (not history; rolling the receive will put the action into the future)
-            let newLocalType = LocalType.Unsynchronized ( rest, Fix $ LocalType.Send owner receiver tipe futureType )
+            let newLocalType = TypeContext.Unsynchronized ( rest, Fix $ LocalType.Send owner receiver tipe futureType )
             
             payload <- removeFromQueue "BackwardSend" owner receiver 
 
@@ -388,13 +391,13 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                 , Program.Send { owner = owner, value = payload, continuation = program } 
                 )
 
-        LocalType.Unsynchronized (LocalType.BackwardSend owner receiver tipe rest) -> do
+        TypeContext.Unsynchronized (TypeContext.Sent owner receiver tipe rest) -> do
             checkSynchronizedForTransaction owner receiver
             newMonitor <- getMonitor owner
             backward location 
     
-        LocalType.Synchronized (LocalType.BackwardReceive owner sender tipe rest) -> do 
-            let newLocalType = LocalType.Unsynchronized ( rest, Fix $ LocalType.Receive owner sender tipe futureType ) 
+        TypeContext.Synchronized (TypeContext.Received owner sender tipe rest) -> do 
+            let newLocalType = TypeContext.Unsynchronized ( rest, Fix $ LocalType.Receive owner sender tipe futureType ) 
 
             _ <- rollQueueHistory "BackwardReceive" sender owner
 
@@ -409,11 +412,11 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                     error "no variable to bind"
 
     
-        LocalType.Unsynchronized (LocalType.BackwardReceive owner sender tipe rest) -> do 
+        TypeContext.Unsynchronized (TypeContext.Received owner sender tipe rest) -> do 
             checkSynchronizedForTransaction sender owner 
             backward location 
 
-        LocalType.Synchronized LocalType.Selected{ owner, offerer, selection, continuation } -> do
+        TypeContext.Synchronized (TypeContext.Selected owner offerer selection continuation) -> do
             _ <-  removeFromQueue "BackwardSelect" owner offerer 
             let types = Zipper.toList selection 
             case otherOptionsStack of 
@@ -421,7 +424,7 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
 
                     setParticipantWithNewStack
                         ( monitor 
-                            { _localType = LocalType.Unsynchronized ( continuation, LocalType.select owner offerer types )                            
+                            { _localType = TypeContext.Unsynchronized ( continuation, LocalType.select owner offerer types )                            
                             }
                         , newOtherOptionsStack 
                         , Program.Select owner (Zipper.toList programs) 
@@ -431,11 +434,11 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
 
 
 
-        LocalType.Unsynchronized LocalType.Selected{ owner, offerer } -> do
+        TypeContext.Unsynchronized (TypeContext.Selected owner offerer _ _) -> do
             checkSynchronizedForChoice offerer owner
             backward location 
 
-        LocalType.Synchronized LocalType.Offered{ owner, selector, picked, continuation } -> do
+        TypeContext.Synchronized (TypeContext.Offered owner selector picked continuation) -> do
             _ <- rollQueueHistory "BackwardOffer" selector owner
             let types = Zipper.toList picked 
             case otherOptionsStack of 
@@ -443,7 +446,7 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
 
                     setParticipantWithNewStack
                         ( monitor 
-                            { _localType = LocalType.Unsynchronized ( continuation,  LocalType.offer owner selector types )
+                            { _localType = TypeContext.Unsynchronized ( continuation,  LocalType.offer owner selector types )
                             }
                         , newOtherOptionsStack
                         , Program.Offer owner (Zipper.toList programs) 
@@ -452,20 +455,20 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                     error "backward offer failed"
 
 
-        LocalType.Unsynchronized LocalType.Offered{ owner, selector, picked, continuation } -> do
+        TypeContext.Unsynchronized (TypeContext.Offered owner selector picked continuation) -> do
             checkSynchronizedForChoice owner selector
             newMonitor <- getMonitor owner
             backward location 
 
-        LocalType.Synchronized _ -> 
+        TypeContext.Synchronized _ -> 
             error "type is synced, but the historyType instruction is not a transaction or choice"
 
-        LocalType.Unsynchronized (LocalType.Application owner k rest) ->
+        TypeContext.Unsynchronized (TypeContext.Application owner k rest) ->
             case (Map.lookup k (_applicationHistory monitor), _usedVariables monitor) of 
                 ( Just ( functionValue, argument ), Binding{_internalName}:usedVariables ) -> 
                     setParticipant_
                         ( monitor 
-                            { _localType = LocalType.Unsynchronized ( rest, futureType )
+                            { _localType = TypeContext.Unsynchronized ( rest, futureType )
                             , _store = Map.delete _internalName (_store monitor)
                             , _applicationHistory = Map.delete k (_applicationHistory monitor) 
                             , _usedVariables = usedVariables
@@ -479,16 +482,16 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                 ( _, [] ) -> 
                     error "rolling function application but not argument was bound"
 
-        LocalType.Unsynchronized (LocalType.Spawning l l1 l2 rest) | l /= location -> 
+        TypeContext.Unsynchronized (TypeContext.Spawned l l1 l2 rest) | l /= location -> 
             error "rolling someone else's spawn"
 
-        LocalType.Unsynchronized (LocalType.Spawning l l1 l2 rest) -> do
+        TypeContext.Unsynchronized (TypeContext.Spawned l l1 l2 rest) -> do
             (_, p1) <- getParticipant l1 owner
             (_, p2) <- getParticipant l2 owner
 
             case unFix program of 
                 NoOp -> do
-                    let newLocalType = LocalType.Unsynchronized ( rest, futureType )
+                    let newLocalType = TypeContext.Unsynchronized ( rest, futureType )
                     removeLocation l1
                     removeLocation l2
 
@@ -497,7 +500,7 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                 _ -> 
                     error "rolling a program that is not NoOp"
 
-        LocalType.Unsynchronized (LocalType.Assignment owner rest) -> 
+        TypeContext.Unsynchronized (TypeContext.Assigned owner rest) -> 
             case _usedVariables monitor of 
                 Binding{_visibleName, _internalName} : usedVariables -> 
                     case Map.lookup _internalName (_store monitor) of 
@@ -506,7 +509,7 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                                 newMonitor = 
                                     monitor 
                                         { _store = Map.delete _internalName (_store monitor)
-                                        , _localType = LocalType.Unsynchronized (rest, futureType)
+                                            , _localType = TypeContext.Unsynchronized (rest, futureType)
                                         , _usedVariables = usedVariables 
                                         }  
                             in            
@@ -521,10 +524,10 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                 [] -> 
                     error "rolling an assignment, but no variables are used"
 
-        LocalType.Unsynchronized (LocalType.Branched owner rest) -> 
+        TypeContext.Unsynchronized (TypeContext.Branched owner rest) -> 
             let 
                 newMonitor = 
-                    monitor { _localType = LocalType.Unsynchronized (rest, futureType) }  
+                    monitor { _localType = TypeContext.Unsynchronized (rest, futureType) }  
             in 
                 case otherOptionsStack of 
                     OtherBranch condition verdict otherBranch : rest -> 
@@ -536,11 +539,11 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                     _ -> 
                         error "no other branch"
 
-        LocalType.Unsynchronized (LocalType.BackwardRecursionPoint rest) -> 
+        TypeContext.Unsynchronized (TypeContext.RecursionPoint rest) -> 
             let
                 newMonitor = 
                     monitor 
-                        { _localType = LocalType.Unsynchronized (rest, LocalType.recurse futureType)
+                        { _localType = TypeContext.Unsynchronized (rest, LocalType.recurse futureType)
                         , _recursionPoints = drop 1 (_recursionPoints monitor)
                         }  
             in
@@ -549,11 +552,11 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                     , unFix program 
                     )
 
-        LocalType.Unsynchronized (LocalType.BackwardWeakenRecursion rest) -> 
+        TypeContext.Unsynchronized (TypeContext.WeakenRecursion rest) -> 
             let
                 newMonitor = 
                     monitor 
-                        { _localType = LocalType.Unsynchronized (rest, LocalType.broadenScope futureType) 
+                        { _localType = TypeContext.Unsynchronized (rest, LocalType.broadenScope futureType) 
                         , _recursiveVariableNumber = _recursiveVariableNumber monitor - 1
                         }  
             in
@@ -562,11 +565,11 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                     , unFix program 
                     )
 
-        LocalType.Unsynchronized (LocalType.BackwardRecursionVariable rest) -> 
+        TypeContext.Unsynchronized (TypeContext.RecursionVariable rest) -> 
             let
                 newMonitor = 
                     monitor 
-                        { _localType = LocalType.Unsynchronized (rest, LocalType.recursionVariable)
+                        { _localType = TypeContext.Unsynchronized (rest, LocalType.recursionVariable)
                         }  
             in
                 setParticipant_
@@ -574,11 +577,13 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                     , unFix program 
                     )
 
-        LocalType.Unsynchronized LocalType.Hole -> 
+        TypeContext.Unsynchronized TypeContext.Hole -> 
             return () 
 
-        LocalType.Unsynchronized (LocalType.LocalType _ _) -> 
-            error $ "satisfy the exhaustiveness checker" ++ show (unFix historyType)
+        TypeContext.Unsynchronized x -> 
+            -- satisfies exhaustiveness checker, it gets confused by pattern synonoms
+            error $ "missing pattern match for Unsynchronized: "  ++ show x 
+
 
 
 
@@ -604,7 +609,7 @@ type Type = String
 wrapLocalType :: (LocalType u -> LocalType u) -> Monitor Value u -> Monitor Value u
 wrapLocalType tagger monitor = 
     let 
-        newLocalType = LocalType.mapState (\history future -> (history, tagger future)) (_localType monitor)
+        newLocalType = TypeContext.mapState (\history future -> (history, tagger future)) (_localType monitor)
     in
         monitor { _localType =  newLocalType }
 

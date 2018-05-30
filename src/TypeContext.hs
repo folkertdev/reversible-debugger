@@ -1,5 +1,25 @@
 {-# LANGUAGE ScopedTypeVariables, DeriveGeneric, DeriveFunctor, DeriveTraversable, PatternSynonyms, DuplicateRecordFields #-}
-module TypeContext where 
+module TypeContext 
+    (TypeContext
+    , pattern Offered
+    , pattern Selected
+    , pattern Sent
+    , pattern Received
+    , pattern RecursionVariable
+    , pattern RecursionPoint 
+    , pattern WeakenRecursion 
+    , pattern Application
+    , pattern Assigned
+    , pattern Branched
+    , pattern Spawned
+    , pattern Hole
+    , LocalTypeState
+    , Synchronizable(..)
+    , unwrapState
+    , createState
+    , mapState
+    ) 
+      where 
 
 import Data.Fix
 import Zipper
@@ -12,28 +32,32 @@ import GHC.Generics
 {-| Data structure containing the information needed to roll an action -}
 type TypeContext a = Fix (TypeContextF a)
 
-data TypeContextF a f 
-    = Hole 
-    | Transaction (LocalType.Transaction a f)
-    | IRecursion (LocalType.Recursion a f)
+data TypeContextF a previous 
+    = IHole 
+    | Transaction (LocalType.Transaction a previous)
+    | IR previous  
+    | IW previous
+    | IV previous
     | ISelected 
         { owner :: Participant
         , offerer :: Participant 
         , selection :: Zipper (String, LocalType a)
-        , continuation :: f 
+            , continuation :: previous 
         }
     | IOffered 
         { owner :: Participant
         , selector :: Participant 
         , picked :: Zipper (String, LocalType a)
-        , continuation :: f 
+            , continuation :: previous 
         }
-    | IBranched { owner :: Participant, continuation :: f }
-    | IApplication Participant Identifier f 
-    | ISpawning Location Location Location f
-    | IAssignment { owner :: Participant, continuation :: f }
+    | IBranched { owner :: Participant, continuation :: previous }
+    | IApplication Participant Identifier previous 
+    | ISpawning Location Location Location previous
+    | IAssignment { owner :: Participant, continuation :: previous }
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
+pattern Hole = 
+    Fix IHole
 
 pattern Sent owner participant tipe continuation = 
     Fix (Transaction (LocalType.TSend owner participant tipe continuation))
@@ -50,21 +74,19 @@ pattern Selected owner offerer selection continuation =
 pattern Branched owner continuation = 
     Fix (IBranched owner continuation)
 
-pattern Application owner continuation = 
-    Fix (IApplication owner continuation)
+pattern Application owner k continuation = 
+    Fix (IApplication owner k continuation)
 
 pattern Assigned owner continuation = 
     Fix (IAssignment owner continuation)
 
-pattern Spawned l1 l2 l3= 
-    Fix (ISpawning l1 l2 l3)
+pattern Spawned l1 l2 l3 continuation = 
+    Fix (ISpawning l1 l2 l3 continuation)
 
-pattern Recursion a = 
-    Fix (Recursion a)
 
-pattern RecursionPoint rest = Recursion (LocalType.R rest)
-pattern WeakenRecursion rest = Recursion (LocalType.Wk rest)
-pattern RecursionVariable = Recursion LocalType.V
+pattern RecursionPoint previous = Fix (IR previous)
+pattern WeakenRecursion previous = Fix (IW previous)
+pattern RecursionVariable previous = Fix (IV previous) 
 
 -- TYPE STATE
 

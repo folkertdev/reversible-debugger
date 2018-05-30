@@ -12,7 +12,8 @@ import Semantics (forward, backward)
 import qualified Semantics
 import qualified Queue
 import Zipper (Zipper(..))
-import LocalType (LocalType(..), TypeContext) 
+import LocalType (LocalType(..))
+import qualified TypeContext
 import qualified LocalType 
 import qualified GlobalType 
 import Utils ((|>), List)
@@ -105,10 +106,10 @@ testBackward = describe "backward" $ do
                  )
                 ]
 
-            newMonitor1 = createMonitor (LocalType.backwardSend "A" "B" "unit", LocalType.end) Map.empty
+            newMonitor1 = createMonitor (TypeContext.Sent "A" "B" "unit", LocalType.end) Map.empty
             newMonitor2 = 
                 createMonitor 
-                    (LocalType.backwardReceive "B" "A" "unit", LocalType.end) 
+                    (TypeContext.Received "B" "A" "unit", LocalType.end) 
                     (Map.singleton "v0" VUnit)
                     |> Session.markVariableAsUsed "var0" "v0"
 
@@ -138,7 +139,7 @@ testBackward = describe "backward" $ do
                 ]
 
             message = "the sender's previous instruction is not a Send, but "
-            actual = "Assignment {owner = \"A\", continuation = Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"unit\", continuation = ()})) (Fix Hole))}"
+            actual = "Fix (IAssignment {owner = \"A\", continuation = Fix (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"unit\", continuation = Fix IHole}))})"
             errorMessage = Session.SynchronizationError $ message ++ actual
 
         in 
@@ -185,7 +186,7 @@ testBackward = describe "backward" $ do
                 [("A", monitor, compileAlice $ H.ifThenElse condition thenBranch elseBranch) 
                 ]
 
-            newMonitor = createMonitor (Fix . LocalType.Branched "A", localType) Map.empty
+            newMonitor = createMonitor (TypeContext.Branched "A", localType) Map.empty
             newState = executionStateWithStack Queue.empty
                 [("A", newMonitor, [ OtherBranch condition verdict (H.compile "A" elseBranch) ], compileAlice $ H.send (VInt 42))
                 ]
@@ -204,7 +205,7 @@ testBackward = describe "backward" $ do
                 ]
 
             newMonitor = (createMonitor 
-                (Fix . LocalType.Application "A" "k0" . Fix . LocalType.Assignment "A", LocalType.end) $ 
+                (TypeContext.Application "A" "k0" . TypeContext.Assigned "A", LocalType.end) $ 
                 Map.fromList [ ("v0",VFunction "var1" (Fix NoOp)),("v1",VUnit) ]
                  ) { _applicationHistory = Map.fromList [("k0",(VReference "v0",VUnit))] }  
                     |> Session.markVariableAsUsed "var0" "v0"
@@ -247,7 +248,7 @@ testBackward = describe "backward" $ do
 
             message = 
                 "the offerer's previous instruction is not a Offer, but "
-            expected = "LocalType (Recursion V) (Fix (Offered {owner = \"A\", selector = \"B\", picked = Zipper ([],(\"recurse\",Fix (Recursion V)),[(\"end\",Fix End)]), continuation = Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = ()})) (Fix (Application \"A\" \"k0\" (Fix (Assignment {owner = \"A\", continuation = Fix (LocalType (Recursion (R ())) (Fix Hole))})))))}))"
+            expected = "Fix (IV (Fix (IOffered {owner = \"A\", selector = \"B\", picked = Zipper ([],(\"recurse\",Fix (Recursion V)),[(\"end\",Fix End)]), continuation = Fix (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = Fix (IApplication \"A\" \"k0\" (Fix (IAssignment {owner = \"A\", continuation = Fix (IR (Fix IHole))})))}))})))"
         in do
             let Right base = forwardN [ 1,1,1, 2,2,2]  state
             (backwardN [ 1,2 ] =<< forwardN [ 2, 1,1 ] base) `shouldBe` Left (SynchronizationError $ message ++ expected )
@@ -264,7 +265,7 @@ testBackward = describe "backward" $ do
                 ]
 
             message = "the selector's previous instruction is not a Select, but " 
-            expected = "Application \"B\" \"k2\" (Fix (LocalType (Recursion V) (Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",Fix (Recursion V)),[(\"end\",Fix End)]), continuation = Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", tipe = \"number\", continuation = ()})) (Fix (Application \"B\" \"k1\" (Fix (Assignment {owner = \"B\", continuation = Fix (LocalType (Recursion (R ())) (Fix Hole))})))))}))))"
+            expected = "Fix (IApplication \"B\" \"k2\" (Fix (IV (Fix (ISelected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",Fix (Recursion V)),[(\"end\",Fix End)]), continuation = Fix (Transaction (TReceive {owner = \"B\", sender = \"A\", tipe = \"number\", continuation = Fix (IApplication \"B\" \"k1\" (Fix (IAssignment {owner = \"B\", continuation = Fix (IR (Fix IHole))})))}))})))))"
         in do
             let Right base = forwardN [ 1,1,1, 2,2,2]  state
             (backwardN [ 1,2 ] =<< forwardN [2,1,2] base) `shouldBe` Left (SynchronizationError $ message ++ expected)
@@ -272,7 +273,7 @@ testBackward = describe "backward" $ do
     it "assignment behaves" $ 
         let 
             monitor = createMonitor (id, LocalType.end) Map.empty
-            newMonitor = createMonitor (Fix . LocalType.Assignment "A", LocalType.end) (Map.singleton "v0" VUnit) 
+            newMonitor = createMonitor (TypeContext.Assigned "A", LocalType.end) (Map.singleton "v0" VUnit) 
                 |> Session.markVariableAsUsed "var0" "v0"
 
             state = executionState Queue.empty
@@ -394,7 +395,7 @@ testForward = describe "forward_" $ do
         let monitor = createMonitor (id, LocalType.end) Map.empty
             newMonitor = 
                 createMonitor 
-                (Fix . LocalType.Assignment "A", LocalType.end) 
+                (TypeContext.Assigned "A", LocalType.end) 
                 (Map.singleton "v0" (VFunction "var1" (Fix (Application "A" (VReference "v0") VUnit))))
                 |> Session.markVariableAsUsed "var0" "v0"
 
@@ -415,7 +416,7 @@ testForward = describe "forward_" $ do
 
             newMonitors = 
                 createMonitor 
-                (Fix . LocalType.Assignment "A", LocalType.end) 
+                (TypeContext.Assigned "A", LocalType.end) 
                 (Map.singleton "v0" (VFunction "var1" (Fix (Application "A" (VReference "v0") VUnit))))
 
             
@@ -464,7 +465,7 @@ testForward = describe "forward_" $ do
 
             aliceMonitor = 
                 let tipe = 
-                        ( LocalType.backwardSend "A" "B" "amount" . LocalType.backwardReceive "A" "B" "address"
+                        ( TypeContext.Sent "A" "B" "amount" . TypeContext.Received "A" "B" "address"
                         , LocalType.end
                         )
                 in
@@ -473,10 +474,10 @@ testForward = describe "forward_" $ do
 
             bobMonitor = 
                 let tipe = 
-                        ( LocalType.backwardReceive "B" "A" "amount" 
-                        . LocalType.backwardSend "B" "A" "address" 
-                        . LocalType.backwardSend "B" "C" "thunk" 
-                        . Fix . LocalType.Assignment "B"
+                        ( TypeContext.Received "B" "A" "amount" 
+                        . TypeContext.Sent "B" "A" "address" 
+                        . TypeContext.Sent "B" "C" "thunk" 
+                        . TypeContext.Assigned "B"
                         , LocalType.end
                         )
                 in
@@ -486,7 +487,7 @@ testForward = describe "forward_" $ do
 
             carolMonitor = 
                 let tipe = 
-                        ( Fix . LocalType.Application "C" "k0" . LocalType.backwardReceive "C" "B" "thunk"
+                        ( TypeContext.Application "C" "k0" . TypeContext.Received "C" "B" "thunk"
                         , LocalType.end 
                         )
                 in
@@ -577,13 +578,13 @@ testForward = describe "forward_" $ do
                     ]
 
             aType = 
-                (LocalType.backwardSend "A" "C" "fourtyTwo", LocalType.end)
+                (TypeContext.Sent "A" "C" "fourtyTwo", LocalType.end)
 
             bType = 
-                (Fix . LocalType.Application "B" "k0" . LocalType.backwardReceive "B" "C" "thunk", LocalType.end)
+                (TypeContext.Application "B" "k0" . TypeContext.Received "B" "C" "thunk", LocalType.end)
 
             cType = 
-                (LocalType.backwardReceive "C" "A" "fourtyTwo" . LocalType.backwardSend "C" "B" "thunk" . Fix . LocalType.Assignment "C", LocalType.end)
+                (TypeContext.Received "C" "A" "fourtyTwo" . TypeContext.Sent "C" "B" "thunk" . TypeContext.Assigned "C", LocalType.end)
 
             thunk = VFunction "var1" (Fix (Receive {owner = "C", variableName = "var2", continuation = Fix NoOp}))
 
@@ -614,7 +615,7 @@ testForward = describe "forward_" $ do
         let monitor = createMonitor (id, LocalType.send "A" "A" "unit" LocalType.end) Map.empty
             state = executionState Queue.empty [("A", monitor, compileAlice $ H.send VUnit)] 
 
-            newMonitor = createMonitor (LocalType.backwardSend "A" "A" "unit", LocalType.end) Map.empty
+            newMonitor = createMonitor (TypeContext.Sent "A" "A" "unit", LocalType.end) Map.empty
             newState = executionState 
                 (Queue.enqueue ("A", "A", VUnit) Queue.empty) 
                 [("A", newMonitor, H.terminate)]
@@ -638,10 +639,10 @@ testForward = describe "forward_" $ do
 
             state = sendReceiveProgram monitor1 monitor2
 
-            newMonitor1 = createMonitor (LocalType.backwardSend "A" "B" "unit", LocalType.end) Map.empty
+            newMonitor1 = createMonitor (TypeContext.Sent "A" "B" "unit", LocalType.end) Map.empty
             newMonitor2 = 
                 createMonitor 
-                    (LocalType.backwardReceive "B" "A" "unit", LocalType.end) 
+                    (TypeContext.Received "B" "A" "unit", LocalType.end) 
                     (Map.singleton "v0" VUnit)
                     |> Session.markVariableAsUsed "var0" "v0"
 
@@ -707,9 +708,9 @@ testForward = describe "forward_" $ do
             picked = Zipper ([],("x", LocalType.end),[("y", LocalType.end)])
             selection = Zipper ([],("x", LocalType.end),[("y", LocalType.end)])
 
-            newMonitor1 = createMonitor (Fix . LocalType.Offered "A" "B" picked, LocalType.end)    Map.empty
+            newMonitor1 = createMonitor (TypeContext.Offered "A" "B" picked, LocalType.end)    Map.empty
 
-            newMonitor2 = createMonitor (Fix . LocalType.Selected "B" "A" selection, LocalType.end) Map.empty
+            newMonitor2 = createMonitor (TypeContext.Selected "B" "A" selection, LocalType.end) Map.empty
 
             newState = executionStateWithStack
                 (Queue.enqueueHistory ("B", "A", VLabel "x") Queue.empty) 
@@ -781,10 +782,10 @@ testRenameVariable = describe "renameVariable" $ do
         in
             renamer (example "x") `shouldBe` example "y"
 
-createMonitor :: (TypeContext String -> TypeContext String , LocalType String) 
+createMonitor :: (TypeContext.TypeContext String -> TypeContext.TypeContext String , LocalType String) 
               -> Map.Map String Value -> Monitor Value String
 createMonitor (previous, localType) store = Monitor 
-            { _localType = LocalType.Unsynchronized (previous $ Fix LocalType.Hole,  localType) 
+            { _localType = TypeContext.Unsynchronized (previous $ TypeContext.Hole,  localType) 
             , _store = store 
             , _applicationHistory = Map.empty
             , _recursiveVariableNumber = 0

@@ -9,7 +9,8 @@ import Control.Arrow (first, second)
 
 import Data.Map as Map
 
-import LocalType (LocalTypeState, LocalType, Participant, Location, Identifier)
+import LocalType (LocalType, Participant, Location, Identifier)
+import TypeContext (LocalTypeState) 
 import Program (Program, terminate, Value(..), IntOperator(..))
 import Queue (Queue, QueueError)
 import qualified Queue
