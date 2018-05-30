@@ -247,7 +247,7 @@ testBackward = describe "backward" $ do
 
             message = 
                 "the offerer's previous instruction is not a Offer, but "
-            expected = "LocalType (Atom V) (Fix (Offered {owner = \"A\", selector = \"B\", picked = Zipper ([],(\"recurse\",Fix (Atom V)),[(\"end\",Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = ()})) (Fix (Application \"A\" \"k0\" (Fix (Assignment {owner = \"A\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))"
+            expected = "LocalType (Recursion V) (Fix (Offered {owner = \"A\", selector = \"B\", picked = Zipper ([],(\"recurse\",Fix (Recursion V)),[(\"end\",Fix End)]), continuation = Fix (LocalType (Transaction (TSend {owner = \"A\", receiver = \"B\", tipe = \"number\", continuation = ()})) (Fix (Application \"A\" \"k0\" (Fix (Assignment {owner = \"A\", continuation = Fix (LocalType (Recursion (R ())) (Fix Hole))})))))}))"
         in do
             let Right base = forwardN [ 1,1,1, 2,2,2]  state
             (backwardN [ 1,2 ] =<< forwardN [ 2, 1,1 ] base) `shouldBe` Left (SynchronizationError $ message ++ expected )
@@ -264,7 +264,7 @@ testBackward = describe "backward" $ do
                 ]
 
             message = "the selector's previous instruction is not a Select, but " 
-            expected = "Application \"B\" \"k2\" (Fix (LocalType (Atom V) (Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",Fix (Atom V)),[(\"end\",Fix (Atom End))]), continuation = Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", tipe = \"number\", continuation = ()})) (Fix (Application \"B\" \"k1\" (Fix (Assignment {owner = \"B\", continuation = Fix (LocalType (Atom (R ())) (Fix Hole))})))))}))))"
+            expected = "Application \"B\" \"k2\" (Fix (LocalType (Recursion V) (Fix (Selected {owner = \"B\", offerer = \"A\", selection = Zipper ([],(\"recurse\",Fix (Recursion V)),[(\"end\",Fix End)]), continuation = Fix (LocalType (Transaction (TReceive {owner = \"B\", sender = \"A\", tipe = \"number\", continuation = ()})) (Fix (Application \"B\" \"k1\" (Fix (Assignment {owner = \"B\", continuation = Fix (LocalType (Recursion (R ())) (Fix Hole))})))))}))))"
         in do
             let Right base = forwardN [ 1,1,1, 2,2,2]  state
             (backwardN [ 1,2 ] =<< forwardN [2,1,2] base) `shouldBe` Left (SynchronizationError $ message ++ expected)

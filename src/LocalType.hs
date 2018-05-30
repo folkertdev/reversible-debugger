@@ -30,11 +30,12 @@ data Choice u f
 data LocalTypeF u f 
     = Transaction (Transaction u f)
     | Choice (Choice u f)
-    | Atom (Atom f)
+    | Recursion (Recursion f)
+    | End
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 
-data Atom f = R f | V | Wk f | End
+data Recursion f = R f | V | Wk f 
     deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 
 
@@ -46,120 +47,31 @@ data Transaction u f
 
 -- PATTERNS
 
-pattern BackwardSend owner participant tipe continuation = 
-    LocalType (Transaction (TSend owner participant tipe ())) continuation
-
-pattern BackwardReceive owner participant tipe continuation = 
-    LocalType (Transaction (TReceive owner participant tipe ())) continuation
-
 pattern Send owner receiver tipe continuation = 
     Transaction (TSend owner receiver tipe continuation)
 
 pattern Receive owner sender tipe continuation = 
     Transaction (TReceive owner sender tipe continuation)
 
-pattern RecursionPoint rest = Atom (R rest)
-pattern WeakenRecursion rest = Atom (Wk rest)
-pattern RecursionVariable = Atom V
-
-pattern BackwardRecursionPoint rest = LocalType (Atom (R ())) rest
-pattern BackwardWeakenRecursion rest = LocalType (Atom (Wk ())) rest
-pattern BackwardRecursionVariable rest = LocalType (Atom V) rest 
+pattern RecursionPoint rest = Recursion (R rest)
+pattern WeakenRecursion rest = Recursion (Wk rest)
+pattern RecursionVariable = Recursion V
 
 pattern Offer  owner selector options = Choice (COffer owner selector options)
 pattern Select owner offerer  options = Choice (CSelect owner offerer options)
 
 
-
-{-| Data structure containing the information needed to roll an action -}
-type TypeContext a = Fix (TypeContextF a)
-
-data TypeContextF a f 
-    = Hole 
-    | LocalType (LocalTypeF a ()) f 
-    | Selected 
-        { owner :: Participant
-        , offerer :: Participant 
-        , selection :: Zipper (String, LocalType a)
-        , continuation :: f 
-        }
-    | Offered 
-        { owner :: Participant
-        , selector :: Participant 
-        , picked :: Zipper (String, LocalType a)
-        , continuation :: f 
-        }
-    | Branched { owner :: Participant, continuation :: f }
-    | Application Participant Identifier f 
-    | Spawning Location Location Location f
-    | Assignment { owner :: Participant, continuation :: f }
-    deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
-
-backwardSend :: Participant ->  Participant -> u -> TypeContext u -> TypeContext u 
-backwardSend owner sender tipe base = 
-    let 
-        -- local :: LocalTypeF u ()
-        local = Transaction $ TSend owner sender tipe ()
-    in
-        Fix $ LocalType local base
-
-
-backwardReceive :: Participant ->  Participant -> u -> TypeContext u 
-                -> TypeContext u 
-backwardReceive owner sender tipe base = 
-    Fix $ BackwardReceive owner sender tipe base  
-
-backwardSelect :: Participant
-               -> Participant
-               -> Zipper (String, LocalType u) 
-               -> TypeContext u 
-               -> TypeContext u
-backwardSelect owner offerer selection continuation =  
-    Fix $ Selected owner offerer selection continuation   
-
-backwardOffer :: Participant 
-              -> Participant
-              -> Zipper (String, LocalType u) 
-              -> TypeContext u 
-              -> TypeContext u
-backwardOffer owner selector picked continuation = 
-    Fix $ Offered owner selector picked continuation 
-
-
-{-| The state of a local type is 
- * the information needed to roll, the TypeContext
- * the information needed to step forward, the LocalType
--}
-type LocalTypeState u  = Synchronizable ( TypeContext u, LocalType u ) 
-
-
-data Synchronizable a = Synchronized a | Unsynchronized a deriving (Show, Eq, Functor)
-
-createState :: TypeContext u -> LocalType u -> LocalTypeState u
-createState = curry Unsynchronized 
-
-unwrapState state = 
-    case state of 
-        Unsynchronized x ->  
-            x
-
-        Synchronized x -> 
-            x
-
-mapState :: (TypeContext u -> LocalType u -> (TypeContext u, LocalType u)) -> LocalTypeState u -> LocalTypeState u 
-mapState tagger = fmap (uncurry tagger) 
-
 recurse :: LocalType a -> LocalType a 
-recurse cont = Fix . Atom $ R cont
+recurse cont = Fix . Recursion $ R cont
 
 broadenScope :: LocalType a -> LocalType a 
-broadenScope cont = Fix . Atom $ Wk cont
+broadenScope cont = Fix . Recursion $ Wk cont
 
 recursionVariable :: LocalType a
-recursionVariable = Fix $ Atom V
+recursionVariable = Fix $ Recursion V
 
 end :: LocalType a
-end = Fix $ Atom End
+end = Fix End
 
 send :: Participant ->  Participant -> u -> LocalType u -> LocalType u 
 send owner sender tipe = Fix . Transaction . TSend owner sender tipe
