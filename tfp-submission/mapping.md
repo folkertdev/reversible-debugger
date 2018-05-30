@@ -75,7 +75,8 @@ data GlobalTypeF u next
 data LocalTypeF u f 
     = Transaction (Transaction u f)
     | Choice (Choice u f)
-    | Atom (Atom f)
+    | Recursion (Recursion f) 
+    | End
 
 data Transaction u f 
     = TSend 
@@ -87,7 +88,6 @@ data Transaction u f
         { owner :: Participant , sender :: Participant
         , tipe ::  u
         , continuation :: f 
-        , names :: Maybe (Identifier, Identifier)
         } 
 
 data Choice u f 
@@ -103,15 +103,10 @@ data Choice u f
         }
 
 
-data Atom f = R f | V | Wk f | End
+data Recursion f = R f | V | Wk f 
 
 
 ```
-
-## Local Type with History 
-
-This is where I'm less sure and it looks like the paper version is simpler than what I have.
-
 
 ## Values 
 
@@ -127,6 +122,9 @@ n,n' \bnfis a,b \sbnfbar \ep{s}{p}
 V,W \bnfis & {a,b} \sbnfbar  x,y,z \sbnfbar  v, v' \sbnfbar {\abs{x}{P}}
 \end{align*}
 \end{figure}
+
+The implementation's values are much more elaborate. The main addition is operators, that can be 
+used for arithmetic and comparison. Comparison is needed to let runtime values influence choices (`select` and `if-then-else`).
 
 ```haskell
 data Value 
@@ -187,7 +185,7 @@ data ProgramF value next
 The four communication operations, `send`, `receive`, `offer` and `select` are constructors. Likewise, parallel execution, function application and 
 unit (the empty program) have their own constructors. 
 
-To create slightly more interesting examples, we've also introduced constructors for let-bindings and if-then-else statements. 
+To create more interesting examples, we've also introduced constructors for let-bindings and if-then-else statements. 
 These constructions can be reduced to function applications, so they don't add new semantics. They are purely syntactic sugar, but 
 do show how one might extend this language with new constructors.
 
@@ -210,8 +208,6 @@ recursive body = do
 Now that we've defined session types and programs that can go forward, we need to construct the memory that allows us to go backward. 
 The first step is backward types.
 
-Formal definition: 
-
 \begin{definition} 
 \added{Let $k, k', \ldots$ denote fresh name identifiers.} We define 
 \textit{type contexts} as (local) types with one hole, denoted ``$\bullet$'':
@@ -226,30 +222,42 @@ Formal definition:
 \end{figure}
 \end{definition} 
 
-Data type
+The hole is where the remaining (i.e. future) local type goes. Keeping the two structures in a tuple, we can move forward and backward though 
+the local type (as long as there are actions to perform).
+
+In the formal definition, the most outer tag is the least-recent action, and the tag closest to the hole is the most-recent action. In practice,
+we only want to look at the most-recent action: it is the first action we need to reverse. 
+Because pattern matching is more efficient at the top, we invert the type so the hole is implicit and the most-recent element is at the top.
 
 ```haskell
-data TypeContextF a f 
-    = Hole 
-    | LocalType (LocalTypeF a ()) f 
+data TypeContextF a previous 
+    = Empty 
+
+    | Transaction (LocalType.Transaction a previous)
     | Selected 
         { owner :: Participant
         , offerer :: Participant 
         , selection :: Zipper (String, LocalType a)
-        , continuation :: f 
+            , continuation :: previous 
         }
     | Offered 
         { owner :: Participant
         , selector :: Participant 
         , picked :: Zipper (String, LocalType a)
-        , continuation :: f 
+            , continuation :: previous 
         }
-    | Application Participant Identifier f 
-    | Spawning Location Location Location f
+
+    | Application Participant Identifier previous 
+    | Spawning Location Location Location previous
+
+    | R previous  
+    | Wk previous
+    | V previous
 
     -- sugar
-    | Branched { continuation :: f }
-    | Assignment { owner :: Participant, continuation :: f }
+    | Branched { owner :: Participant, continuation :: previous }
+    | Assignment { owner :: Participant, continuation :: previous }
+    deriving (Eq, Show, Generic, Functor, Foldable, Traversable)
 ```
 
 The `Zipper` data type stores the labels and types for each option in-order. A zipper is essentially a triplet `(List a, a, List a)`. 
@@ -259,9 +267,12 @@ The `Branched` and `Assignment` constructors are empty tags - because those oper
 
 The `TypeContext` doesn't store any program/value information, only type information
 
+We use pattern synonyms to give better names to the options and deal with the `Fix` wrapper.
+
 ## Reversing programs
 
-There are a couple of ways that information is stored 
+The different instructions need different information to be stored in order to be reversible. There's also a number of different places
+where it makes sense to store that data. We use four concepts:
 
 **Free Variable Stack**
 
@@ -278,7 +289,8 @@ A map that stores the function and the argument of a function application.
 
 **History Queue**
 
-Whenever an element is `receive`d, the element isn't acually removed from the message queue, but moved to the history queue. 
+Whenever an element is `receive`d, the element isn't acually removed from the message queue and voided, but moved to the history queue. 
+When reversing, we use the history queue to verify the sender, receiver and type.
 
 ## Monitor
 
@@ -370,31 +382,137 @@ data TypeContext u
     | Spawned (Location, Location, Location) (TypeContext u)
 
 
-# Questions 
+# Scratchpad 
 
-* We discussed that function recursion is equivalent to Process recursion. 
-    With that, I think the free variable store can be dropped from the monitor. Is that correct
+## 1 
 
-* Have we ever discussed configurations? What do they add 
+My work is a practical implemenation of the paper "reversible session-based concurrency"
 
-* Similarly, the evaluation and the general contexts. Are they useful in practice or 
-only used for proofs? 
+Core topics: 
 
-* In section 2.2.2: "We require auxiliary definitions for **contexts**, stores, and type contexts."
-    Which context is meant there (general or evaluation). Is this important?
+- the pi-calculus: a calculus for concurrent computation
+- session types: a type system for concurrent computation
+- reversibility
 
-* I think I've mixed up or merged "type contexts" and "local types with history". Not sure what's going on, but 
-    in the definition of monitors `H` is used, defined (in fig. 4) as "local types with history". But then in the 
-    semantics, the H is replaced by T[S] , with T being a "local type context" and S a normal local type (no history). 
 
-    Where did that `H` go? It never seems to be used in the semantics
+## 2 
 
-* I can't find any machinery for recursive local types. When passing a µ, you need to remember that point (and the remaining type) to later return to it. 
-    Does this happen anywhere? 
+The pi-calculus describes concurrent computation, much like the lambda calculus describes computation.
 
-* With the PPDP semantics, can choice ever do something interesting? I feel like there needs to be a way to have values at runtime influence the choice made,
-    but there is no mechanism for that.
+The lambda calculus at its core has two concepts 
 
-* We should go over how function creation/calling works. I'd like to turn let-bindings and ifThenElse into function applications, but I'm not sure whether we can. 
+function creation: \x -> x
+function application (\x -> x) 42 => 42
 
-* guarded vs non-guarded choice. 
+The pi-calculus defines 
+
+send: x<y>.P send value y over channel x, then run P
+receive: x(y).P receive on channel x, bind the result to y, then run P 
+parallel: P|Q run P and Q simultaneously
+
+And an extra reduction rule
+
+`x<a>.P | x(b).Q => P | Q`
+
+Now because this is math and we can make up whatever rules we like (as long as they're consistent), we can also introduce 
+choice
+
+`P + Q`
+
+We'll revisit choice later
+
+
+
+**questions**
+
+* how do pi and lambda relate: wiki says that lambda is encodable in pi, is there some intuition for that? 
+* how should choice be introduced here
+* what makes the higher-order pi-calculus special (guess: sending of processes over channels).
+
+## 3 
+
+Session types 
+
+The types we're used to (Int, String, Maybe) prevent us from doing stupid things with our data. 
+Session types prevent us from doing stupid communication. They allow us to embed protocols into our programs.
+
+A session type can express something like 
+
+"I will send you a bool, and then I expect and int from you"
+
+In the 2-party case, the types are exactly dual, but in a multi-party scenario type becomes more complex 
+
+### Static vs. Dynamic
+
+If this were a perfect world, we'd of course all use static languages with a strong, expressive type system. Alas, that's not our timeline. 
+In the RealWorld# there are systems written in different languages, and to check their communication we need dynamic, runtime session types. 
+
+(if someone can tell me more about static session types and whether the linear types in haskell can let us write them without indexed monads, please
+come talk to me after)
+
+In any case, we'll look at dynamic session types from now on
+
+
+## 4 
+
+reversibllity means that we can move backward in the execution of a program. This is convenient when some error occurs at runtime, and 
+we want to roll (undo) a full transaction.
+
+We achieve reversibility by construction by ensuring that every forward step has a corresponding backward step. We store all needed details for 
+backward steps. Storing the full previous program states takes too much memory (in theory) 
+
+This is where haskell as an implementation language really shines: because of immutability, it is very easy to undo all modifications and then test 
+that `backward . forward = identity`.
+
+## 5 
+
+Our process calculus 
+
+there is of course send and receive. There is also offer and select, for making choices at runtime and communicating one's choice to 
+other participants. Then we have function application and a NoOp, and let-bindings and ifThenElse. These last two are encodable as functions 
+and thus purely syntactic sugar. 
+
+Recursion is possible with functions: 
+
+We decouple sending and receiving by using a message queue that buffers the messages
+
+
+## 5B
+
+A DSL with the free monad
+
+## 6 
+
+our session types 
+
+The protocol is defined as a global type 
+
+<snippet>
+
+Which is then projected onto the participants 
+
+<snippet> 
+
+## 7 reversibility in types 
+
+for the types we have a dual `TypeContext` that stores all the type information we need to revert. A tuple 
+(TypeContext, LocalType) thus stores exactly where we are in the type, and we can move forward and backward with it.
+
+
+## 8 reversibility in programs
+
+We need to store a bunch of stuff 
+
+* used variable names
+* unused branches in `select`, `offer` and `if-then-else`
+* function applications: the function and the argument 
+* messages
+
+## 9 the Monitor and Synchronization
+
+the monitor stores the type and variables for a participant
+
+
+## 10 ExecutionState
+
+## 11 Conclusion
