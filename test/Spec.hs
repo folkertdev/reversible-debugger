@@ -185,7 +185,7 @@ testBackward = describe "backward" $ do
                 [("A", monitor, compileAlice $ H.ifThenElse condition thenBranch elseBranch) 
                 ]
 
-            newMonitor = createMonitor (Fix . LocalType.Branched, localType) Map.empty
+            newMonitor = createMonitor (Fix . LocalType.Branched "A", localType) Map.empty
             newState = executionStateWithStack Queue.empty
                 [("A", newMonitor, [ OtherBranch condition verdict (H.compile "A" elseBranch) ], compileAlice $ H.send (VInt 42))
                 ]

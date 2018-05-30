@@ -89,7 +89,7 @@ data TypeContextF a f
         , picked :: Zipper (String, LocalType a)
         , continuation :: f 
         }
-    | Branched { continuation :: f }
+    | Branched { owner :: Participant, continuation :: f }
     | Application Participant Identifier f 
     | Spawning Location Location Location f
     | Assignment { owner :: Participant, continuation :: f }

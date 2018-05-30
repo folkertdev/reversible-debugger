@@ -285,12 +285,12 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
             verdict <- unsafeCastToBool <$> evaluateValue owner condition 
             
             if verdict then do
-                let newLocalType = LocalType.createState (Fix $ LocalType.Branched historyType) futureType
+                let newLocalType = LocalType.createState (Fix $ LocalType.Branched owner historyType) futureType
                     newMonitor = monitor { _localType = newLocalType }  
                 
                 setParticipantWithNewStack location owner ( newMonitor, OtherBranch condition verdict elseBranch : otherOptionsStack, thenBranch )
             else do
-                let newLocalType = LocalType.createState (Fix $ LocalType.Branched historyType) futureType
+                let newLocalType = LocalType.createState (Fix $ LocalType.Branched owner historyType) futureType
                     newMonitor = monitor { _localType = newLocalType }  
             
                 setParticipantWithNewStack location owner ( newMonitor, OtherBranch condition verdict thenBranch : otherOptionsStack, elseBranch )
@@ -521,7 +521,7 @@ backwardHelper location owner monitor (historyType, futureType) program otherOpt
                 [] -> 
                     error "rolling an assignment, but no variables are used"
 
-        LocalType.Unsynchronized (LocalType.Branched rest) -> 
+        LocalType.Unsynchronized (LocalType.Branched owner rest) -> 
             let 
                 newMonitor = 
                     monitor { _localType = LocalType.Unsynchronized (rest, futureType) }  
