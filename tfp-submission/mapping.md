@@ -384,7 +384,7 @@ data TypeContext u
 
 # Scratchpad 
 
-## 1 
+## Intro 
 
 My work is a practical implemenation of the paper "reversible session-based concurrency"
 
@@ -395,20 +395,20 @@ Core topics:
 - reversibility
 
 
-## 2 
+## the pi-calculus 
 
 The pi-calculus describes concurrent computation, much like the lambda calculus describes computation.
 
 The lambda calculus at its core has two concepts 
 
-function creation: \x -> x
-function application (\x -> x) 42 => 42
+function creation: `\x -> x`
+function application `(\x -> x) 42 => 42`
 
 The pi-calculus defines 
 
-send: x<y>.P send value y over channel x, then run P
-receive: x(y).P receive on channel x, bind the result to y, then run P 
-parallel: P|Q run P and Q simultaneously
+* send: `x<y>.P` send value y over channel x, then run P
+* receive: `x(y).P` receive on channel x, bind the result to y, then run P 
+* parallel: `P|Q` run P and Q simultaneously
 
 And an extra reduction rule
 
@@ -428,24 +428,26 @@ We'll revisit choice later
 * how do pi and lambda relate: wiki says that lambda is encodable in pi, is there some intuition for that? 
 * how should choice be introduced here
 * what makes the higher-order pi-calculus special (guess: sending of processes over channels).
+    Does it need further explanation
 
-## 3 
-
-Session types 
+## Session types 
 
 The types we're used to (Int, String, Maybe) prevent us from doing stupid things with our data. 
 Session types prevent us from doing stupid communication. They allow us to embed protocols into our programs.
 
 A session type can express something like 
 
-"I will send you a bool, and then I expect and int from you"
+"I will send Bob a bool, and then I expect and int from Alice"
 
 In the 2-party case, the types are exactly dual, but in a multi-party scenario type becomes more complex 
 
-### Static vs. Dynamic
+A choice at the process level can also mean a choice between two (or more) session types. In this case, the choice
+needs to be communicated to everyone (because one of the branches might recurse and then everyone has to recurse).
+
+## Static vs. Dynamic
 
 If this were a perfect world, we'd of course all use static languages with a strong, expressive type system. Alas, that's not our timeline. 
-In the RealWorld# there are systems written in different languages, and to check their communication we need dynamic, runtime session types. 
+In the `RealWorld` there are systems written in different languages, and to check their communication we need dynamic, runtime session types. 
 
 (if someone can tell me more about static session types and whether the linear types in haskell can let us write them without indexed monads, please
 come talk to me after)
@@ -453,7 +455,7 @@ come talk to me after)
 In any case, we'll look at dynamic session types from now on
 
 
-## 4 
+## Reversibility 
 
 reversibllity means that we can move backward in the execution of a program. This is convenient when some error occurs at runtime, and 
 we want to roll (undo) a full transaction.
@@ -464,9 +466,49 @@ backward steps. Storing the full previous program states takes too much memory (
 This is where haskell as an implementation language really shines: because of immutability, it is very easy to undo all modifications and then test 
 that `backward . forward = identity`.
 
-## 5 
 
-Our process calculus 
+## our session types 
+
+The protocol is defined as a global type 
+
+```haskell
+globalType :: GlobalType.GlobalType MyParticipants MyType
+globalType = GlobalType.globalType $ do
+    GlobalType.transaction A V Title 
+    GlobalType.transaction V A Price 
+    GlobalType.transaction V B Price 
+    GlobalType.transaction A B Share 
+    GlobalType.transaction B A Ok 
+    GlobalType.transaction B V Ok 
+    GlobalType.transaction B C Share
+    GlobalType.transaction B C Thunk
+    GlobalType.transaction B V Address
+    GlobalType.transaction V B Date
+    GlobalType.end
+```
+
+We can use haskell union types to give some extra safety, typos in the member or type names 
+are compiler errors.
+
+Which is then projected onto the participants of the protocol 
+The projection contains only the actions that are relevant for the participant.
+in pseudo-code (this is all generated under the hood).
+
+```haskell
+localType :: LocalType.LocalType MyParticipants MyType
+localType = LocalType.localType $ do
+    LocalType.sendTo V Title
+    LocalType.receiveFrom V Price
+    LocalType.sendTo B Share
+    LocalType.receiveFrom B Ok
+    LocalType.end
+```
+
+The full datatype for `GlobalType` is ... Note the three constructors for recursion. R defines a recursion point, a point that we can
+jump back to. V is the recursion variable, and takes us back to a recursion point. Wk weakens the recursion, and allows us to jump to 
+less tightly-bound Rs.
+
+## Our process calculus 
 
 there is of course send and receive. There is also offer and select, for making choices at runtime and communicating one's choice to 
 other participants. Then we have function application and a NoOp, and let-bindings and ifThenElse. These last two are encodable as functions 
@@ -477,29 +519,27 @@ Recursion is possible with functions:
 We decouple sending and receiving by using a message queue that buffers the messages
 
 
-## 5B
+## A DSL with the free monad
 
-A DSL with the free monad
+Writing examples with just the data type is very tedious. We can use a free monad DSL to make the process a bit more pleasant.
 
-## 6 
+```haskell
+alice = do 
+    let share = VInt 42 
+    H.send (VString "accursedUnutterablePerformIO" )
+    price <- H.receive 
+    H.send share
+    ok <- H.receive 
+    H.terminate
+```
 
-our session types 
-
-The protocol is defined as a global type 
-
-<snippet>
-
-Which is then projected onto the participants 
-
-<snippet> 
-
-## 7 reversibility in types 
+## reversibility in types 
 
 for the types we have a dual `TypeContext` that stores all the type information we need to revert. A tuple 
 (TypeContext, LocalType) thus stores exactly where we are in the type, and we can move forward and backward with it.
 
 
-## 8 reversibility in programs
+## reversibility in programs
 
 We need to store a bunch of stuff 
 
@@ -508,11 +548,48 @@ We need to store a bunch of stuff
 * function applications: the function and the argument 
 * messages
 
-## 9 the Monitor and Synchronization
+## the Monitor and Synchronization
 
 the monitor stores the type and variables for a participant
 
+```haskell
+data Monitor value tipe = 
+    Monitor 
+        { _localType :: (TypeContext tipe, LocalType tipe)
+        , _recursiveVariableNumber :: Int
+        , _recursionPoints :: List (LocalType tipe)
+        , _store :: Map Identifier value 
+        , _usedVariables :: List Binding 
+        , _applicationHistory :: Map Identifier (value, value)
+        }
+        deriving (Show, Eq)
+```
 
-## 10 ExecutionState
+When we roll a coordinated action (send/receive, select/offer), we have to make sure that 
+both participants are synchronized: the action we want to roll is their most-recent action. 
 
-## 11 Conclusion
+Once processes are synchronized, they must first actually roll the action before they can do anything else. 
+The advantage of this approach is that rolling is decoupled. 
+
+
+## ExecutionState
+
+Finally we wrap everything into an `ExecutionState` that keeps track of all the types, programs, the queue and some counters used to generate 
+unique identifiers. 
+
+```haskell
+data ExecutionState value = 
+    ExecutionState 
+        { variableCount :: Int
+        , locationCount :: Int
+        , applicationCount :: Int
+        , participants :: Map Participant (Monitor value String)
+        , locations :: Map Location (Participant, List OtherOptions, Program value)
+        , queue :: Queue value
+        , isFunction :: value -> Maybe (Identifier, Program value)
+        }
+```
+
+## Conclusion
+
+We've seen ... 
