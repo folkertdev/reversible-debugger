@@ -66,6 +66,36 @@ forward location = do
                     ( historyType, futureType ) <- validateLocalType location owner monitor
                     forwardHelper location owner monitor (historyType, futureType) program otherOptionsStack
 
+
+evaluateSelectOption :: Participant -> (String, Value, Program Value, c) -> Session Value (String, Bool, Value, Program Value, c) 
+evaluateSelectOption owner (label, value, program, c) = do
+    evaluated <- evaluateValue owner value
+    return (label, unsafeCastToBool evaluated, value, program, c) 
+
+checkLabelHasImplemenation :: String -> List (String, Program Value) -> Session Value (Program Value)
+checkLabelHasImplemenation label options = 
+    let errorMessage = 
+            "the selector has picked label " 
+                ++ label
+                ++ " but the offerer has no implemenation for it. Perhaps you meant one of "
+                ++ show options
+    in 
+        Map.lookup label (Map.fromList options)
+            |> Maybe.map pure 
+            |> Maybe.withDefault (Except.throwError $ LabelError errorMessage) 
+
+checkLabelHasType :: Show a => String -> Map String (LocalType a) -> Session Value (LocalType a)
+checkLabelHasType label types = 
+    let errorMessage = 
+            "the selector has picked label " 
+                ++ label
+                ++ " but there is no type for it. Perhaps you meant one of "
+                ++ show types
+    in
+        Map.lookup label types 
+            |> Maybe.map pure 
+            |> Maybe.withDefault (Except.throwError $ LabelError errorMessage) 
+
 forwardHelper :: Location -> Participant -> Monitor Value String -> (TypeContext String, LocalType String) -> Program Value -> List OtherOptions -> Session Value () 
 forwardHelper location owner monitor (historyType, futureType) program otherOptionsStack = do
     let setParticipantDefault location owner ( newMonitor, newProgram ) = 
@@ -130,33 +160,27 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
         (Select owner options, _) -> 
             case unFix futureType of 
                 LocalType.Select expectedOwner offerer types -> do
-                    ensure (owner == expectedOwner) (error $ "Select owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
-
-                    let f :: (String, Value, Program Value, c) -> Session Value (String, Bool, Value, Program Value, c) 
-                        f (label, value, program, c) = do
-                            evaluated <- evaluateValue owner value
-                            return (label, unsafeCastToBool evaluated, value, program, c) 
+                    ensure (owner == expectedOwner) (ChoiceError $ InvalidOwner Session.S owner expectedOwner)
                     
-                        options_ = -- List.zipWith (\(a,b) c -> (a,b,c)) options types
-                            options
-                                |> List.map (\(l, v, p) -> (\t -> (l, v,p,t)) <$> Map.lookup l types)
-                                |> Maybe.catMaybes
+                    -- evaluate all the conditions
+                    evaluated <- 
+                        options
+                            |> List.map (\(l, v, p) -> (\t -> (l, v,p,t)) <$> Map.lookup l types)
+                            |> Maybe.catMaybes
+                            |> mapM (evaluateSelectOption owner) 
 
-                    evaluated :: List (String, Bool, Value, Program Value, LocalType String) <- mapM f options_
+                    -- break the list at the first position where the condition is True
                     case break (\(_, condition, _, _,_) -> condition) evaluated of 
                         (notTaken, []) -> 
                             -- there are no valid options, now what?
                             undefined
 
                         (notTaken, taken@(takenLabel, _, takenCondition, takenProgram, takenType):alsoNotTaken) -> 
-                            -- v is likely broken, fix later
-
                             let 
-                                f (l, a,b,c,d) = (l, b,c,d)
-                                selection = Zipper.fromSegments (f <$> notTaken) (f taken) (f <$> alsoNotTaken)
+                                selection = Zipper.fromSegments notTaken taken alsoNotTaken
 
-                                processSelection = Zipper.map (\(label, value, process, tipe) -> (label, value, process)) selection
-                                typeSelection = Zipper.map (\(label, value, process, tipe) -> (label, tipe)) selection 
+                                processSelection = Zipper.map (\(label, _, value, process, tipe) -> (label, value, process)) selection
+                                typeSelection = Zipper.map (\(label, _, value, process, tipe) -> (label, tipe)) selection 
 
                                 newLocalType = TypeContext.createState (TypeContext.Selected owner offerer typeSelection historyType) takenType
 
@@ -171,39 +195,17 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
                                     ) 
 
                 _ -> 
-                    error $ "Select for owner " ++ owner ++ " needs a LocalType.Select, but got " ++ show (unFix futureType)
+                    Except.throwError $ ChoiceError $ NotChoiceInstruction Session.S owner futureType
 
         (Offer owner options, _) -> 
             case unFix futureType of 
                 LocalType.Offer expectedOwner selector types -> do
-                    ensure (owner == expectedOwner) (error $ "Offer: owners don't match: got " ++ owner ++ " but the type expects " ++ expectedOwner)
-
+                    ensure (owner == expectedOwner) (ChoiceError $ InvalidOwner Session.O owner expectedOwner)
                     label <- popLabelFromQueue "Offer" selector owner
 
-                    let checkLabelHasImplemenation = 
-                            let errorMessage = 
-                                    "the selector has picked label " 
-                                        ++ label
-                                        ++ " but the offerer has no implemenation for it. Perhaps you meant one of "
-                                        ++ show options
-                            in 
-                                Map.lookup label (Map.fromList options)
-                                    |> Maybe.map pure 
-                                    |> Maybe.withDefault (Except.throwError $ LabelError errorMessage) 
 
-                        checkLabelHasType = 
-                            let errorMessage = 
-                                    "the selector has picked label " 
-                                        ++ label
-                                        ++ " but there is no type for it. Perhaps you meant one of "
-                                        ++ show types
-                            in
-                                Map.lookup label types 
-                                    |> Maybe.map pure 
-                                    |> Maybe.withDefault (Except.throwError $ LabelError errorMessage) 
-
-                    program <- checkLabelHasImplemenation 
-                    tipe <- checkLabelHasType 
+                    program <- checkLabelHasImplemenation label options
+                    tipe <- checkLabelHasType label types
 
                     let 
                         combined = 
@@ -231,7 +233,7 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
 
 
                 _ -> 
-                    error $ "Offer needs a LocalType.Offer, but got " ++ show (unFix futureType)
+                    Except.throwError $ ChoiceError $ NotChoiceInstruction Session.O owner futureType
         
         (Application owner unevaluatedFunctionValue argument, _) -> do
             argumentName <- uniqueVariableName 

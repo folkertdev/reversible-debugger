@@ -88,7 +88,28 @@ data Error
     | SynchronizationError String
     | LabelError String
     | QueueError String Queue.QueueError
-    deriving (Eq, Show)
+    | ChoiceError ChoiceError
+    deriving (Show)
+
+data Choice = S | O 
+
+instance Show Choice where 
+    show S = "Select"
+    show O = "Offer"
+
+data ChoiceError 
+    = InvalidOwner { choice :: Choice,  got :: Participant, expected :: Participant } 
+    | NotChoiceInstruction { choice :: Choice, owner :: Participant, localType :: LocalType String } 
+
+instance Show ChoiceError where
+    show e = 
+        case e of 
+            InvalidOwner { choice, got, expected } -> 
+                show choice ++ "'s owners don't match: got " ++ got ++ " but the type expects " ++ expected 
+
+            NotChoiceInstruction { choice, owner, localType } ->  
+                show choice ++ " for owner " ++ owner ++ " needs a LocalType." ++ show choice ++ ", but got " ++ show localType
+
 
 
 ensure condition error = 

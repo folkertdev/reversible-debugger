@@ -3,7 +3,8 @@ module Examples.ThreeBuyer where
 
 import Control.Monad.State as State
 
-import LocalType (LocalType, LocalTypeState, Location, Participant, Identifier, Transaction(..))
+import LocalType (LocalType, Location, Participant, Identifier, Transaction(..))
+import qualified TypeContext 
 import qualified LocalType
 import qualified GlobalType
 
@@ -106,7 +107,7 @@ constructExecutionState :: List (Participant, H.HighLevelProgram ()) -> Executio
 constructExecutionState programs_ = 
     let (participants, programs) = List.unzip programs_
         createMonitor participant = Monitor 
-            { _localType = LocalType.Unsynchronized (Fix LocalType.Hole, localTypes Map.! participant)
+            { _localType = TypeContext.Unsynchronized (TypeContext.Hole, localTypes Map.! participant)
             , _store = Map.empty
             , _applicationHistory = Map.empty
             , _recursiveVariableNumber = 0
