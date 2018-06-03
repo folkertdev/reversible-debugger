@@ -1,0 +1,648 @@
+\documentclass[12pt]{beamer}
+
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{fancyvrb}
+\usepackage{stmaryrd}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+% use upquote if available, for straight quotes in verbatim environments
+
+\newcommand{\hideFromPandoc}[1]{#1}
+\hideFromPandoc{ \let\Begin\begin \let\End\end }
+\input{macrosCR}
+
+% lncs 
+\usepackage{makeidx}
+\institute{University of Groningen, The Netherlands, \\ \texttt{}}
+
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[utf8]{inputenc}
+\else % if luatex or xelatex
+  \ifxetex
+    \usepackage{mathspec}
+    \usepackage{xltxtra,xunicode}
+  \else
+    \usepackage{fontspec}
+  \fi
+  \defaultfontfeatures{Mapping=tex-text,Scale=MatchLowercase}
+  \newcommand{\euro}{€}
+\fi
+% use microtype if available
+\IfFileExists{microtype.sty}{\usepackage{microtype}}{}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}, formatcom=%
+{\linespread{0.9}\normalfont\ttfamily\fontsize{9}{1}\selectfont}}
+
+\newenvironment{Shaded}{}{}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.56,0.13,0.00}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.53,0.00,0.00}{#1}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.73,0.40,0.53}{#1}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textit{#1}}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.73,0.13,0.13}{\textit{#1}}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.02,0.16,0.49}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.10,0.09,0.49}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.40,0.40,0.40}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.74,0.48,0.00}{#1}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.49,0.56,0.16}{#1}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\hypersetup{breaklinks=true,
+            bookmarks=true,
+            pdfauthor={Folkert de Vries Jorge A. Pérez},
+            pdftitle={Reversible Session-Based Concurrency in Haskell},
+            colorlinks=true,
+            citecolor=blue,
+            urlcolor=blue,
+            linkcolor=magenta,
+            pdfborder={0 0 0}}
+\urlstyle{same}  % don't use monospace font for urls
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\setcounter{secnumdepth}{5}
+
+% ================
+% math stuff 
+
+% ==============
+
+%%%--- Instead of ru/rug style:
+\setbeamersize{text margin left=1em,text margin right=1em}
+%\usecolortheme{whale} %% blue
+%\usecolortheme{crane} %% yellow
+%\usecolortheme{wolverine} 
+\usecolortheme{spruce} %% green
+%\usecolortheme[RGB={204,0,0}]{structure}
+%\usecolortheme{orchid}
+\setbeamertemplate{navigation symbols}{}
+
+\defbeamertemplate*{footline}{ru theme}{%
+  \leavevmode%
+  \hbox{%
+  \begin{beamercolorbox}[wd=.4\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+    \usebeamerfont{author in head/foot}\insertshortauthor
+  \end{beamercolorbox}%
+  %\begin{beamercolorbox}[wd=.25\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+   % \usebeamerfont{author in head/foot}\insertshortdate
+  %\end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.53\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
+    \usebeamerfont{title in head/foot}\textcolor{white}{\insertshorttitle}
+  \end{beamercolorbox}%
+   \begin{beamercolorbox}[wd=0.07\paperwidth,ht=2.25ex,dp=1ex,right]{title in head/foot}%
+     {\textcolor{white}{\insertframenumber{} / \inserttotalframenumber}}\hspace*{2ex} 
+  \end{beamercolorbox}}%
+  \vskip0pt%
+}
+%%%---
+
+
+
+\mode<presentation>
+{
+  %\usetheme{Madrid}
+  % or ...
+  %\usetheme[fontPath=Fonts/, imagesPath=Images/, titleHeight=1.45cm]{IMT}
+
+
+  %\setbeamercovered{transparent}
+  % or whatever (possibly just delete it)
+}
+\AtBeginSection[] { 
+  \begin{frame}[plain] 
+    \frametitle{Roadmap} 
+    \tableofcontents[currentsection] 
+  \end{frame} 
+  \addtocounter{framenumber}{-1}
+  } 
+
+\title[Reversible Session-Based Concurrency]{Reversible Session-Based Concurrency}
+\subtitle{An implementation in Haskell}
+\author[de Vries \& P\'{e}rez]{Folkert de Vries (University of Groningen, NL)\\ 	
+Jorge A. P\'{e}rez  (University of Groningen, NL)}
+\date[June 11, 2018]
+{
+TFP 2018\\ G\"{o}teborg, Sweden
+\\
+June 11, 2018
+}
+
+\usepackage[english]{babel}
+%\usepackage{geometry}
+%\geometry{paperwidth=\the\paperwidth,   paperheight=\the\paperheight,   hmargin=1cm,   vmargin=0cm,   head=0cm, headsep=0pt,foot=0cm}
+\makeindex
+
+\begin{document}
+
+%\bluetrue
+%\begin{firstframe}
+%
+%\hspace{2.5cm} A customized first frame.
+%
+%\vspace{4.6cm}
+%
+%\hspace{2.5cm} In the next frame there will be a standard one.
+%\end{firstframe}
+
+%\maketitle
+
+\begin{frame}
+
+\begin{center}
+\maketitle
+\end{center}
+
+\end{frame}
+
+
+\begin{frame}
+\frametitle{Problem}
+\begin{center}
+
+    \LARGE{Concurrency is hard}
+
+% Normal programming is also hard, but we've worked to build good tools and systems
+% To make it less error-prone. Solutions like garbage collection, type systems and 
+% precise data specifications (ADTs, GADTs)
+
+% and we're working on new solutions. Linear types, borrow checkers, dependent types
+
+% So, can we do the same thing for concurrency, can we just make somthing simple, sane and elegant. 
+
+\end{center}
+\end{frame}
+
+
+\section{Core Concepts: The pi-calculus, session types and reversibility}
+%%%% =======================================================
+
+
+\begin{frame}
+\frametitle{Core Concepts}
+\begin{center}
+
+    % It's early days, there is a lot of theory around concurrent systems, but it's not very practical yet.
+
+\begin{itemize}
+    \item the pi-calculus: a calculus for concurrent computation
+    \item session types: a type system for concurrent computation
+    \item reversibility
+\end{itemize}
+
+
+\end{center}
+\end{frame}
+
+%%%% =======================================================
+
+\begin{frame}
+\frametitle{The pi-calculus}
+
+The lambda calculus at its core has two concepts
+
+\begin{enumerate}
+\tightlist
+\item
+function creation: \texttt{\textbackslash{}x\ -\textgreater{}\ x}
+\item
+function application: \texttt{f x}
+\item
+reduction: \texttt{(\textbackslash{}x\ -\textgreater{}\ x)\ 42\ =\textgreater{}\ 42} \\
+\end{enumerate}
+
+The pi-calculus defines
+
+\begin{enumerate}
+\tightlist
+\item
+  send: \texttt{$\bar{x}$\textless{}y\textgreater{}.P} send value y over channel
+  x, then run P
+\item
+  receive: \texttt{x(y).P} receive on channel x, bind the result to y,
+  then run P
+\item
+  parallel: \texttt{P\textbar{}Q} run P and Q simultaneously
+\item reduction: \texttt{$\bar{x}$\textless{}a\textgreater{}.P\ \textbar{}\ x(b).Q\ =\textgreater{}\ P\ \textbar{}\ Q}
+\end{enumerate}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Session Types}
+
+\begin{center}
+    \textbf{Data types} prevent us from making stupid mistakes with \textbf{data}. \linebreak 
+
+    \textbf{Session types} prevent stupid mistakes in \textbf{communication}.  
+\end{center}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Session Types}
+
+
+“I will send Bob a \texttt{Bool}, and then I expect and \texttt{Int} from Alice”
+
+\begin{itemize}
+    \item protocols become code
+    \item we introduce ordering of communication
+    \item messages are typed
+\end{itemize}
+
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Session Types: Static vs. Dynamic}
+
+\begin{center}
+\includegraphics[scale=0.120]{img/runtime-vs-compile-time-errors.png}
+\end{center}
+\end{frame}
+
+\begin{frame}
+\frametitle{Session Types: Static vs. Dynamic}
+\begin{center}
+
+    \Large{We will always need dynamic session types}
+
+\end{center}
+Because \texttt{RealWorld} systems are: 
+
+
+\begin{itemize}
+    \item opaque
+    \item written in multiple languages
+\end{itemize}
+    % Of course we'd like everything to be statically types... 
+    % 
+    % But the real world is complex, systems are written in multiple languages, so 
+    % we also need dynamic, runtime session type checking in practice.
+
+\end{frame}
+
+
+\begin{frame}
+\frametitle{Reversibility}
+
+\begin{center}
+    \Large{Goal: recover from errors}
+
+
+    
+\end{center}
+
+\end{frame}
+
+
+\begin{frame}
+\frametitle{Reversibility}
+
+\begin{center}
+    \Large{\texttt{backward $\circ$ forward $\approx$ identity}}
+\end{center}
+
+\textbf{Causal Consistency}: Any point we can reach (by going forward and backward) we can also reached by 
+only going forward from the beginning
+
+% reversibllity means that we can move backward in the execution of a program.
+% This is convenient when some error occurs at runtime, and we want to roll (undo)
+% a full transaction.
+% We achieve reversibility by construction by ensuring that every forward step has
+% a corresponding backward step. We store all needed details for backward steps.
+% Storing the full previous program states takes too much memory (in theory)
+% This is where haskell as an implementation language really shines: because of
+% immutability, it is very easy to undo all modifications and then test that 
+% 
+
+\begin{center}
+\includegraphics[scale=0.40]{causal-consistency.pdf}
+\end{center}
+
+\end{frame}
+
+
+
+
+\begin{frame}
+\frametitle{Reversibility}
+
+
+\begin{center}
+    \Large{Leave behind a trail of breadcrumbs} 
+    \begin{center}
+        \includegraphics[scale=0.200]{img/breadcrumbs.jpg}
+    \end{center}
+So we can always find our way back
+\end{center}
+\end{frame}
+
+
+
+\begin{frame}[fragile]
+\frametitle{Problem}
+These three things are cool, can we let them work together in a nice way
+
+in theory: yes, in practice? tbd
+\end{frame}
+
+
+\section{Moving Forward}
+
+\begin{frame}[fragile]
+\frametitle{Implementing Session Types: Global and Local}
+
+\begin{center}
+\includegraphics[scale=1.05]{figmodel}
+\end{center}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Running Example: A Three-Buyer Protocol}
+
+Alice ($\mathtt{A}$), Bob ($\mathtt{B}$), and Carol ($\mathtt{C}$) interact with a Vendor Vendor ($\mathtt{V}$) :
+\begin{align*}
+G = ~&  \gtcom{A}{\texttt{V}}{\mathsf{title}}{~~\gtcom{\mathtt{V}}{\{A,B\}}{\mathsf{price}}{\\[-0.5mm] 
+ & \quad\gtcom{A}{B}{\mathsf{share}}{~~\gtcom{B}{\{A,\mathtt{V}\}}{\mathsf{OK}}{
+ \\[-0.5mm]
+ & \quad\quad \gtcom{B}{C}{\mathsf{share}}{~~\gtcom{B}{C}{\textcolor{blue}{\thunkt}}{
+ \\[-0.5mm]
+ & \quad\qquad \gtcom{B}{\mathtt{V}}{\mathsf{address}}{~~\gtcom{\mathtt{V}}{B}{\mathsf{date}}{\gend}}}}}}}}
+\end{align*}
+where $\textcolor{blue}{\thunkt}$ is a \textbf{thunk process}: a type (\texttt{() -> Process}).  \\
+Bob sends Carol some code with the protocol; she must activate it.
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Implementing Session Types: Definition}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{type} \DataTypeTok{GlobalType}\NormalTok{ u }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{GlobalTypeF}\NormalTok{ u)}
+
+\KeywordTok{data} \DataTypeTok{GlobalTypeF}\NormalTok{ u next}
+    \FunctionTok{=} \DataTypeTok{Transaction} 
+\NormalTok{        \{}\OtherTok{ from ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ to ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ tipe ::}\NormalTok{ u}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{  next }
+\NormalTok{        \} }
+    \FunctionTok{|} \DataTypeTok{Choice} 
+\NormalTok{        \{}\OtherTok{ from ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ to ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ options ::} \DataTypeTok{Map} \DataTypeTok{String}\NormalTok{ next }
+\NormalTok{        \}}
+    \FunctionTok{|} \DataTypeTok{RecursionPoint}\NormalTok{ next}
+    \FunctionTok{|} \DataTypeTok{RecursionVariable}
+    \FunctionTok{|} \DataTypeTok{WeakenRecursion}\NormalTok{ next}
+    \FunctionTok{|} \DataTypeTok{End}
+    \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Functor}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Implementing Session Types: Use}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{globalType ::} \DataTypeTok{GlobalType.GlobalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
+\NormalTok{globalType }\FunctionTok{=}\NormalTok{ GlobalType.globalType }\FunctionTok{$} \KeywordTok{do}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{A} \DataTypeTok{Ok} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{V} \DataTypeTok{Ok} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{C} \DataTypeTok{Share}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{C} \DataTypeTok{Thunk}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{V} \DataTypeTok{Address}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Date}
+\NormalTok{    GlobalType.end}
+\end{Highlighting}
+\end{Shaded}
+
+Derived local type for $A$:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{localType ::} \DataTypeTok{LocalType.LocalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
+\NormalTok{localType }\FunctionTok{=}\NormalTok{ LocalType.localType }\FunctionTok{$} \KeywordTok{do}
+\NormalTok{    LocalType.sendTo }\DataTypeTok{V} \DataTypeTok{Title}
+\NormalTok{    LocalType.receiveFrom }\DataTypeTok{V} \DataTypeTok{Price}
+\NormalTok{    LocalType.sendTo }\DataTypeTok{B} \DataTypeTok{Share}
+\NormalTok{    LocalType.receiveFrom }\DataTypeTok{B} \DataTypeTok{Ok}
+\NormalTok{    LocalType.end}
+\end{Highlighting}
+\end{Shaded}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Implementing the Process Calculus: Definition}
+
+Make a constructor for everything that we're interested in
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{ProgramF}\NormalTok{ value next }
+    \CommentTok{-- passing messages}
+    \FunctionTok{=} \DataTypeTok{Send}\NormalTok{ \{..\}}
+    \FunctionTok{|} \DataTypeTok{Receive}\NormalTok{ \{..\}}
+    \FunctionTok{|} \DataTypeTok{Parallel}\NormalTok{ next next }
+    \CommentTok{-- choice}
+    \FunctionTok{|} \DataTypeTok{Offer} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, next))}
+    \FunctionTok{|} \DataTypeTok{Select} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, value, next))}
+
+    \FunctionTok{|} \DataTypeTok{Application} \DataTypeTok{Participant} \DataTypeTok{Identifier}\NormalTok{ value}
+    \FunctionTok{|} \DataTypeTok{NoOp}
+
+
+    \CommentTok{-- syntactic sugar for better examples}
+    \FunctionTok{|} \DataTypeTok{Let} \DataTypeTok{Participant} \DataTypeTok{Identifier}\NormalTok{ value next }
+    \FunctionTok{|} \DataTypeTok{IfThenElse} \DataTypeTok{Participant}\NormalTok{ value next next}
+\end{Highlighting}
+\end{Shaded}
+
+Improvements over the standard pi calculus:
+\begin{itemize}
+    \item We can send part of a session over a channel
+    \item Communication is decoupled with a queue
+\end{itemize}
+
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Implementing the Process Calculus: Use}
+Then use the \texttt{Free} monad to get nice syntax for free: 
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{bob }\FunctionTok{=} \KeywordTok{do} 
+\NormalTok{    thunk }\OtherTok{<-} 
+\NormalTok{        H.function }\FunctionTok{$}\NormalTok{ \textbackslash{}_ }\OtherTok{->} \KeywordTok{do}
+\NormalTok{            H.send (}\DataTypeTok{VString} \StringTok{"accursedUnutterablePerformIO"}\NormalTok{)}
+\NormalTok{            d }\OtherTok{<-}\NormalTok{ H.receive}
+\NormalTok{            H.terminate}
+
+\NormalTok{    price }\OtherTok{<-}\NormalTok{ H.receive }
+\NormalTok{    share }\OtherTok{<-}\NormalTok{ H.receive }
+\NormalTok{    H.send (}\DataTypeTok{VBool} \DataTypeTok{True}\NormalTok{)}
+\NormalTok{    H.send (}\DataTypeTok{VBool} \DataTypeTok{True}\NormalTok{)}
+\NormalTok{    H.send share}
+\NormalTok{    H.send thunk }
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{carol }\FunctionTok{=} \KeywordTok{do} 
+\NormalTok{    h }\OtherTok{<-}\NormalTok{ H.receive }
+\NormalTok{    code }\OtherTok{<-}\NormalTok{ H.receive }
+\NormalTok{    H.applyFunction code }\DataTypeTok{VUnit}
+\end{Highlighting}
+\end{Shaded}
+
+\end{frame}
+
+\section{Moving Backward}
+
+\begin{frame}[fragile]
+\frametitle{Adding Reversibility: Types}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{TypeContextF}\NormalTok{ a previous }
+    \FunctionTok{=} \DataTypeTok{Empty} 
+
+    \FunctionTok{|} \DataTypeTok{Transaction}\NormalTok{ (}\DataTypeTok{LocalType.Transaction}\NormalTok{ a previous)}
+    \FunctionTok{|} \DataTypeTok{Selected} 
+\NormalTok{        \{}\OtherTok{ owner ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ offerer ::} \DataTypeTok{Participant} 
+\NormalTok{        ,}\OtherTok{ selection ::} \DataTypeTok{Zipper}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, }\DataTypeTok{LocalType}\NormalTok{ a)}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ previous }
+\NormalTok{        \}}
+    \FunctionTok{|} \DataTypeTok{Offered} 
+\NormalTok{        \{}\OtherTok{ owner ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ selector ::} \DataTypeTok{Participant} 
+\NormalTok{        ,}\OtherTok{ picked ::} \DataTypeTok{Zipper}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, }\DataTypeTok{LocalType}\NormalTok{ a)}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ previous }
+\NormalTok{        \}}
+
+    \FunctionTok{|} \DataTypeTok{Application} \DataTypeTok{Participant} \DataTypeTok{Identifier}\NormalTok{ previous }
+    \FunctionTok{|} \DataTypeTok{Spawning} \DataTypeTok{Location} \DataTypeTok{Location} \DataTypeTok{Location}\NormalTok{ previous}
+
+    \FunctionTok{|} \DataTypeTok{R}\NormalTok{ previous  }
+    \FunctionTok{|} \DataTypeTok{Wk}\NormalTok{ previous}
+    \FunctionTok{|} \DataTypeTok{V}\NormalTok{ previous}
+
+    \CommentTok{-- sugar}
+    \FunctionTok{|} \DataTypeTok{Branched}\NormalTok{ \{}\OtherTok{ owner ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ continuation ::}\NormalTok{ previous \}}
+    \FunctionTok{|} \DataTypeTok{Assignment}\NormalTok{ \{}\OtherTok{ owner ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ continuation ::}\NormalTok{ previous \}}
+\end{Highlighting}
+\end{Shaded}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Adding Reversibility: Processes}
+
+We also need to store
+
+\begin{itemize}
+    \item used variable names
+    \item unused branches in select, offer and if-then-else
+    \item function applications: the function and the argument
+    \item message values
+\end{itemize}
+
+All of these have their own stack
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{The Monitor and Synchronization}
+
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{Monitor}\NormalTok{ value tipe }\FunctionTok{=} 
+    \DataTypeTok{Monitor} 
+\NormalTok{        \{}\OtherTok{ \_localType ::} \NormalTok{( }\DataTypeTok{TypeContext}\NormalTok{ tipe,}\DataTypeTok{ LocalType}\NormalTok{ tipe )}
+\NormalTok{        ,}\OtherTok{ \_recursiveVariableNumber ::} \DataTypeTok{Int}
+\NormalTok{        ,}\OtherTok{ \_recursionPoints ::} \DataTypeTok{List}\NormalTok{ (}\DataTypeTok{LocalType}\NormalTok{ tipe)}
+\NormalTok{        ,}\OtherTok{ \_usedVariables ::} \DataTypeTok{List} \DataTypeTok{Binding} 
+\NormalTok{        ,}\OtherTok{ \_applicationHistory ::} \DataTypeTok{Map} \DataTypeTok{Identifier}\NormalTok{ (value, value)}
+\NormalTok{        ,}\OtherTok{ \_store ::} \DataTypeTok{Map} \DataTypeTok{Identifier}\NormalTok{ value }
+\NormalTok{        \}}
+
+\KeywordTok{data} \DataTypeTok{Binding} \FunctionTok{=} 
+    \DataTypeTok{Binding}\NormalTok{ \{}\OtherTok{ \_visibleName ::} \DataTypeTok{Identifier}\NormalTok{,}\OtherTok{ _internalName ::} \DataTypeTok{Identifier}\NormalTok{ \} }
+\end{Highlighting}
+\end{Shaded}
+
+\end{frame}
+
+
+
+
+\begin{frame}[fragile]
+\frametitle{ExecutionState}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{ExecutionState}\NormalTok{ value }\FunctionTok{=} 
+    \DataTypeTok{ExecutionState} 
+\NormalTok{        \{}\OtherTok{ variableCount ::} \DataTypeTok{Int}
+\NormalTok{        ,}\OtherTok{ locationCount ::} \DataTypeTok{Int}
+\NormalTok{        ,}\OtherTok{ applicationCount ::} \DataTypeTok{Int}
+\NormalTok{        ,}\OtherTok{ queue ::} \DataTypeTok{Queue}\NormalTok{ value}
+\NormalTok{        ,}\OtherTok{ participants ::} \DataTypeTok{Map} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{Monitor}\NormalTok{ value }\DataTypeTok{String}\NormalTok{)}
+\NormalTok{        ,}\OtherTok{ locations ::} \DataTypeTok{Map} \DataTypeTok{Location}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{List} \DataTypeTok{OtherOptions}\NormalTok{, }\DataTypeTok{Program}\NormalTok{ value)}
+\NormalTok{        ,}\OtherTok{ isFunction ::}\NormalTok{ value }\OtherTok{->} \DataTypeTok{Maybe}\NormalTok{ (}\DataTypeTok{Identifier}\NormalTok{, }\DataTypeTok{Program}\NormalTok{ value)}
+\NormalTok{        \}}
+\end{Highlighting}
+\end{Shaded}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Conclusion}
+\end{frame}
+
+\end{document}

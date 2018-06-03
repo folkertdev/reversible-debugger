@@ -531,6 +531,26 @@ alice = do
     H.send share
     ok <- H.receive 
     H.terminate
+
+bob = do 
+    thunk <- 
+        H.function $ \_ -> do
+            H.send (VString "Lucca, 55100")
+            d <- H.receive
+            H.terminate
+
+    price <- H.receive 
+    share <- H.receive 
+    H.send (VBool True)
+    H.send (VBool True)
+    H.send share
+    H.send thunk 
+
+
+carol = do 
+    h <- H.receive 
+    code <- H.receive 
+    H.applyFunction code VUnit
 ```
 
 ## reversibility in types 
