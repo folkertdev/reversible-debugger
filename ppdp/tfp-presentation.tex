@@ -4,6 +4,7 @@
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{fancyvrb}
+\usepackage{transparent}
 \usepackage{stmaryrd}
 \usepackage{amssymb,amsmath}
 \usepackage{ifxetex,ifluatex}
@@ -74,6 +75,7 @@
 \newcommand{\WarningTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
 \newcommand{\AlertTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
 \newcommand{\ErrorTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\OutOfFocus}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
 \newcommand{\NormalTok}[1]{#1}
 \hypersetup{breaklinks=true,
             bookmarks=true,
@@ -136,13 +138,14 @@
   %\setbeamercovered{transparent}
   % or whatever (possibly just delete it)
 }
-\AtBeginSection[] { 
-  \begin{frame}[plain] 
-    \frametitle{Roadmap} 
-    \tableofcontents[currentsection] 
-  \end{frame} 
-  \addtocounter{framenumber}{-1}
-  } 
+
+%\AtBeginSection[] { 
+%\begin{frame}[plain] 
+    %\frametitle{Roadmap} 
+    %\tableofcontents[currentsection] 
+%\end{frame} 
+%\addtocounter{framenumber}{-1}
+%} 
 
 \title[Reversible Session-Based Concurrency]{Reversible Session-Based Concurrency}
 \subtitle{An implementation in Haskell}
@@ -228,7 +231,7 @@ June 11, 2018
 
 The lambda calculus at its core has two concepts
 
-\begin{enumerate}
+\begin{itemize}
 \tightlist
 \item
 function creation: \texttt{\textbackslash{}x\ -\textgreater{}\ x}
@@ -236,11 +239,11 @@ function creation: \texttt{\textbackslash{}x\ -\textgreater{}\ x}
 function application: \texttt{f x}
 \item
 reduction: \texttt{(\textbackslash{}x\ -\textgreater{}\ x)\ 42\ =\textgreater{}\ 42} \\
-\end{enumerate}
+\end{itemize}
 
 The pi-calculus defines
 
-\begin{enumerate}
+\begin{itemize}
 \tightlist
 \item
   send: \texttt{$\bar{x}$\textless{}y\textgreater{}.P} send value y over channel
@@ -251,7 +254,7 @@ The pi-calculus defines
 \item
   parallel: \texttt{P\textbar{}Q} run P and Q simultaneously
 \item reduction: \texttt{$\bar{x}$\textless{}a\textgreater{}.P\ \textbar{}\ x(b).Q\ =\textgreater{}\ P\ \textbar{}\ Q}
-\end{enumerate}
+\end{itemize}
 
 \end{frame}
 
@@ -259,9 +262,9 @@ The pi-calculus defines
 \frametitle{Session Types}
 
 \begin{center}
-    \textbf{Data types} prevent us from making stupid mistakes with \textbf{data}. \linebreak 
+    \textbf{Data types} prevent us from making silly mistakes with \textbf{data}. \linebreak 
 
-    \textbf{Session types} prevent stupid mistakes in \textbf{communication}.  
+    \textbf{Session types} prevent silly mistakes in \textbf{communication}.  
 \end{center}
 
 \end{frame}
@@ -293,7 +296,7 @@ The pi-calculus defines
 \frametitle{Session Types: Static vs. Dynamic}
 \begin{center}
 
-    \Large{We will always need dynamic session types}
+    \Large{We will always need dynamic verification of our session types}
 
 \end{center}
 Because \texttt{RealWorld} systems are: 
@@ -315,41 +318,13 @@ Because \texttt{RealWorld} systems are:
 \frametitle{Reversibility}
 
 \begin{center}
-    \Large{Goal: recover from errors}
+    \Large{Goal: make smart decisions when the circumstances change} 
 
 
     
 \end{center}
 
 \end{frame}
-
-
-\begin{frame}
-\frametitle{Reversibility}
-
-\begin{center}
-    \Large{\texttt{backward $\circ$ forward $\approx$ identity}}
-\end{center}
-
-\textbf{Causal Consistency}: Any point we can reach (by going forward and backward) we can also reached by 
-only going forward from the beginning
-
-% reversibllity means that we can move backward in the execution of a program.
-% This is convenient when some error occurs at runtime, and we want to roll (undo)
-% a full transaction.
-% We achieve reversibility by construction by ensuring that every forward step has
-% a corresponding backward step. We store all needed details for backward steps.
-% Storing the full previous program states takes too much memory (in theory)
-% This is where haskell as an implementation language really shines: because of
-% immutability, it is very easy to undo all modifications and then test that 
-% 
-
-\begin{center}
-\includegraphics[scale=0.40]{causal-consistency.pdf}
-\end{center}
-
-\end{frame}
-
 
 
 
@@ -367,12 +342,33 @@ So we can always find our way back
 \end{frame}
 
 
+\begin{frame}
+\frametitle{Reversibility}
+
+\begin{center}
+    \Large{\texttt{backward $\circ$ forward $\approx$ identity}}
+\end{center}
+
+\textbf{Causal Consistency}: Reversible steps lead to states that can be reached with forward steps only. No extra new states are introduced.
+
+
+% \begin{center}
+% \includegraphics[scale=0.40]{causal-consistency.pdf}
+% \end{center}
+
+\end{frame}
+
+
+
+
+
 
 \begin{frame}[fragile]
-\frametitle{Problem}
-These three things are cool, can we let them work together in a nice way
+\frametitle{Implementation}
 
-in theory: yes, in practice? tbd
+\begin{center}
+    \Large{Combining these ideas in practice}
+\end{center}
 \end{frame}
 
 
@@ -388,10 +384,11 @@ in theory: yes, in practice? tbd
 \end{frame}
 
 
+
 \begin{frame}[fragile]
 \frametitle{Running Example: A Three-Buyer Protocol}
 
-Alice ($\mathtt{A}$), Bob ($\mathtt{B}$), and Carol ($\mathtt{C}$) interact with a Vendor Vendor ($\mathtt{V}$) :
+Alice ($\mathtt{A}$), Bob ($\mathtt{B}$), and Carol ($\mathtt{C}$) interact with a Vendor ($\mathtt{V}$) :
 \begin{align*}
 G = ~&  \gtcom{A}{\texttt{V}}{\mathsf{title}}{~~\gtcom{\mathtt{V}}{\{A,B\}}{\mathsf{price}}{\\[-0.5mm] 
  & \quad\gtcom{A}{B}{\mathsf{share}}{~~\gtcom{B}{\{A,\mathtt{V}\}}{\mathsf{OK}}{
@@ -404,6 +401,68 @@ where $\textcolor{blue}{\thunkt}$ is a \textbf{thunk process}: a type (\texttt{(
 Bob sends Carol some code with the protocol; she must activate it.
 
 \end{frame}
+
+
+\begin{frame}[fragile, t]
+\frametitle{Implementing Session Types: Use}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{globalType ::} \DataTypeTok{GlobalType.GlobalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
+\NormalTok{globalType }\FunctionTok{=}\NormalTok{ GlobalType.globalType }\FunctionTok{$} \KeywordTok{do}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{A} \DataTypeTok{Ok} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{V} \DataTypeTok{Ok} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{C} \DataTypeTok{Share}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{C} \DataTypeTok{Thunk}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{V} \DataTypeTok{Address}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Date}
+\NormalTok{    GlobalType.end}
+\end{Highlighting}
+\end{Shaded}
+
+
+\end{frame}
+
+
+\begin{frame}[fragile, t]
+\frametitle{Implementing Session Types: Use}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{globalType ::} \DataTypeTok{GlobalType.GlobalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
+\NormalTok{globalType }\FunctionTok{=}\NormalTok{ GlobalType.globalType }\FunctionTok{$} \KeywordTok{do}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{A} \DataTypeTok{Ok} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{V} \DataTypeTok{Ok} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{C} \DataTypeTok{Share}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{C} \DataTypeTok{Thunk}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{V} \DataTypeTok{Address}
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Date}
+\NormalTok{    GlobalType.end}
+\end{Highlighting}
+\end{Shaded}
+Derived local type for $A$:
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{localType ::} \DataTypeTok{LocalType.LocalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
+\NormalTok{localType }\FunctionTok{=}\NormalTok{ LocalType.localType }\FunctionTok{$} \KeywordTok{do}
+\NormalTok{    LocalType.sendTo }\DataTypeTok{V} \DataTypeTok{Title}
+\NormalTok{    LocalType.receiveFrom }\DataTypeTok{V} \DataTypeTok{Price}
+\NormalTok{    LocalType.sendTo }\DataTypeTok{B} \DataTypeTok{Share}
+\NormalTok{    LocalType.receiveFrom }\DataTypeTok{B} \DataTypeTok{Ok}
+\NormalTok{    LocalType.end}
+\end{Highlighting}
+\end{Shaded}
+
+\end{frame}
+
 
 \begin{frame}[fragile]
 \frametitle{Implementing Session Types: Definition}
@@ -433,44 +492,7 @@ Bob sends Carol some code with the protocol; she must activate it.
 \end{Shaded}
 \end{frame}
 
-\begin{frame}[fragile]
-\frametitle{Implementing Session Types: Use}
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\OtherTok{globalType ::} \DataTypeTok{GlobalType.GlobalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
-\NormalTok{globalType }\FunctionTok{=}\NormalTok{ GlobalType.globalType }\FunctionTok{$} \KeywordTok{do}
-\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{A} \DataTypeTok{Ok} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{V} \DataTypeTok{Ok} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{C} \DataTypeTok{Share}
-\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{C} \DataTypeTok{Thunk}
-\NormalTok{    GlobalType.transaction }\DataTypeTok{B} \DataTypeTok{V} \DataTypeTok{Address}
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Date}
-\NormalTok{    GlobalType.end}
-\end{Highlighting}
-\end{Shaded}
-
-Derived local type for $A$:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\OtherTok{localType ::} \DataTypeTok{LocalType.LocalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
-\NormalTok{localType }\FunctionTok{=}\NormalTok{ LocalType.localType }\FunctionTok{$} \KeywordTok{do}
-\NormalTok{    LocalType.sendTo }\DataTypeTok{V} \DataTypeTok{Title}
-\NormalTok{    LocalType.receiveFrom }\DataTypeTok{V} \DataTypeTok{Price}
-\NormalTok{    LocalType.sendTo }\DataTypeTok{B} \DataTypeTok{Share}
-\NormalTok{    LocalType.receiveFrom }\DataTypeTok{B} \DataTypeTok{Ok}
-\NormalTok{    LocalType.end}
-\end{Highlighting}
-\end{Shaded}
-
-\end{frame}
-
-\begin{frame}[fragile]
+\begin{frame}[fragile, t]
 \frametitle{Implementing the Process Calculus: Definition}
 
 Make a constructor for everything that we're interested in
@@ -485,21 +507,16 @@ Make a constructor for everything that we're interested in
     \CommentTok{-- choice}
     \FunctionTok{|} \DataTypeTok{Offer} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, next))}
     \FunctionTok{|} \DataTypeTok{Select} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, value, next))}
-
+    \CommentTok{-- other}
     \FunctionTok{|} \DataTypeTok{Application} \DataTypeTok{Participant} \DataTypeTok{Identifier}\NormalTok{ value}
     \FunctionTok{|} \DataTypeTok{NoOp}
-
-
-    \CommentTok{-- syntactic sugar for better examples}
-    \FunctionTok{|} \DataTypeTok{Let} \DataTypeTok{Participant} \DataTypeTok{Identifier}\NormalTok{ value next }
-    \FunctionTok{|} \DataTypeTok{IfThenElse} \DataTypeTok{Participant}\NormalTok{ value next next}
 \end{Highlighting}
 \end{Shaded}
 
 Improvements over the standard pi calculus:
 \begin{itemize}
-    \item We can send part of a session over a channel
-    \item Communication is decoupled with a queue
+    \item Process delegation \& ownership
+    \item Asynchronous communication 
 \end{itemize}
 
 
@@ -508,7 +525,11 @@ Improvements over the standard pi calculus:
 
 \begin{frame}[fragile]
 \frametitle{Implementing the Process Calculus: Use}
-Then use the \texttt{Free} monad to get nice syntax for free: 
+
+\begin{itemize}
+    \item \texttt{StateT} threads ownership through the computation
+    \item \texttt{Free} provides nice syntax with do-notation 
+\end{itemize}
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -547,9 +568,8 @@ Then use the \texttt{Free} monad to get nice syntax for free:
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{data} \DataTypeTok{TypeContextF}\NormalTok{ a previous }
-    \FunctionTok{=} \DataTypeTok{Empty} 
-
-    \FunctionTok{|} \DataTypeTok{Transaction}\NormalTok{ (}\DataTypeTok{LocalType.Transaction}\NormalTok{ a previous)}
+    \FunctionTok{=} \DataTypeTok{Transaction}\NormalTok{ (}\DataTypeTok{LocalType.Transaction}\NormalTok{ a previous)}
+    \FunctionTok{|} \DataTypeTok{Spawning} \DataTypeTok{Location} \DataTypeTok{Location} \DataTypeTok{Location}\NormalTok{ previous}
     \FunctionTok{|} \DataTypeTok{Selected} 
 \NormalTok{        \{}\OtherTok{ owner ::} \DataTypeTok{Participant}
 \NormalTok{        ,}\OtherTok{ offerer ::} \DataTypeTok{Participant} 
@@ -564,15 +584,11 @@ Then use the \texttt{Free} monad to get nice syntax for free:
 \NormalTok{        \}}
 
     \FunctionTok{|} \DataTypeTok{Application} \DataTypeTok{Participant} \DataTypeTok{Identifier}\NormalTok{ previous }
-    \FunctionTok{|} \DataTypeTok{Spawning} \DataTypeTok{Location} \DataTypeTok{Location} \DataTypeTok{Location}\NormalTok{ previous}
+    \FunctionTok{|} \DataTypeTok{Empty} 
 
     \FunctionTok{|} \DataTypeTok{R}\NormalTok{ previous  }
     \FunctionTok{|} \DataTypeTok{Wk}\NormalTok{ previous}
     \FunctionTok{|} \DataTypeTok{V}\NormalTok{ previous}
-
-    \CommentTok{-- sugar}
-    \FunctionTok{|} \DataTypeTok{Branched}\NormalTok{ \{}\OtherTok{ owner ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ continuation ::}\NormalTok{ previous \}}
-    \FunctionTok{|} \DataTypeTok{Assignment}\NormalTok{ \{}\OtherTok{ owner ::} \DataTypeTok{Participant}\NormalTok{,}\OtherTok{ continuation ::}\NormalTok{ previous \}}
 \end{Highlighting}
 \end{Shaded}
 
@@ -585,7 +601,7 @@ We also need to store
 
 \begin{itemize}
     \item used variable names
-    \item unused branches in select, offer and if-then-else
+    \item unused branches in select and offer 
     \item function applications: the function and the argument
     \item message values
 \end{itemize}
@@ -632,7 +648,11 @@ All of these have their own stack
 \NormalTok{        ,}\OtherTok{ applicationCount ::} \DataTypeTok{Int}
 \NormalTok{        ,}\OtherTok{ queue ::} \DataTypeTok{Queue}\NormalTok{ value}
 \NormalTok{        ,}\OtherTok{ participants ::} \DataTypeTok{Map} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{Monitor}\NormalTok{ value }\DataTypeTok{String}\NormalTok{)}
-\NormalTok{        ,}\OtherTok{ locations ::} \DataTypeTok{Map} \DataTypeTok{Location}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{List} \DataTypeTok{OtherOptions}\NormalTok{, }\DataTypeTok{Program}\NormalTok{ value)}
+\NormalTok{        ,}\OtherTok{ locations ::} \DataTypeTok{Map} \DataTypeTok{Location}
+                \NormalTok{( }\DataTypeTok{Participant}
+                \NormalTok{, }\DataTypeTok{List} \DataTypeTok{OtherOptions}
+                \NormalTok{, }\DataTypeTok{Program}\NormalTok{ value}
+                \NormalTok{) }
 \NormalTok{        ,}\OtherTok{ isFunction ::}\NormalTok{ value }\OtherTok{->} \DataTypeTok{Maybe}\NormalTok{ (}\DataTypeTok{Identifier}\NormalTok{, }\DataTypeTok{Program}\NormalTok{ value)}
 \NormalTok{        \}}
 \end{Highlighting}
