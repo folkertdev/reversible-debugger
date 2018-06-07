@@ -192,6 +192,8 @@ June 11, 2018
 
     \LARGE{Concurrency is hard}
 
+    \Large{Bridging the gap between theory and practice}
+
 % Normal programming is also hard, but we've worked to build good tools and systems
 % To make it less error-prone. Solutions like garbage collection, type systems and 
 % precise data specifications (ADTs, GADTs)
@@ -203,6 +205,22 @@ June 11, 2018
 \end{center}
 \end{frame}
 
+\begin{frame}
+\frametitle{Context}
+\begin{center}
+
+    A practical implementation of PPDP 2017 find title
+
+\begin{itemize}
+    \item validation of theoretical ideas
+    \item a step toward reversible concurrent debuggers and using failure information 
+\end{itemize}
+
+\end{center}
+\end{frame}
+
+
+
 
 \section{Core Concepts: The pi-calculus, session types and reversibility}
 %%%% =======================================================
@@ -212,12 +230,11 @@ June 11, 2018
 \frametitle{Core Concepts}
 \begin{center}
 
-    % It's early days, there is a lot of theory around concurrent systems, but it's not very practical yet.
 
 \begin{itemize}
     \item the pi-calculus: a calculus for concurrent computation
     \item session types: a type system for concurrent computation
-    \item reversibility
+    \item reversibility: moving backwards through a program
 \end{itemize}
 
 
@@ -227,60 +244,154 @@ June 11, 2018
 %%%% =======================================================
 
 \begin{frame}
-\frametitle{The pi-calculus}
+\frametitle{The lambda-calculus}
 
-The lambda calculus at its core has two concepts
+Our favorite model for sequential computation: The lambda calculus 
+\begingroup
+\fontsize{10pt}{12pt}\selectfont
+\begin{align*}
+M, N ::= \, & x \,\,\, \, \, & \text{Variable}\\
+|\,\,\, & (\lambda x. M) \,\,\, \, \, &\text{Function definition}\\
+|\,\,\, & (M\, N) \,\,\, \, \, \, \, \, \, &\text{Applying a function to an argument} 
+\end{align*}
+\endgroup
 
-\begin{itemize}
-\tightlist
-\item
-function creation: \texttt{\textbackslash{}x\ -\textgreater{}\ x}
-\item
-function application: \texttt{f x}
-\item
-reduction: \texttt{(\textbackslash{}x\ -\textgreater{}\ x)\ 42\ =\textgreater{}\ 42} \\
-\end{itemize}
 
-The pi-calculus defines
 
-\begin{itemize}
-\tightlist
-\item
-  send: \texttt{$\bar{x}$\textless{}y\textgreater{}.P} send value y over channel
-  x, then run P
-\item
-  receive: \texttt{x(y).P} receive on channel x, bind the result to y,
-  then run P
-\item
-  parallel: \texttt{P\textbar{}Q} run P and Q simultaneously
-\item reduction: \texttt{$\bar{x}$\textless{}a\textgreater{}.P\ \textbar{}\ x(b).Q\ =\textgreater{}\ P\ \textbar{}\ Q}
-\end{itemize}
+$\beta$-reduction: 
+$$(\lambda x. M) \, E \rightarrow (M[x/E])$$
+
+There is one type per term
 
 \end{frame}
 
 \begin{frame}
+\frametitle{The pi-calculus}
+In contrast, the pi-calculus defines
+\begingroup
+\fontsize{10pt}{12pt}\selectfont
+\begin{align*}
+P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the value }y\text{ over channel }x\text{, then run }P \\
+|\,\,\, & x(y).P \,\,\, \, \, & \text{Receive on channel }x\text{, bind the result to }y\text{, then run }P \\
+|\,\,\, & P|Q \,\,\, \, \, \, \, \, \, &\text{Run }P\text{ and }Q\text{ simultaneously} \\
+|\,\,\, & (\nu x)P  \,\,\, &\text{Create a new channel }x\text{ and run }P \\
+|\,\,\, & !P \,\,\, &\text{Repeatedly spawn copies of }P \\
+|\,\,\, & 0 & \text{Terminate the process} \\
+|\,\,\, & P + Q & \text{(Optionally) Nondeterministic choice}
+\end{align*}
+\endgroup
+
+
+reduction: 
+$$\overline{x}\langle z \rangle.P\, |\, x(y).Q \rightarrow P | Q[z/y]$$
+
+One type per chanel, possibly many involving a term.
+
+\end{frame}
+
+
+\begin{frame}[t]
 \frametitle{Session Types}
 
 \begin{center}
     \textbf{Data types} prevent us from making silly mistakes with \textbf{data}. \linebreak 
 
-    \textbf{Session types} prevent silly mistakes in \textbf{communication}.  
+\begin{center}
+\includegraphics[scale=0.30]{img/batman.png}
 \end{center}
+
+\end{center}
+
+
+
 
 \end{frame}
 
-\begin{frame}
+\begin{frame}[t]
 \frametitle{Session Types}
-
-
-“I will send Bob a \texttt{Bool}, and then I expect and \texttt{Int} from Alice”
+    \textbf{Session types} prevent silly mistakes in \textbf{communication}.  
 
 \begin{itemize}
-    \item protocols become code
-    \item we introduce ordering of communication
-    \item messages are typed
+    \item Send without a receive
+    \item Receive without a send
+    \item Sending/Receiving before you're supposed to
 \end{itemize}
 
+An idea introduced in the 90s by ...
+
+\end{frame}
+
+\begin{frame}[t]
+\frametitle{Session Types}
+
+Global Type
+
+\begin{itemize}
+    \item There is a Transaction between Carol and Bob, a \texttt{Bool} is sent.
+    \item There is a Transaction between Alice and Carol, an \texttt{Int} is sent.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[t]
+\frametitle{Session Types}
+
+Global Type
+
+\begin{itemize}
+    \item There is a Transaction between Carol and Bob, a \texttt{Bool} is sent.
+    \item There is a Transaction between Alice and Carol, an \texttt{Int} is sent.
+\end{itemize}
+
+Local Type (for Carol)
+
+\begin{itemize}
+    \item I will send Bob a \texttt{Bool}
+    \item I expect an \texttt{Int} from Alice
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[t]
+\frametitle{Session Types}
+
+Global Type
+
+\begin{itemize}
+    \item There is a Transaction between Carol and Bob, a \texttt{Bool} is sent.
+    \item There is a Transaction between Alice and Carol, an \texttt{Int} is sent.
+\end{itemize}
+
+Local Type (for Carol)
+
+\begin{itemize}
+    \item I will send Bob a \texttt{Bool}
+    \item I expect an \texttt{Int} from Alice
+\end{itemize}
+
+Properties: 
+\begin{itemize}
+    \item Order: enforced ordering of communication over a channel
+    \item Safety: sent values are typed, there can be no mistmatch
+    \item Progress: every sent message is eventually received
+\end{itemize}
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Running Example: A Three-Buyer Protocol}
+
+Alice ($\mathtt{A}$), Bob ($\mathtt{B}$), and Carol ($\mathtt{C}$) interact with a Vendor ($\mathtt{V}$) :
+\begin{align*}
+G = ~&  \gtcom{A}{\texttt{V}}{\mathsf{title}}{~~\gtcom{\mathtt{V}}{\{A,B\}}{\mathsf{price}}{\\[-0.5mm] 
+ & \quad\gtcom{A}{B}{\mathsf{share}}{~~\gtcom{B}{\{A,\mathtt{V}\}}{\mathsf{OK}}{
+ \\[-0.5mm]
+ & \quad\quad \gtcom{B}{C}{\mathsf{share}}{~~\gtcom{B}{C}{\textcolor{blue}{\thunkt}}{
+ \\[-0.5mm]
+ & \quad\qquad \gtcom{B}{\mathtt{V}}{\mathsf{address}}{~~\gtcom{\mathtt{V}}{B}{\mathsf{date}}{\gend}}}}}}}}
+\end{align*}
+where $\textcolor{blue}{\thunkt}$ is a \textbf{thunk process}: a type (\texttt{() -> Process}).  \\
+Bob sends Carol some code with the protocol; she must activate it.
 
 \end{frame}
 
@@ -345,11 +456,12 @@ So we can always find our way back
 \begin{frame}
 \frametitle{Reversibility}
 
+\textbf{Causal Consistency}: Reversible steps lead to states that can be reached with forward steps only. No extra new states are introduced.
+
 \begin{center}
     \Large{\texttt{backward $\circ$ forward $\approx$ identity}}
 \end{center}
 
-\textbf{Causal Consistency}: Reversible steps lead to states that can be reached with forward steps only. No extra new states are introduced.
 
 
 % \begin{center}
@@ -374,31 +486,31 @@ So we can always find our way back
 
 \section{Moving Forward}
 
+
+
 \begin{frame}[fragile]
 \frametitle{Implementing Session Types: Global and Local}
 
-\begin{center}
-\includegraphics[scale=1.05]{figmodel}
-\end{center}
+We aim to implement: 
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{type} \DataTypeTok{Session} \NormalTok{a }\FunctionTok{=} \DataTypeTok{StateT} \DataTypeTok{ExecutionState} \NormalTok{(}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
+\OtherTok{forward  ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Session} \NormalTok{()}
+\OtherTok{backward ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Session} \NormalTok{()}
+\end{Highlighting}
+\end{Shaded}
 
-\end{frame}
+Where 
+
+\begin{itemize}
+    \item \texttt{Session} models our computation
+    \item \texttt{ExecutionState} contains our types and programs 
+    \item \texttt{Except Error} provides a way to fail
+    \item \texttt{Location} models threads or machines 
+\end{itemize}
 
 
 
-\begin{frame}[fragile]
-\frametitle{Running Example: A Three-Buyer Protocol}
-
-Alice ($\mathtt{A}$), Bob ($\mathtt{B}$), and Carol ($\mathtt{C}$) interact with a Vendor ($\mathtt{V}$) :
-\begin{align*}
-G = ~&  \gtcom{A}{\texttt{V}}{\mathsf{title}}{~~\gtcom{\mathtt{V}}{\{A,B\}}{\mathsf{price}}{\\[-0.5mm] 
- & \quad\gtcom{A}{B}{\mathsf{share}}{~~\gtcom{B}{\{A,\mathtt{V}\}}{\mathsf{OK}}{
- \\[-0.5mm]
- & \quad\quad \gtcom{B}{C}{\mathsf{share}}{~~\gtcom{B}{C}{\textcolor{blue}{\thunkt}}{
- \\[-0.5mm]
- & \quad\qquad \gtcom{B}{\mathtt{V}}{\mathsf{address}}{~~\gtcom{\mathtt{V}}{B}{\mathsf{date}}{\gend}}}}}}}}
-\end{align*}
-where $\textcolor{blue}{\thunkt}$ is a \textbf{thunk process}: a type (\texttt{() -> Process}).  \\
-Bob sends Carol some code with the protocol; she must activate it.
 
 \end{frame}
 
@@ -515,7 +627,7 @@ Make a constructor for everything that we're interested in
 
 Improvements over the standard pi calculus:
 \begin{itemize}
-    \item Process delegation \& ownership
+    \item Protocol delegation \& ownership
     \item Asynchronous communication 
 \end{itemize}
 
@@ -600,14 +712,46 @@ Improvements over the standard pi calculus:
 We also need to store
 
 \begin{itemize}
-    \item used variable names
-    \item unused branches in select and offer 
-    \item function applications: the function and the argument
-    \item message values
+    \item used variable names \newline
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{decision }\OtherTok{<-} \NormalTok{H.receive }
+\NormalTok{H.send decision}
+\NormalTok{H.send decision}
+\end{Highlighting}
+\end{Shaded}
+
+    \item unused branches in select and offer \newline
+
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{OtherOptions}  
+    \FunctionTok{=} \DataTypeTok{OtherSelections} \NormalTok{(}\DataTypeTok{Zipper} \NormalTok{(}\DataTypeTok{String}\NormalTok{, }\DataTypeTok{Value}\NormalTok{, }\DataTypeTok{Program} \DataTypeTok{Value}\NormalTok{))}
+    \FunctionTok{|} \DataTypeTok{OtherOffers} \NormalTok{(}\DataTypeTok{Zipper} \NormalTok{(}\DataTypeTok{String}\NormalTok{, }\DataTypeTok{Program} \DataTypeTok{Value}\NormalTok{))}
+\end{Highlighting}
+\end{Shaded}
+
+    \item function applications: the function and the argument \newline
+\begin{Shaded}
+\begin{Highlighting}[]
+\DataTypeTok{Map} \DataTypeTok{Identifier} \NormalTok{(}\DataTypeTok{Value}\NormalTok{, }\DataTypeTok{Value}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
 \end{itemize}
 
-All of these have their own stack
+\end{frame}
 
+\begin{frame}[t]
+\frametitle{Adding Reversibility: Processes}
+
+\begin{itemize}
+    \item message values
+\end{itemize}
+\begin{center}
+\includegraphics[scale=0.60]{img/queue-history-stack.pdf}
+\end{center}
 \end{frame}
 
 \begin{frame}[fragile]

@@ -613,3 +613,14 @@ data ExecutionState value =
 ## Conclusion
 
 We've seen ... 
+
+tekur
+```haskell
+data OtherOptions  
+    = OtherSelections (Zipper (String, Value, Program Value))
+    | OtherOffers (Zipper (String, Program Value))
+
+x :: Map Identifier (Value, Value)
+```
+
+
