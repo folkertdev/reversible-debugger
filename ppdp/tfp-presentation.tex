@@ -17,7 +17,6 @@
 
 % lncs 
 \usepackage{makeidx}
-\institute{University of Groningen, The Netherlands, \\ \texttt{}}
 
 \providecommand{\tightlist}{%
   \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
@@ -146,11 +145,14 @@
 %\end{frame} 
 %\addtocounter{framenumber}{-1}
 %} 
+\institute{}
 
-\title[Reversible Session-Based Concurrency]{Reversible Session-Based Concurrency}
-\subtitle{An implementation in Haskell}
-\author[de Vries \& P\'{e}rez]{Folkert de Vries (University of Groningen, NL)\\ 	
-Jorge A. P\'{e}rez  (University of Groningen, NL)}
+\title[\textcolor{white}{Reversible Session-Based Concurrency}]{Reversible Session-Based Concurrency}
+\subtitle{An Implementation in Haskell}
+\author[de Vries \& P\'{e}rez]{{\large Folkert de Vries and  	
+Jorge A. P\'{e}rez} \\ [2mm]
+University of Groningen, The Netherlands
+}
 \date[June 11, 2018]
 {
 TFP 2018\\ G\"{o}teborg, Sweden
@@ -192,7 +194,7 @@ June 11, 2018
 
     \LARGE{Concurrency is hard}
 
-    \Large{Bridging the gap between theory and practice}
+    \Large{How to bridge the gap between theory and practice?}
 
 % Normal programming is also hard, but we've worked to build good tools and systems
 % To make it less error-prone. Solutions like garbage collection, type systems and 
@@ -206,17 +208,21 @@ June 11, 2018
 \end{frame}
 
 \begin{frame}
-\frametitle{Context}
+\frametitle{Goal}
 \begin{center}
 
-    A practical implementation of PPDP 2017 find title
+    A functional implementation of the model in the paper \\ ``Causally Consistent Reversible Choreographies'' (PPDP 2017) \\ by Mezzina and P\'{e}rez 
+\end{center}
+\bigskip
 
+Our contributions:
 \begin{itemize}
-    \item validation of theoretical ideas
+    \item practical validation of theoretical ideas
     \item a step toward reversible concurrent debuggers and using failure information 
+    \item a natural connection between reversibility and immutable data structures in pure functional languages 
 \end{itemize}
 
-\end{center}
+
 \end{frame}
 
 
@@ -246,7 +252,7 @@ June 11, 2018
 \begin{frame}
 \frametitle{The lambda-calculus}
 
-Our favorite model for sequential computation: The lambda calculus 
+Our favorite model for sequential computation: The lambda-calculus 
 \begingroup
 \fontsize{10pt}{12pt}\selectfont
 \begin{align*}
@@ -285,7 +291,7 @@ P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the v
 reduction: 
 $$\overline{x}\langle z \rangle.P\, |\, x(y).Q \rightarrow P | Q[z/y]$$
 
-One type per chanel, possibly many involving a term.
+One type per channel, possibly many involving a term.
 
 \end{frame}
 
@@ -309,15 +315,16 @@ One type per chanel, possibly many involving a term.
 
 \begin{frame}[t]
 \frametitle{Session Types}
-    \textbf{Session types} prevent silly mistakes in \textbf{communication}.  
+    \textbf{Session types} prevent common mistakes in \textbf{communication}.  
 
 \begin{itemize}
-    \item Send without a receive
-    \item Receive without a send
+    \item Send without a receive \& receive without a send
+    \item type mismatch between sent and expected value
     \item Sending/Receiving before you're supposed to
+    \item undesired infinite recursion
 \end{itemize}
 
-An idea introduced in the 90s by ...
+An idea introduced in the late 90s by Honda, Kubo, and Vasconcelos (ESOP 1998), and widely studied ever since. 
 
 \end{frame}
 
@@ -372,8 +379,8 @@ Local Type (for Carol)
 Properties: 
 \begin{itemize}
     \item Order: enforced ordering of communication over a channel
-    \item Safety: sent values are typed, there can be no mistmatch
     \item Progress: every sent message is eventually received
+    \item Safety: sent values are typed, there can be no mismatch
 \end{itemize}
 \end{frame}
 
@@ -500,8 +507,7 @@ We aim to implement:
 \end{Highlighting}
 \end{Shaded}
 
-Where 
-
+where:
 \begin{itemize}
     \item \texttt{Session} models our computation
     \item \texttt{ExecutionState} contains our types and programs 
@@ -625,7 +631,7 @@ Make a constructor for everything that we're interested in
 \end{Highlighting}
 \end{Shaded}
 
-Improvements over the standard pi calculus:
+Improvements over the standard pi-calculus:
 \begin{itemize}
     \item Protocol delegation \& ownership
     \item Asynchronous communication 
@@ -807,6 +813,23 @@ We also need to store
 
 \begin{frame}[fragile]
 \frametitle{Conclusion}
+
+We have reported on the current state of our implementation of reversible, session-based concurrency in Haskell
+\begin{itemize}
+    \item Embedding a sophisticated operational semantics in Haskell
+    \item Causal consistency, from theory to practice
+    \item The first functional implementation of a reversible debugger
+    \item \url{https://github.com/folkertdev/reversible-debugger/}
+\end{itemize}
+
+\smallskip
+
+Current and future work:
+\begin{itemize}
+    \item Graphical interfaces
+    \item Controlled reversibility (checkpoints)
+\end{itemize}
+
 \end{frame}
 
 \end{document}
