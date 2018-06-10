@@ -218,8 +218,8 @@ June 11, 2018
 Our contributions:
 \begin{itemize}
     \item practical validation of theoretical ideas
-    \item a step toward reversible concurrent debuggers and using failure information 
     \item a natural connection between reversibility and immutable data structures in pure functional languages 
+    \item a step toward reversible concurrent debuggers and failure guiding evaluation
 \end{itemize}
 
 
@@ -267,7 +267,6 @@ M, N ::= \, & x \,\,\, \, \, & \text{Variable}\\
 $\beta$-reduction: 
 $$(\lambda x. M) \, E \rightarrow (M[x/E])$$
 
-There is one type per term
 
 \end{frame}
 
@@ -291,7 +290,6 @@ P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the v
 reduction: 
 $$\overline{x}\langle z \rangle.P\, |\, x(y).Q \rightarrow P | Q[z/y]$$
 
-One type per channel, possibly many involving a term.
 
 \end{frame}
 
