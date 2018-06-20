@@ -1,0 +1,539 @@
+\documentclass[12pt]{beamer}
+
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{fancyvrb}
+\usepackage{transparent}
+\usepackage{stmaryrd}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+% use upquote if available, for straight quotes in verbatim environments
+
+\newcommand{\hideFromPandoc}[1]{#1}
+\hideFromPandoc{ \let\Begin\begin \let\End\end }
+\input{macrosCR}
+
+% lncs 
+\usepackage{makeidx}
+\institute{University of Groningen, The Netherlands, \\ \texttt{}}
+
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[utf8]{inputenc}
+\else % if luatex or xelatex
+  \ifxetex
+    \usepackage{mathspec}
+    \usepackage{xltxtra,xunicode}
+  \else
+    \usepackage{fontspec}
+  \fi
+  \defaultfontfeatures{Mapping=tex-text,Scale=MatchLowercase}
+  \newcommand{\euro}{€}
+\fi
+% use microtype if available
+\IfFileExists{microtype.sty}{\usepackage{microtype}}{}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}, formatcom=%
+{\linespread{0.9}\normalfont\ttfamily\fontsize{9}{1}\selectfont}}
+
+\newenvironment{Shaded}{}{}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.56,0.13,0.00}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.53,0.00,0.00}{#1}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.73,0.40,0.53}{#1}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textit{#1}}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.73,0.13,0.13}{\textit{#1}}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.02,0.16,0.49}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.10,0.09,0.49}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.40,0.40,0.40}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.74,0.48,0.00}{#1}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.49,0.56,0.16}{#1}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\OutOfFocus}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\hypersetup{breaklinks=true,
+            bookmarks=true,
+            pdfauthor={Folkert de Vries},
+            pdftitle={Reversible Session-Based Concurrency in Haskell},
+            colorlinks=true,
+            citecolor=blue,
+            urlcolor=blue,
+            linkcolor=magenta,
+            pdfborder={0 0 0}}
+\urlstyle{same}  % don't use monospace font for urls
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\setcounter{secnumdepth}{5}
+
+% ================
+% math stuff 
+
+% ==============
+
+%%%--- Instead of ru/rug style:
+\setbeamersize{text margin left=1em,text margin right=1em}
+%\usecolortheme{whale} %% blue
+%\usecolortheme{crane} %% yellow
+%\usecolortheme{wolverine} 
+\usecolortheme{spruce} %% green
+%\usecolortheme[RGB={204,0,0}]{structure}
+%\usecolortheme{orchid}
+\setbeamertemplate{navigation symbols}{}
+
+\defbeamertemplate*{footline}{ru theme}{%
+  \leavevmode%
+  \hbox{%
+  \begin{beamercolorbox}[wd=.4\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+    \usebeamerfont{author in head/foot}\insertshortauthor
+  \end{beamercolorbox}%
+  %\begin{beamercolorbox}[wd=.25\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+   % \usebeamerfont{author in head/foot}\insertshortdate
+  %\end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.53\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
+    \usebeamerfont{title in head/foot}\textcolor{white}{\insertshorttitle}
+  \end{beamercolorbox}%
+   \begin{beamercolorbox}[wd=0.07\paperwidth,ht=2.25ex,dp=1ex,right]{title in head/foot}%
+     {\textcolor{white}{\insertframenumber{} / \inserttotalframenumber}}\hspace*{2ex} 
+  \end{beamercolorbox}}%
+  \vskip0pt%
+}
+%%%---
+
+
+
+\mode<presentation>
+{
+  %\usetheme{Madrid}
+  % or ...
+  %\usetheme[fontPath=Fonts/, imagesPath=Images/, titleHeight=1.45cm]{IMT}
+
+
+  %\setbeamercovered{transparent}
+  % or whatever (possibly just delete it)
+}
+
+%\AtBeginSection[] { 
+%\begin{frame}[plain] 
+    %\frametitle{Roadmap} 
+    %\tableofcontents[currentsection] 
+%\end{frame} 
+%\addtocounter{framenumber}{-1}
+%} 
+
+\title[Reversible Session-Based Concurrency]{Reversible Session-Based Concurrency}
+\subtitle{An implementation in Haskell}
+\author[F. de Vries]{Folkert de Vries} 
+\date[June 26, 2018]
+{
+    Bachelor Symposium 2018
+\\
+June 26, 2018
+}
+
+\usepackage[english]{babel}
+%\usepackage{geometry}
+%\geometry{paperwidth=\the\paperwidth,   paperheight=\the\paperheight,   hmargin=1cm,   vmargin=0cm,   head=0cm, headsep=0pt,foot=0cm}
+\makeindex
+
+\begin{document}
+
+%\bluetrue
+%\begin{firstframe}
+%
+%\hspace{2.5cm} A customized first frame.
+%
+%\vspace{4.6cm}
+%
+%\hspace{2.5cm} In the next frame there will be a standard one.
+%\end{firstframe}
+
+%\maketitle
+
+\begin{frame}
+
+\begin{center}
+\maketitle
+\end{center}
+
+\end{frame}
+
+
+\begin{frame}
+\frametitle{Problem}
+\begin{center}
+
+    \LARGE{Concurrency is hard}
+
+    \Large{Bridging the gap between theory and practice}
+
+% Normal programming is also hard, but we've worked to build good tools and systems
+% To make it less error-prone. Solutions like garbage collection, type systems and 
+% precise data specifications (ADTs, GADTs)
+
+% and we're working on new solutions. Linear types, borrow checkers, dependent types
+
+% So, can we do the same thing for concurrency, can we just make somthing simple, sane and elegant. 
+
+\end{center}
+\end{frame}
+
+\begin{frame}
+\frametitle{Goal}
+\begin{center}
+
+    A functional implementation of the model in the paper \\ ``Causally Consistent Reversible Choreographies'' (PPDP 2017) \\ by Mezzina and P\'{e}rez 
+\end{center}
+\bigskip
+
+Our contributions:
+\begin{itemize}
+    \item practical validation of theoretical ideas
+    \item a natural connection between reversibility and immutable data structures in pure functional languages 
+    \item a step toward reversible concurrent debuggers and failure guiding evaluation
+\end{itemize}
+
+
+\end{frame}
+
+
+
+
+\section{Core Concepts: The pi-calculus, session types and reversibility}
+%%%% =======================================================
+
+
+\begin{frame}
+\frametitle{Core Concepts}
+\begin{center}
+
+
+\begin{itemize}
+    \item \textbf{Reversible} moving backwards through a program
+    \item \textbf{Session-Based} sessions and their types 
+    \item \textbf{Concurrency} calculi for concurrent computation
+\end{itemize}
+
+
+\end{center}
+\end{frame}
+
+%%%% =======================================================
+
+\begin{frame}
+\begin{center}
+    \LARGE{Defining Concurrent Computation} 
+\end{center}
+\end{frame}
+
+\begin{frame}
+\frametitle{The lambda-calculus}
+
+Our favorite model for sequential computation: The lambda calculus 
+\begingroup
+\fontsize{10pt}{12pt}\selectfont
+\begin{align*}
+M, N ::= \, & x \,\,\, \, \, & \text{Variable}\\
+|\,\,\, & (\lambda x. M) \,\,\, \, \, &\text{Function definition}\\
+|\,\,\, & (M\, N) \,\,\, \, \, \, \, \, \, &\text{Applying a function to an argument} 
+\end{align*}
+\endgroup
+
+
+
+$\beta$-reduction: 
+$$(\lambda x. M) \, E \rightarrow (M[x/E])$$
+
+
+\end{frame}
+
+\begin{frame}
+\frametitle{The pi-calculus}
+In contrast, the pi-calculus defines
+\begingroup
+\fontsize{10pt}{12pt}\selectfont
+\begin{align*}
+P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the value }y\text{ over channel }x\text{, then run }P \\
+|\,\,\, & x(y).P \,\,\, \, \, & \text{Receive on channel }x\text{, bind the result to }y\text{, then run }P \\
+|\,\,\, & P|Q \,\,\, \, \, \, \, \, \, &\text{Run }P\text{ and }Q\text{ simultaneously} \\
+|\,\,\, & (\nu x)P  \,\,\, &\text{Create a new channel }x\text{ and run }P \\
+|\,\,\, & !P \,\,\, &\text{Repeatedly spawn copies of }P \\
+|\,\,\, & 0 & \text{Terminate the process} \\
+|\,\,\, & P + Q & \text{(Optionally) Nondeterministic choice}
+\end{align*}
+\endgroup
+
+
+reduction: 
+$$\overline{x}\langle z \rangle.P\, |\, x(y).Q \rightarrow P | Q[z/y]$$
+
+
+\end{frame}
+
+
+\begin{frame}
+\begin{center}
+    \LARGE{Sessions \& Session Types} 
+\end{center}
+\end{frame}
+
+\begin{frame}[t]
+\frametitle{Session Types}
+
+\begin{center}
+    \textbf{Data types} prevent us from making silly mistakes with \textbf{data}. \linebreak 
+
+\begin{center}
+\includegraphics[scale=0.30]{img/batman.png}
+\end{center}
+
+\end{center}
+
+
+
+
+\end{frame}
+
+\begin{frame}[t]
+\frametitle{Session Types}
+    \textbf{Session types} prevent common mistakes in \textbf{communication}.  
+
+\begin{itemize}
+    \item Send without a receive \& receive without a send
+    \item type mismatch between sent and expected value
+    \item Sending/Receiving before you're supposed to
+    \item undesired infinite recursion
+\end{itemize}
+
+An idea introduced in the late 90s by Honda, Kubo, and Vasconcelos (ESOP 1998), and widely studied ever since. 
+
+\end{frame}
+
+\begin{frame}[t]
+\frametitle{Session Types}
+
+Global Type
+
+\begin{itemize}
+    \item There is a Transaction between Carol and Bob, a \texttt{Bool} is sent.
+    \item There is a Transaction between Alice and Carol, an \texttt{Int} is sent.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[t]
+\frametitle{Session Types}
+
+Global Type
+
+\begin{itemize}
+    \item There is a Transaction between Carol and Bob, a \texttt{Bool} is sent.
+    \item There is a Transaction between Alice and Carol, an \texttt{Int} is sent.
+\end{itemize}
+
+Local Type (for Carol)
+
+\begin{itemize}
+    \item I will send Bob a \texttt{Bool}
+    \item I expect an \texttt{Int} from Alice
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[t]
+\frametitle{Session Types}
+
+Global Type
+
+\begin{itemize}
+    \item There is a Transaction between Carol and Bob, a \texttt{Bool} is sent.
+    \item There is a Transaction between Alice and Carol, an \texttt{Int} is sent.
+\end{itemize}
+
+Local Type (for Carol)
+
+\begin{itemize}
+    \item I will send Bob a \texttt{Bool}
+    \item I expect an \texttt{Int} from Alice
+\end{itemize}
+
+Properties: 
+\begin{itemize}
+    \item Order: enforced ordering of communication over a channel
+    \item Progress: every sent message is eventually received
+    \item Safety: sent values are typed, there can be no mistmatch
+\end{itemize}
+\end{frame}
+
+
+\begin{frame}
+\frametitle{Session Types: Static vs. Dynamic}
+
+\begin{center}
+\includegraphics[scale=0.120]{img/runtime-vs-compile-time-errors.png}
+\end{center}
+\end{frame}
+
+\begin{frame}
+\frametitle{Session Types: Static vs. Dynamic}
+\begin{center}
+
+    \Large{We will always need dynamic verification of our session types}
+
+\end{center}
+Because in practice systems are: 
+
+
+\begin{itemize}
+    \item opaque
+    \item written in multiple languages
+\end{itemize}
+    % Of course we'd like everything to be statically types... 
+    % 
+    % But the real world is complex, systems are written in multiple languages, so 
+    % we also need dynamic, runtime session type checking in practice.
+
+\end{frame}
+
+
+\begin{frame}
+\begin{center}
+    \LARGE{Reversibility} 
+\end{center}
+\end{frame}
+
+
+
+\begin{frame}
+\frametitle{Reversibility}
+
+
+\begin{center}
+    \Large{Leave behind a trail of breadcrumbs} 
+    \begin{center}
+        \includegraphics[scale=0.200]{img/breadcrumbs.jpg}
+    \end{center}
+So we can always find our way back
+\end{center}
+\end{frame}
+
+
+\begin{frame}
+\frametitle{Reversibility}
+
+\textbf{Causal Consistency}: Reversible steps lead to states that can be reached with forward steps only. No extra new states are introduced.
+
+\begin{center}
+    \Large{\texttt{backward $\circ$ forward $\approx$ identity}}
+\end{center}
+
+
+
+% \begin{center}
+% \includegraphics[scale=0.40]{causal-consistency.pdf}
+% \end{center}
+
+\end{frame}
+
+\begin{frame}
+\begin{center}
+    \LARGE{Implementation} 
+\end{center}
+\end{frame}
+
+
+
+\begin{frame}[fragile]
+\frametitle{Implementation}
+    We can define 3 data types 
+    \begin{Shaded}
+        \begin{Highlighting}[]
+            \CommentTok{-- Our Process Calculus}
+            \KeywordTok{data} \DataTypeTok{Program} \FunctionTok{=} \NormalTok{...} 
+            \CommentTok{-- Our Global Session Type} 
+            \KeywordTok{data} \DataTypeTok{GlobalType} \FunctionTok{=} \NormalTok{...} 
+            \CommentTok{-- Our "bread crumbs"} 
+            \KeywordTok{data} \DataTypeTok{TypeContext} \FunctionTok{=} \NormalTok{...} 
+        \end{Highlighting}
+    \end{Shaded}
+    And then implement:
+    \begin{Shaded}
+        \begin{Highlighting}[]
+            \KeywordTok{type} \DataTypeTok{Session} \NormalTok{a }\FunctionTok{=} \DataTypeTok{StateT} \DataTypeTok{ExecutionState} \NormalTok{(}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
+            \OtherTok{forward  ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Session} \NormalTok{()}
+            \OtherTok{backward ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Session} \NormalTok{()}
+        \end{Highlighting}
+    \end{Shaded}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Advantages of a pure functional language}
+
+
+\begin{itemize}
+    \item Algebraic Data Types (Union Types) 
+        \begin{itemize}
+            \item         We can stay close to the theory 
+            \item         invalid states are impossible to represent
+        \end{itemize}
+        \vspace*{0.2cm}
+    \item Immutability \& checked effects  
+        \begin{itemize}
+            \item Reversibility is easier and testable 
+        \end{itemize}
+
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Conclusion}
+
+an implementation of reversible, session-based concurrency in Haskell
+\begin{itemize}
+    \item Embedding a sophisticated operational semantics in Haskell
+    \item Causal consistency, from theory to practice
+    \item The first functional implementation of a reversible debugger
+    \item \url{https://github.com/folkertdev/reversible-debugger/}
+\end{itemize}
+
+\smallskip
+
+Current and future work:
+\begin{itemize}
+    \item Graphical interfaces
+    \item Controlled reversibility (checkpoints)
+\end{itemize}
+
+\end{frame}
+
+
+\end{document}
