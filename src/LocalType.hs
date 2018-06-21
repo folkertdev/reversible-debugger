@@ -131,9 +131,6 @@ project participants participant =
                         f (label, tipe ) = 
                             List.foldr folder (label, tipe) others 
 
-
-                        -- combined = List.foldl (\accum elem options -> elem [("multicast", accum options)]) () mappers
-
                         newOptions = List.map f $ Map.toList options
                     in
                         LocalType.offer offerer selector newOptions
