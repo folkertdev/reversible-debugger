@@ -13,6 +13,7 @@ abstract: |
     \keywords{Reversible computation \and Message-passing concurrency \and Session Types \and Haskell.}
 usepackage: graphicx,hyperref, xcolor,xspace,amsmath,amsfonts,stmaryrd,amssymb,enumerate, mathpartir, fancyvrb
 header-includes:
+    - \usepackage{graphicx}
     - \newcommand{\hideFromPandoc}[1]{#1}
     - \hideFromPandoc{
         \let\Begin\begin
@@ -22,9 +23,6 @@ header-includes:
 ...
 
 # process calculi 
-
-
-### the pi-calculus
 
 We must first of all define what concurrent computation is. We use a model called the pi-calculus. 
 
@@ -138,7 +136,7 @@ data Value
     | VLabel String
 ```
 
-### session types, global and local
+# session types, global and local
 
 As programmers we would like our programs to work as we expect. With concurrent programs, fitting the whole program in one's head becomes increasingly difficult
 as the application becomes larger. 
@@ -153,7 +151,7 @@ Session types provide three key properties:
 * **Progress** every sent message is eventually received
 * **Safety** sender and receiver always agree about the type of the sent value
 
-#### Global Types 
+## Global Types 
 
 The simplest non-trivial concurrent program has two participants. In this case, the types of the two participants are exactly dual: if the one sends, the
 other must receive. However, for the multiparty (3 or more) use case, things aren't so simple.
@@ -213,7 +211,7 @@ For instance, one branch can terminate the protocol, and the other can start fro
 The final three constructors are required for supporting nested recursion. A `RecursionPoint` is a point in the protocol that we can later jump back to. 
 A `RecursionVariable` triggers jumping to a previously encountered `RecursionPoint`. By default it will jump to the closest and most-recently encountered `RecursionPoint`, but `WeakenRecursion` makes it jump one `RecursionPoint` higher, encountering 2 weakens will jump 2 levels higher etc.
 
-### Local Types 
+## Local Types 
 
 A global type can contain inherent parallelism: the order of its steps is not fully defined. Checking for correctness against a global
 type is therefore quite hard. The solution is to project the global type onto its participants, creating a local type. 
@@ -228,7 +226,7 @@ this occurs, all participants have to jump back to the beginning, so every choic
 -- some latex snipped with the full projection rules
 ```
 
-### reversiblilty
+# reversiblilty
 
 The third component of the system is reversibility. The idea here is that we can move back to previous program states, reversing forward steps. 
 
@@ -251,16 +249,58 @@ For the type we define a new data type called `TypeContext`. It
 On the process level there are four things that we need to track: 
 
 * used variable names in receives
+
+The rest of the program depends on the name that we assign to a received value. Therefore we need to restore the original name when
+we revert. Used variable names are stored on a stack that is popped when we revert a receive.
+
+```haskell
+decision <- H.receive
+H.send decision
+H.send decision
+```
+
 * unused branches
+
+When a choice is made and then reverted, we want all our options to be available again. The current semantics aren't able
+to make a different choice, but it will be in the future. 
+
+```haskell
+data OtherOptions
+= OtherSelections (Zipper (String, Value, Program Value))
+| OtherOffers (Zipper (String, Program Value))
+```
+
 * function applications
+
+When applying a function we lose information about the applied function and the argument. Therefore we store them in a map and associate them with a unique identifier. 
+This identifier is given to the type-level "breadcrumb".
+
+
+> **Q: Why is this? why not a stack**
+
+```haskell
+Map Identifier (Value, Value)
+```
 * messages on the channel
 
-### Abstraction passing is protocol delegation
+When a value is sent, the sender loses track of what has been sent. Therefore, reverting a send/receive pair must move the value from the receiver via the queue back to the 
+sender. To this end, the queue holds on to received values: the value is popped from the queue but pushed onto the history stack. Now when the receive is rolled, the value 
+is moved back onto the queue, and when the send is rolled the value is moved from the head of the queue into the sender's process.
+
+\includegraphics[scale=0.60]{img/queue-history-stack.pdf}
+
+> **Q: Why store the information in the queue stack, and not move the value from the receiver's variable definitions onto the top of the queue?**
+
+
+## Abstraction passing is protocol delegation
 
 Effectively this means that instructuions need to keep track of whose protocol they should move forward. 
 The `owner` field stores this information.
 
-### combining 
+> **Q: why/when is delegation actually useful in practice? **
+> possibly we can move part of the protocol away from a location that is terminated? 
+
+# combining 
 
 With all the definitions encoded, we can now define forward and backward evaluation of our system. 
 Our aim is to implement 
@@ -301,7 +341,7 @@ extract their bodies for application.
 ### Benefits of pure functional programming
 
 It has consistently been the case that sticking closer to the formal model gives better code. The abilities that Haskell gives for directly 
-specifying formal statements is invaluable. The main killer feature is algebraic data types (ATDs) also known as tagged unions or sum types. 
+specifying formal statements is invaluable. The main killer feature is algebraic data types (ADTs) also known as tagged unions or sum types. 
 
 Observe the formal definition and the haskell data type for global types.
 \begin{align*}
@@ -335,7 +375,7 @@ Because we don't need to consider a context here, checking that reversibility wo
 
 we've given an encoding of the PPDP semantics in the haskell programming language
 
-### Notes on haskell notation and syntax 
+# Notes on haskell notation and syntax 
 
 A commonly used idiom in our code is to factor out recursion from a data structure, using the `Fix` and `Monad.Free` types.
 Both require the data type to be an instance of `Functor`: The type is of the shape `f a` - like `List a` or `Maybe a`, and there exists a mapping function `fmap :: (a -> b) -> (f a -> f b)`. 

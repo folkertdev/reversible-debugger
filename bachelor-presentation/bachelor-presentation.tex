@@ -517,7 +517,24 @@ So we can always find our way back
         \begin{itemize}
             \item         We can stay close to the theory 
             \item         invalid states are impossible to represent
-        \end{itemize}
+        \end{itemize} \footnotesize
+\begin{align*}
+    G, G'  \bnfis & \gtcom{p}{q}{U}{G} %\bnfbar 
+    \sbnfbar
+    \gtcho{p}{q}{\lbl_i}{G_i} %\\
+    \sbnfbar %& 
+    \mu X. G \sbnfbar X \sbnfbar \gend 
+\end{align*}
+\normalsize
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{GlobalTypeF}\NormalTok{ u next }\FunctionTok{=} 
+    \DataTypeTok{Transaction}\NormalTok{ \{}\FunctionTok{..}\NormalTok{\} }\FunctionTok{|} \DataTypeTok{Choice}\NormalTok{ \{}\FunctionTok{..}\NormalTok{\}  }\FunctionTok{|} \DataTypeTok{R}\NormalTok{ next }\FunctionTok{|} \DataTypeTok{V} \FunctionTok{|} \DataTypeTok{End} \FunctionTok{|} \DataTypeTok{Wk}\NormalTok{ next}
+\end{Highlighting}
+\end{Shaded}
+
+
         \vspace*{0.2cm}
     \item Immutability \& checked effects  
         \begin{itemize}
