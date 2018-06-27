@@ -22,6 +22,73 @@ header-includes:
     - \input{macrosCR}
 ...
 
+\pagebreak 
+
+# Introduction
+
+Concurrent systems run processes that communicate over channels. This communication introduces 
+a new class of bugs: deadlocks. The simplest example is a `receive` on a channel that is never sent to.
+
+```haskell 
+main = do
+    channel <- Channel.new
+    -- hangs forever
+    message <- Channel.read channel
+```
+
+it is easy to introduce these errors, but hard to spot/debug/fix them
+
+Additionally, concurrent systems often perform transactions: a list of individual operations that are meant to be one whole.  
+In the snippet below, there is a point where the money is subtracted from `A` but not yet added to `B`. If an error occurs at this point, 
+the system should revert back to the initial state: Just failing makes the money disappear.
+
+```haskell
+transfer sum = do
+    balanceA <- DB.read accountA
+    balanceB <- DB.read accountB
+    if balanceA >= sum then do
+        DB.write accountA (balanceA - sum)
+        -- danger zone
+        DB.write accountB (balanceB + sum)
+    else
+        return ()
+```
+
+Moving back to the initial state is non-trivial. How can we be sure that we've cleaned up all of 
+our actions and use minimal resources?
+
+there is theoretical research trying to solve these problems
+but it's not made it's way into our languages and libraries
+
+we give an implementation of such a theoretical framework 
+
+this moves us closer to using the theoretical ideas in practice
+
+We will look at the three core ideas that form the basis of the PPDP paper in the following three sections.
+
+Our contributions are 
+
+* We provide a haskell implementation of a concurrent calculus featuring session types and reversibility
+    * We define the **process calculus** in section x. 
+        To make actually write example programs pleasant, we will use the `Free` monad to provide convenient syntax
+    * We define **session types**  for the calculus in section y. The session types feature nested recursion and choice
+    * We provide **forward and backward evaluation functions** in section z.
+    * We show that the system preserves the properties of the formal definition (section w), notably *causal consistency*
+* We describe why purity and reversible computation work well together
+
+# The Main Idea
+
+We can combine the ideas of process calculi, session types and reversibility to create more robust concurrent programs. 
+Implementing the theoretical semantics in a programming language 
+
+We must define a **concurrent calculus**. It must feature at least communication over channels. 
+
+Secondly we want to add **session types** to this calculus. Session types are checks on the communication to prevent common bugs like deadlocks. 
+
+With those phases completed we can write an evaluating function that checks the session type before moving forward. 
+To make the forward reduction reversible, we must leave behind just enough information to reverse the forward step.
+Intuitively we keep several stack around that store the relevant information and from which we can retrieve it when moving backward.
+
 # process calculi 
 
 We must first of all define what concurrent computation is. We use a model called the pi-calculus. 
@@ -43,23 +110,7 @@ Reduction can occur when there is a send and a receive over the same channel in 
 
 $$\overline{x}\langle z \rangle.P\, |\, x(y).Q \rightarrow P | Q[z/y]$$
 
-The PPDP paper makes a few generalizations to this calculus. 
-
-We still have sending, receiving and parallel, and allow recursion and termination. Channel creation has been removed for simplicity: we'll use only 
-one globally available channel. This channel is implemented as a queue which means that sends are non-blocking. 
-
-In addition, we introduce non-deterministic choice. This is where instead of a value, a label is sent from a selector to an offerer. Both parties will pick the 
-branch that the label corresponds to. We'll see why this extension is useful in the next section. 
-
-Finally, we allow the sending of thunks - functions that take `Unit` as their argument and return a process term (i.e. a piece of program that can be executed). 
-The fact that we can send programs - and not just values - around means that our calculus is a higher-order calculus.
-
-The definition of functions in the PPDP paper is a bit strange: there are two ways of recursion - on the process level and on the value level. 
-In the implementation the former has been removed.
-
-## Implementation 
-
-The calculus used in PPDP is given by 
+The PPDP paper makes a few generalizations to this calculus. The calculus used in PPDP is given by 
 
 \begin{figure}
 \begin{align*}
@@ -75,7 +126,22 @@ P,Q \bnfis &
 \end{align*}
 \end{figure}
 
-As mentioned we omit the process-level recursion. 
+We still have sending, receiving and parallel, and allow recursion and termination. Channel creation has been removed for simplicity: we'll use only 
+one globally available channel. This channel is implemented as a queue which means that sends are non-blocking. 
+
+In addition, we introduce non-deterministic choice. This is where instead of a value, a label is sent from a selector to an offerer. Both parties will pick the 
+branch that the label corresponds to. We'll see why this extension is useful in the next section. 
+
+Finally, we allow the sending of thunks - functions that take `Unit` as their argument and return a process term (i.e. a piece of program that can be executed). 
+The fact that we can send programs - and not just values - around means that our calculus is a higher-order calculus.
+
+The definition of functions in the PPDP paper is a bit strange: there are two ways of recursion - on the process level and on the value level. 
+In the implementation the former has been removed.
+
+## Implementation 
+
+The implementation uses an algebraic data type (union type/sum type) to encode all the constructors of the grammar. We use 
+the `Fix` type to factor out recursion from the grammar. As mentioned we omit the process-level recursion. 
 
 ```haskell
 type Participant = String
@@ -300,6 +366,12 @@ The `owner` field stores this information.
 > **Q: why/when is delegation actually useful in practice? **
 > possibly we can move part of the protocol away from a location that is terminated? 
 
+## Properties of reversibility
+
+The main property that reversing needs to preserve is *causal consistency*: the state that we reach when moving backward
+is a state that could have been reached by moving forward only. 
+
+
 # combining 
 
 With all the definitions encoded, we can now define forward and backward evaluation of our system. 
@@ -338,7 +410,7 @@ The message queue is global and thus also lives in the `ExecutionState`. Finally
 extract their bodies for application. 
 
 
-### Benefits of pure functional programming
+# Benefits of pure functional programming
 
 It has consistently been the case that sticking closer to the formal model gives better code. The abilities that Haskell gives for directly 
 specifying formal statements is invaluable. The main killer feature is algebraic data types (ADTs) also known as tagged unions or sum types. 
@@ -361,6 +433,8 @@ They correspond directly. Moreover, we know that these are all the ways to const
 exhaustively match on all the cases. Functional languages have had these features for a very long time. In recent years 
 they have also made their way into non-functional languages (Rust, Swift, Kotlin).  
 
+## Reversibility and Purity
+
 Secondly, purity and immutability are very valuable in implementing and testing reversibility. The type system can actually guarantee 
 that we've not forgotten to revert anything. 
 
@@ -371,7 +445,9 @@ In a pure language, given functions `f :: a -> b` and `g :: b -> a` to prove tha
 
 Because we don't need to consider a context here, checking that reversibility works is as simple as comparing initial and final states.
 
-## conclusion
+# Discussion
+
+# Conclusion
 
 we've given an encoding of the PPDP semantics in the haskell programming language
 
