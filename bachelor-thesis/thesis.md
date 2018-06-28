@@ -38,9 +38,9 @@ main = do
 
 it is easy to introduce these errors, but hard to spot/debug/fix them
 
-Additionally, concurrent systems often perform transactions: a list of individual operations that are meant to be one whole.  
+Additionally, concurrent systems often perform a list of individual operations that are meant to be one whole.
 In the snippet below, there is a point where the money is subtracted from `A` but not yet added to `B`. If an error occurs at this point, 
-the system should revert back to the initial state: Just failing makes the money disappear.
+the system should revert back to the initial state: Just failing silently makes the money disappear.
 
 ```haskell
 transfer sum = do
@@ -453,6 +453,197 @@ we've given an encoding of the PPDP semantics in the haskell programming languag
 
 # Notes on haskell notation and syntax 
 
+## Performing IO in Haskell
+
+One of Haskell's key characteristics is that it is pure. This means that our computations can't have any observable effect to the
+outside world. Purity enables us to reason about our programs (referential transparency) and enables compiler optimizations. 
+
+But we use computres to solve problems, and we want to be able to observe the solution to our problems. Pure programs cannot 
+produce observable results: The computer becomes very hot but we can't see our solutions. 
+
+So we perform a trick: we say that constructing our program is completely pure, but evaluating may produce side-effects like printing to the console
+or writing to a file. To separate this possily effectful code from pure code we use the type system: side-effects are wrapped in the `IO` type. 
+
+```haskell
+-- print a string to the console
+putStrLn :: String -> IO ()
+
+-- read a line of input from the console
+readLn :: IO String
+```
+
+A consequence of having no observable effects is that the compiler can reorder our code for faster execution (for instance by minimizing cache misses). 
+But this will wreak havoc when performing IO: we want our IO actions to absolutely be ordered. This is achieved by creating a data-dependency between 
+actions and a special operator bind, written as `>>=`.
+
+A program that first reads a line and then prints it again can be written as
+
+```haskell
+main = 
+    readLn >>= (\line -> putStrLn line)
+```
+
+The `putStrLn` can only be evaluated when `line` is available, so after `readLn` is done. More technically
+the `(>>=) :: IO a -> (a -> IO b) -> IO b` operator will first evaluate its first argument `IO a`, in this case `IO String` (that string is the line we 
+have read). Then it "unwraps" that `IO String` to `String` to give it as an argument to `a -> IO b` (here `String -> IO ()`). Note that we can never
+(safely) go from `IO a -> a`. The unwrapping here is only valid because the final return type is still `IO something`.
+
+When printing two lines, we can use a similar trick to force the order
+
+```haskell
+main = 
+    putStrLn "hello " >>= (\_ -> putStrLn "world")
+```
+
+Here we ignore the result of the first `putStrLn`, but because the second `putStrLn` is wrapped in a function it still has to wait for the first one to 
+finish.
+
+Finally, writing nested functions in this way quickly becomes tedious. Therefore, special syntax is available: do-notation
+
+```haskell
+main1 = do
+    line <- readLn
+    putStrLn line
+
+main2 = do
+    putStrLn "hello "
+    putStrLn "world"
+```
+
+do-notation is only syntactic sugar: it is translated to the nested functions that we saw above by the compiler. 
+The syntax is very convenient however. Additionally, we can use it for all types that implement `>>=`: all instances of the `Monad` typeclass.
+
+## Monads
+
+`Monad` is a haskell typeclass (and a concept from a branch of mathematics called category theory). 
+Typeclasses are sets of types that implement some functions, similar to interfaces or traits in other languages.
+
+I hope the above already gives some intuition about monad's main operator `>>=`: it forces order of evaluation. 
+A second property is that `Monad` can merge contexts with `join :: Monad m => m (m a) -> m a`. A common example of 
+join is `List.concat :: List (List a) -> List a`. A bit more illustrative is the implementation for `Maybe`
+
+```haskell
+join :: Maybe (Maybe a) -> Maybe a
+join value = 
+    case value of 
+        Nothing -> 
+            Nothing
+
+        Just (Nothing) -> 
+            Nothing
+
+        Just (Just x) -> 
+            Just x
+```
+
+If the outer context has failed (is `Nothing`), then the total computation has failed and there is no value of type `a` to give back. If the outer computation succeeded but the inner one failed, there is still no `a` and the only thing we can return is `Nothing`. 
+Only if both the inner and the outer computations have succeeded can we give a result back.
+
+The full definition of `Monad` requires one more function: `return :: Monad m => a -> m a`. Additionally, join 
+can be implemented in terms of `>>=` and `>>=` has to satisfy a couple of laws.
+
+In short
+
+* `Monad` is a haskell typeclass
+* it has two main functions
+    * bind or `>>= :: Monad m => m a -> (a -> m b) -> m b` 
+    * `return :: Monad m => a -> m a`
+* `Monad` forces the order of operations and can flatten wrappers
+* `Monad` allows us to use do-notation
+* `IO` is an instance of `Monad`
+
+Much material on the web about monads is about establishing the general idea, but really the exact meaning of `>>=` can be very different 
+for every instance. Next we'll look at some of the types used in the code for this thesis.
+
+## Except
+
+Except is very similar to `Either`: 
+
+```haskell
+data Either a b 
+    = Left a 
+    | Right b
+```
+
+We use this type to throw and track errors in a pure way. 
+
+```haskell
+throwError :: e -> Except e a
+
+data Error
+    = QueueEmpty
+    | ...
+    
+popQueue :: List a -> Except Error (a, List a)
+popQueue queue = 
+    case queue of 
+        [] -> 
+            Except.throwError QueueEmpty
+
+        x : xs -> 
+            return ( x, xs )
+```
+
+In this context `return` means a non-error value, and `>>=` allows us to chain multiple operations that can fail, stopping when 
+an error occurs.
+
+## State and StateT
+
+`State` is a wrapper around a function of type `s -> (a, s)`
+
+```haskell
+newtype State s a = State { unState :: s -> (a, s) } 
+```
+
+It is used to give the illusion of mutible state, while remaining completely pure.
+Intuitively, we can compose functions of this kind.
+
+```haskell
+f :: s -> (a,   s)
+g ::       a -> s -> (b, s)
+```
+
+And this is exactly what monadic bind for state.
+```haskell
+andThen :: State s a -> (a -> State s b) -> State s b
+andThen (State first) tagger = 
+    State $ \s -> 
+        let (value, newState) = first s
+            State second = tagger value
+        in
+            second newState 
+
+new :: a -> State s a
+new value = State (\s -> (value, s))
+
+instance Monad (State s) where
+    (>>=) = andThen
+    return = new
+```
+
+When we want to combine monads, for instance to have both state and error reporting, we must use monad transformers. 
+The transformer is needed because monads don't naturally combine: `m1 (m2 a)` may not have a law-abiding monad instance.
+
+
+```haskell
+newtype StateT s m a = StateT { runStateT :: s -> m (a, s) }  
+
+instance MonadTrans (StateT s) where 
+    lift :: (Monad m) => m a -> StateT s m a
+    lift m = StateT $ \s -> do
+        a <- m
+        return (a, s)
+
+instance (Monad m) => Monad (StateT s m) where
+    return a = StateT $ \s -> return (a, s)
+```
+
+The `MonadTrans` typeclass defines the `lift` function that wraps a monadic value into the transformer. Next we define an instance 
+because we can say "given a monad `m`, `StateT s m` is a law-abiding monad.
+
+
+## Factoring out recursion
+
 A commonly used idiom in our code is to factor out recursion from a data structure, using the `Fix` and `Monad.Free` types.
 Both require the data type to be an instance of `Functor`: The type is of the shape `f a` - like `List a` or `Maybe a`, and there exists a mapping function `fmap :: (a -> b) -> (f a -> f b)`. 
 
@@ -510,7 +701,7 @@ evaluate =
 The `cata` function - a catamorphism also known as a fold or reduce - applies evaluate from the bottom up. In the code we write, we 
 only need to make local decisions and don't have to write the plumbing to get the recursion right. 
 
-## Wrapping ProgramF in Monad.Free 
+## Monad.Free 
 
 The Free monad is very similar to `Fix`, but allows us to use a different type for the leaves, and 
 enables us to use do-notation. Writing expressions with `Fix` can be quite messy, free monads 
@@ -552,58 +743,4 @@ pop :: Stack a a
 pop = liftFree (Pop identity)
 ```
 
-### State and StateT
 
-`State` is a wrapper around a function of type `s -> (a, s)`
-
-```haskell
-newtype State s a = State { unState :: s -> (a, s) } 
-```
-
-Intuitively, we can compose functions of this kind.
-
-```haskell
-f :: s -> (a,   s)
-g ::       a -> s -> (b, s)
-```
-
-And this is exactly what monadic bind for state.
-```
-andThen :: State s a -> (a -> State s b) -> State s b
-andThen (State first) tagger = 
-    State $ \s -> 
-        let (value, newState) = first s
-            State second = tagger value
-        in
-            second newState 
-
-new :: a -> State s a
-new value = State (\s -> (value, s))
-
-instance Monad (State s) where
-    (>>=) = andThen
-    return = new
-```
-
-When we want to combine monads, for instance to have both state and error reporting, we must use monad transformers. 
-The transformer is needed because monads don't naturally combine: `m1 (m2 a)` may not have a law-abiding monad instance.
-
-
-```haskell
-newtype StateT s m a = StateT { runStateT :: s -> m (a, s) }  
-
-instance MonadTrans (StateT s) where 
-    lift :: (Monad m) => m a -> StateT s m a
-    lift m = StateT $ \s -> do
-        a <- m
-        return (a, s)
-
-instance (Monad m) => Monad (StateT s m) where
-    return a = StateT $ \s -> return (a, s)
-```
-
-The `MonadTrans` typeclass defines the `lift` function that wraps a monadic value into the transformer. Next we define an instance 
-because we can say "given a monad `m`, `StateT s m` is a law-abiding monad.
-
-
-### Except
