@@ -89,9 +89,9 @@ data Error
     | LabelError String
     | QueueError String Queue.QueueError
     | ChoiceError ChoiceError
-    deriving (Show)
+    deriving (Show, Eq)
 
-data Choice = S | O 
+data Choice = S | O deriving (Eq)
 
 instance Show Choice where 
     show S = "Select"
@@ -100,6 +100,7 @@ instance Show Choice where
 data ChoiceError 
     = InvalidOwner { choice :: Choice,  got :: Participant, expected :: Participant } 
     | NotChoiceInstruction { choice :: Choice, owner :: Participant, localType :: LocalType String } 
+    deriving (Eq)
 
 instance Show ChoiceError where
     show e = 
