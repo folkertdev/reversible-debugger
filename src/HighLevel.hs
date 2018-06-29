@@ -14,9 +14,10 @@ import Control.Arrow (second)
 import Control.Applicative
 import Data.Foldable (foldr1)
 import Debug.Trace as Debug
+import Data.Void (Void)
 
 newtype HighLevelProgram a = HighLevelProgram (StateT (Participant, Int) (Free (ProgramF Value)) a)
-    deriving (Functor, Applicative, Monad, MonadState (Participant, Int))
+    deriving (Functor, Applicative, Monad, MonadState (Participant, Int), MonadFree (ProgramF Value))
 
 type Label = String
 
@@ -45,10 +46,9 @@ freeToFix free =
         Pure n -> Program.terminate
         Free x -> Fix (fmap freeToFix x)
 
-fixToFree :: Fix (ProgramF value) -> Free (ProgramF value) ()
+fixToFree :: Fix (ProgramF value) -> Free (ProgramF value) a
 fixToFree fix = 
     case fix of 
-        Fix NoOp -> Pure ()
         Fix x -> Free (fmap fixToFree x)
 
 depth :: Free (ProgramF value) Int -> Int
@@ -57,7 +57,7 @@ depth = Control.Monad.Free.iter helper
 helper :: ProgramF value Int -> Int
 helper = foldr const 0
 
-compile :: Participant -> HighLevelProgram a -> Program Value
+compile :: Participant -> HighLevelProgram Void -> Program Value
 compile participant (HighLevelProgram program) = do
     let result = runStateT program (participant, 0) 
     freeToFix result
@@ -72,19 +72,17 @@ withCompile participant (HighLevelProgram program) = do
     return $ freeToFix newProgram
 
 
-liftFree :: Functor f => f a -> Free f a
-liftFree action = Free (fmap Pure action)
 
 send :: Value -> HighLevelProgram ()
 send value = do
     (participant, _) <- State.get
-    HighLevelProgram $ lift $ liftFree (Send participant value ())  
+    liftF (Send participant value ())  
 
 receive :: HighLevelProgram Value
 receive = do 
     (participant, _) <- State.get
     variableName <- uniqueVariableName 
-    HighLevelProgram $ lift $ liftFree (Receive participant variableName ())
+    HighLevelProgram $ liftF (Receive participant variableName ())
     return (VReference variableName)
 
 
@@ -92,11 +90,11 @@ create :: Value -> HighLevelProgram Value
 create value = do
     variableName <- uniqueVariableName 
     (owner, _) <- State.get
-    HighLevelProgram $ lift $ liftFree (Let owner variableName value ()) 
+    HighLevelProgram $ liftF (Let owner variableName value ()) 
     return (VReference variableName)
 
 
-ifThenElse :: Value -> HighLevelProgram a -> HighLevelProgram b -> HighLevelProgram ()
+ifThenElse :: Value -> HighLevelProgram a -> HighLevelProgram a -> HighLevelProgram a
 ifThenElse condition thenBranch_ elseBranch_ = do
     (participant, n) <- State.get
     thenBranch :: Program Value <- withCompile participant thenBranch_
@@ -114,7 +112,7 @@ function body_ = do
 
     (participant, n) <- State.get
     body <- withCompile participant (body_ (VReference argument))
-    HighLevelProgram $ lift $ liftFree (Let participant variableName (VFunction argument body) ())
+    HighLevelProgram $ liftF (Let participant variableName (VFunction argument body) ())
     return (VReference variableName)
 
 function2 :: (Value -> Value -> HighLevelProgram a) -> HighLevelProgram Value 
@@ -129,7 +127,7 @@ function2 body_ = do
     let v1 = Let participant nestedName (VFunction argument2 body) (Fix NoOp)
         v2 = Let participant variableName (VFunction argument2 (Fix v1)) ()
             
-    HighLevelProgram $ lift $ liftFree v2 
+    HighLevelProgram $ liftF v2 
     return (VReference variableName)
 
 function3 :: (Value -> Value -> Value -> HighLevelProgram a) -> HighLevelProgram Value 
@@ -147,7 +145,7 @@ function3 body_ = do
         v2 = Let participant nested2Name (VFunction argument2 (Fix v1)) (Fix NoOp)
         v3 = Let participant variableName (VFunction argument2 (Fix v2)) ()
             
-    HighLevelProgram $ lift $ liftFree v3
+    HighLevelProgram $ liftF v3
     return (VReference variableName)
 
 
@@ -158,7 +156,7 @@ recursiveFunction body_ = do
 
     (participant, n) <- State.get
     body <- withCompile participant (body_ (VReference variableName) (VReference argument))
-    HighLevelProgram $ lift $ liftFree (Let participant variableName (VFunction argument body) ())
+    HighLevelProgram $ liftF (Let participant variableName (VFunction argument body) ())
     return (VReference variableName)
 
 
@@ -171,21 +169,20 @@ recursive body = do
 
 
 terminate :: HighLevelProgram a
-terminate = HighLevelProgram (lift $ Free NoOp)
+terminate = HighLevelProgram (liftF NoOp)
 
 
-offer :: List (String, HighLevelProgram ()) -> HighLevelProgram ()
+offer :: List (String, HighLevelProgram a) -> HighLevelProgram a
 offer options_ = do
     (participant, n) <- State.get
     let helper (label, program) = do
             newProgram <- withCompile participant program
             return ( label, newProgram )
 
-    options <- mapM helper options_
+    options :: List (String, Program Value) <- mapM helper options_
+    HighLevelProgram $ lift (fixToFree $ Fix $ Offer participant options)
 
-    HighLevelProgram $ lift $ fixToFree (Fix $ Offer participant options)
-
-select :: List (String, Value, HighLevelProgram ()) -> HighLevelProgram ()
+select :: List (String, Value, HighLevelProgram a) -> HighLevelProgram a
 select options_ = do
     (participant, n) <- State.get
     let helper (label, condition, program) = do

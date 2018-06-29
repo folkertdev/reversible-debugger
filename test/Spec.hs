@@ -27,7 +27,7 @@ import qualified Examples.RecursiveChoice as RecursiveChoice
 import qualified Examples.NestedRecursion as NestedRecursion
 
 import qualified HighLevel as H
-
+import Data.Void (Void)
 
 main :: IO ()
 main = hspec $ describe "all" Main.all
@@ -99,7 +99,10 @@ testBackward = describe "backward" $ do
             monitor1 = createMonitor (id, LocalType.send    "A" "B" "unit" LocalType.end) Map.empty
             monitor2 = createMonitor (id, LocalType.receive "B" "A" "unit" LocalType.end) Map.empty
             state = executionState Queue.empty
-                [("A", monitor1, H.send VUnit)
+                [("A", monitor1, do 
+                    H.send VUnit 
+                    H.terminate
+                 )
                 ,("B", monitor2, do 
                     x <- H.receive
                     H.terminate
@@ -180,15 +183,21 @@ testBackward = describe "backward" $ do
             verdict = True
             condition = VBool verdict
 
-            thenBranch = H.send (VInt 42)
-            elseBranch = H.send VUnit
+            thenBranch = do
+                H.send (VInt 42)
+                H.terminate
+
+            elseBranch = do 
+                H.send VUnit
+                H.terminate
+
             state = executionState Queue.empty
                 [("A", monitor, compileAlice $ H.ifThenElse condition thenBranch elseBranch) 
                 ]
 
             newMonitor = createMonitor (TypeContext.Branched "A", localType) Map.empty
             newState = executionStateWithStack Queue.empty
-                [("A", newMonitor, [ OtherBranch condition verdict (H.compile "A" elseBranch) ], compileAlice $ H.send (VInt 42))
+                [("A", newMonitor, [ OtherBranch condition verdict (H.compile "A" elseBranch) ], compileAlice $ H.send (VInt 42) >> H.terminate)
                 ]
         in do
             forwardN [ 1] state `shouldBe` Right newState
@@ -350,7 +359,7 @@ testBackward = describe "backward" $ do
 
             alice = do
                 H.send VUnit  
-                H.offer [ ("continue", H.send VUnit), ("end", H.terminate) ]
+                H.offer [ ("continue", H.send VUnit >> H.terminate), ("end", H.terminate) ]
 
             bob = do 
                 y <- H.receive
@@ -434,14 +443,17 @@ testForward = describe "forward_" $ do
                         H.terminate
 
                 H.send thunk 
+                H.terminate
 
             carol = do 
                 code <- H.receive 
                 H.applyFunction code VUnit
+                H.terminate
 
             alice = do 
                 address <- H.receive 
                 H.send (VInt 42)
+                H.terminate
 
             state = 
                 executionState Queue.empty 
@@ -520,10 +532,12 @@ testForward = describe "forward_" $ do
                         H.terminate
 
                 H.send thunk 
+                H.terminate
 
             carol = do 
                 code <- H.receive 
                 H.applyFunction code VUnit
+                H.terminate
 
             state = 
                 executionState Queue.empty 
@@ -557,11 +571,14 @@ testForward = describe "forward_" $ do
 
             localTypes = LocalType.projections globalType
 
-            alice = H.send (VInt 42)
+            alice = do 
+                H.send (VInt 42)
+                H.terminate
     
             bob = do
                 thunk <- H.receive
                 H.applyFunction thunk VUnit
+                H.terminate
 
             carol = do 
                 thunk <- H.function $ \_ -> do
@@ -569,6 +586,7 @@ testForward = describe "forward_" $ do
                     H.terminate
 
                 H.send thunk
+                H.terminate
                 
             state = 
                 executionState Queue.empty 
@@ -613,7 +631,7 @@ testForward = describe "forward_" $ do
 
     it "send behaves" $ 
         let monitor = createMonitor (id, LocalType.send "A" "A" "unit" LocalType.end) Map.empty
-            state = executionState Queue.empty [("A", monitor, compileAlice $ H.send VUnit)] 
+            state = executionState Queue.empty [("A", monitor, compileAlice $ H.send VUnit >> H.terminate)] 
 
             newMonitor = createMonitor (TypeContext.Sent "A" "A" "unit", LocalType.end) Map.empty
             newState = executionState 
@@ -626,7 +644,7 @@ testForward = describe "forward_" $ do
 
     let sendReceiveProgram monitor1 monitor2 = 
             executionState Queue.empty
-                [("A", monitor1, compileAlice $ H.send VUnit) 
+                [("A", monitor1, compileAlice $ H.send VUnit >> H.terminate) 
                 ,("B", monitor2, compileBob $ do 
                     x <- H.receive 
                     H.terminate
@@ -794,13 +812,13 @@ createMonitor (previous, localType) store = Monitor
             }
 
 executionState :: Queue.Queue Value 
-               -> List (String, Monitor Value String, H.HighLevelProgram ()) 
+               -> List (String, Monitor Value String, H.HighLevelProgram Void) 
                -> ExecutionState Value 
 executionState queue values = 
     executionStateWithStack queue (List.map (\(a,b,c) -> (a,b,[],c)) values)
 
 executionStateWithStack :: Queue.Queue Value 
-               -> List (String, Monitor Value String, List OtherOptions, H.HighLevelProgram ()) 
+               -> List (String, Monitor Value String, List OtherOptions, H.HighLevelProgram Void) 
                -> ExecutionState Value 
 executionStateWithStack queue values = 
     let (participants, monitors, stacks, programs) = List.unzip4 values

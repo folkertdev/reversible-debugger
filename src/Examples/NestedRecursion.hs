@@ -30,6 +30,7 @@ import Program (ProgramF(..), Value(..), Program, IntOperator(Add))
 import qualified Queue
 
 import qualified HighLevel as H
+import Data.Void (Void)
 
 data Participants = A | B deriving (Show, Eq, Ord, Enum, Bounded)
 
@@ -103,7 +104,7 @@ bob =
 
 
 
-constructExecutionState :: List (Participant, H.HighLevelProgram ()) -> ExecutionState Value 
+constructExecutionState :: List (Participant, H.HighLevelProgram Void) -> ExecutionState Value 
 constructExecutionState programs_ = 
     let (participants, programs) = List.unzip programs_
         createMonitor participant = Monitor 

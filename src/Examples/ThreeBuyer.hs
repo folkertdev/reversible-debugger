@@ -22,6 +22,7 @@ import Program (ProgramF(..), Value(..), Program)
 import qualified Queue
 
 import qualified HighLevel as H
+import Data.Void (Void)
 import Debug.Trace as Debug
 
 data MyParticipants = A | B | C | V deriving (Show, Eq, Ord, Enum, Bounded)
@@ -56,6 +57,7 @@ localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections $ GlobalType.mapType show globalType
 
 
+alice :: H.HighLevelProgram a
 alice = do 
     let h = VInt 42 
     H.send (VString "Logicomix" )
@@ -65,6 +67,7 @@ alice = do
     H.terminate
             
 
+bob :: H.HighLevelProgram a
 bob = do 
     thunk <- 
         H.function $ \_ -> do
@@ -85,13 +88,18 @@ bob = do
         )
     H.send share
     H.send thunk 
+    H.terminate
 
 
+carol :: H.HighLevelProgram a
 carol = do 
     h <- H.receive 
     code <- H.receive 
     H.applyFunction code VUnit
+    H.terminate
 
+
+vendor :: H.HighLevelProgram a
 vendor = do 
     let price title = VInt 42
         date = VString "2018-03-14"
@@ -102,8 +110,9 @@ vendor = do
     ok <- H.receive 
     a <- H.receive 
     H.send date
+    H.terminate
 
-constructExecutionState :: List (Participant, H.HighLevelProgram ()) -> ExecutionState Value 
+constructExecutionState :: List (Participant, H.HighLevelProgram Void) -> ExecutionState Value 
 constructExecutionState programs_ = 
     let (participants, programs) = List.unzip programs_
         createMonitor participant = Monitor 

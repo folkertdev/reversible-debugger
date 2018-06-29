@@ -22,6 +22,7 @@ import Program (ProgramF(..), Value(..), Program)
 import qualified Queue
 
 import qualified HighLevel as H
+import Data.Void (Void)
 import Debug.Trace as Debug
 
 data MyParticipants = A | B | C | V deriving (Show, Eq, Ord, Enum, Bounded)
@@ -59,7 +60,7 @@ globalType = GlobalType.globalType $
 localTypes :: Map Identifier (LocalType.LocalType String)
 localTypes = LocalType.projections $ GlobalType.mapType show globalType
 
-
+alice :: H.HighLevelProgram a
 alice = 
     H.recursive $ \self -> do
         let h = VInt 42 
@@ -70,8 +71,10 @@ alice =
             [ (,) "failure" H.terminate
             , (,) "success" H.terminate
             ]
+    
 
 
+bob :: H.HighLevelProgram a
 bob = 
     H.recursive $ \self -> do
         thunk <- 
@@ -88,8 +91,10 @@ bob =
             , ( "success", VBool True, do 
                 H.send share
                 H.send thunk 
+                H.terminate
               )
             ]
+
 
 
 carol = 
@@ -125,7 +130,7 @@ shorter label rest =
     H.select [ (label, VBool True, rest ) ]
 
 
-constructExecutionState :: List (Participant, H.HighLevelProgram ()) -> ExecutionState Value 
+constructExecutionState :: List (Participant, H.HighLevelProgram Void) -> ExecutionState Value 
 constructExecutionState programs_ = 
     let (participants, programs) = List.unzip programs_
         createMonitor participant = Monitor 
