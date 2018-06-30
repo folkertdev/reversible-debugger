@@ -25,16 +25,10 @@ import qualified HighLevel as H
 import Data.Void (Void)
 import Debug.Trace as Debug
 
-data MyParticipants = A | B | C | V deriving (Show, Eq, Ord, Enum, Bounded)
+data MyParticipants = A | B | C | V 
+    deriving (Show, Eq, Ord, Enum, Bounded)
 
-data MyType
-    = Title
-    | Price 
-    | Share
-    | Ok
-    | Thunk
-    | Address
-    | Date
+data MyType = Title | Price | Share | Ok | Thunk | Address | Date
     deriving (Show, Eq, Ord)
 
 

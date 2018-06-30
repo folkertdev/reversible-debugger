@@ -82,7 +82,7 @@ receive :: HighLevelProgram Value
 receive = do 
     (participant, _) <- State.get
     variableName <- uniqueVariableName 
-    HighLevelProgram $ liftF (Receive participant variableName ())
+    liftF (Receive participant variableName ())
     return (VReference variableName)
 
 
@@ -90,7 +90,7 @@ create :: Value -> HighLevelProgram Value
 create value = do
     variableName <- uniqueVariableName 
     (owner, _) <- State.get
-    HighLevelProgram $ liftF (Let owner variableName value ()) 
+    liftF (Let owner variableName value ()) 
     return (VReference variableName)
 
 

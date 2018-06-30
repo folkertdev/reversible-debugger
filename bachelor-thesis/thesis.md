@@ -26,8 +26,9 @@ header-includes:
 
 # Introduction
 
-Concurrent systems run processes that communicate over channels. This communication introduces 
-a new class of bugs: deadlocks. The simplest example is a `receive` on a channel that is never sent to.
+Concurrent systems run processes that communicate over channels. 
+communication introduces a new class of bugs: deadlocks. 
+The simplest example of deadlock is a receive on an empty channel: 
 
 ```haskell 
 main = do
@@ -36,7 +37,9 @@ main = do
     message <- Channel.read channel
 ```
 
-it is easy to introduce these errors, but hard to spot/debug/fix them
+Deadlock errors are difficult to spot and debug. 
+Solutions to prevent common cases of deadlock have been proposed, but haven't really found 
+their way into the mainstream.
 
 Additionally, concurrent systems often perform a list of individual operations that are meant to be one whole.
 In the snippet below, there is a point where the money is subtracted from `A` but not yet added to `B`. If an error occurs at this point, 
@@ -57,44 +60,36 @@ transfer sum = do
 Moving back to the initial state is non-trivial. How can we be sure that we've cleaned up all of 
 our actions and use minimal resources?
 
-there is theoretical research trying to solve these problems
-but it's not made it's way into our languages and libraries
-
-we give an implementation of such a theoretical framework 
-
-this moves us closer to using the theoretical ideas in practice
-
-We will look at the three core ideas that form the basis of the PPDP paper in the following three sections.
+Solutions have been proposed that try to solve common deadlock scenarios and reversing evaluation. 
+but it's not made it's way into our languages and libraries. This paper gives an implementation of a 
+framework presented in *reference ppdp* that allows reversing of computation steps and verifies communication.
 
 Our contributions are 
 
 * We provide a haskell implementation of a concurrent calculus featuring session types and reversibility
-    * We define the **process calculus** in section x. 
+    * We define the **process calculus** in section \ref{process-calculi}
         To make actually write example programs pleasant, we will use the `Free` monad to provide convenient syntax
-    * We define **session types**  for the calculus in section y. The session types feature nested recursion and choice
-    * We provide **forward and backward evaluation functions** in section z.
+    * We define **session types**  for the calculus in section \ref{session-types}. The session types feature nested recursion and choice.
+    * We describe the information that needs to be stored for **reversibility** in section \ref{reversibility}.
+    * We provide **forward and backward evaluation functions** in section \ref{combining}.
     * We show that the system preserves the properties of the formal definition (section w), notably *causal consistency*
 * We describe why purity and reversible computation work well together
 
 # The Main Idea
 
-We can combine the ideas of process calculi, session types and reversibility to create more robust concurrent programs. 
-Implementing the theoretical semantics in a programming language 
+The PPDP paper builds a system that features three basic concepts: a process calculus, session types and reversibility.
+These three ideas are combined to create more robust concurrent programs. 
 
-We must define a **concurrent calculus**. It must feature at least communication over channels. 
+The process calculus is a very low-level programming language that allows concurrent communication. Session types verify 
+the communication to statically eliminate or dynamically detect deadlocks. Reversibility - backwards evaluation of our process calculus - gives 
+the ability to recover from errors or to safely fail.
 
-Secondly we want to add **session types** to this calculus. Session types are checks on the communication to prevent common bugs like deadlocks. 
+## process calculi {#process-calculi}
 
-With those phases completed we can write an evaluating function that checks the session type before moving forward. 
-To make the forward reduction reversible, we must leave behind just enough information to reverse the forward step.
-Intuitively we keep several stack around that store the relevant information and from which we can retrieve it when moving backward.
+We must first of all define what concurrent computation is. We use a model called the pi-calculus as our starting point.
 
-# process calculi 
-
-We must first of all define what concurrent computation is. We use a model called the pi-calculus. 
-
-The pi-calculus is to concurrent computation much like the lambda calculus is for sequental computing: 
-A simple model that is convenient for constructing proofs. The pi-calculus is defined as 
+The pi-calculus is to concurrent computation much like what the lambda calculus is for sequental computing: 
+A simple model that is convenient for reasoning and constructing proofs. The pi-calculus is defined as 
 
 \begin{align*}
 P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the value }y\text{ over channel }x\text{, then run }P \\
@@ -103,7 +98,6 @@ P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the v
 |\,\,\, & (\nu x)P  \,\,\, &\text{Create a new channel }x\text{ and run }P \\
 |\,\,\, & !P \,\,\, &\text{Repeatedly spawn copies of }P \\
 |\,\,\, & 0 & \text{Terminate the process} \\
-|\,\,\, & P + Q & \text{(Optionally) Nondeterministic choice}
 \end{align*}
 
 Reduction can occur when there is a send and a receive over the same channel in parallel. 
@@ -114,31 +108,41 @@ The PPDP paper makes a few generalizations to this calculus. The calculus used i
 
 \begin{figure}
 \begin{align*}
-P,Q \bnfis & 
-    \bout{u}{V}{P}  \sbnfbar  \binp{u}{x}{P} 
-\sbnfbar \bsel{u}{\lbl_i. P_i}_{i\in I} \sbnfbar \bbra{u}{\lbl_i:P_i}_{i \in I}
- \\
- & 
- \sbnfbar  P \Par Q \sbnfbar  {\rvar{X} \sbnfbar \recp{X}{P}} 
-            \sbnfbar  
- {\appl{V}{u}}  
-\sbnfbar \news{n} P \sbnfbar \inact
+P, Q ::= \, 
+        & \bout{u}{V}{P} \,\,\, \, \, &\text{Send the value }V\text{, then run }P \\
+|\,\,\, & \binp{u}{x}{P} \,\,\, \, \, & \text{Receive and bind the result to }x\text{, then run }P \\
+|\,\,\, &  \bsel{u}{\lbl_i. P_i}_{i\in I}\,\,\, \, \, & \text{Select an option, then broadcast the choice, then run }P_i \\
+|\,\,\, & \bbra{u}{\lbl_i:P_i}_{i \in I} \,\,\, \, \, & \text{Offer options, receive a choice by the selector, then run } P_i \\
+|\,\,\, & (P\,|\,Q) \,\,\, \, \, \, \, \, \, &\text{Run }P\text{ and }Q\text{ simultaneously} \\
+|\,\,\, & \rvar{X} \,|\, \recp{X}{P} \,\,\, &\text{Variable and function abstraction}\\
+|\,\,\, & \appl{V}{u} \,\,\, &\text{function application} \\
+|\,\,\, & \news{n} \,\,\, &\text{name restriction: make $n$ unused in a term} \\
+|\,\,\, & \inact \,\,\, &\text{terminate} \\
+% P,Q \bnfis & 
+%     \bout{u}{V}{P}  \sbnfbar  \binp{u}{x}{P} 
+% \sbnfbar \bsel{u}{\lbl_i. P_i}_{i\in I} \sbnfbar \bbra{u}{\lbl_i:P_i}_{i \in I}
+%  \\
+%  & 
+%  \sbnfbar  P \Par Q \sbnfbar  {\rvar{X} \sbnfbar \recp{X}{P}} 
+%             \sbnfbar  
+%  {\appl{V}{u}}  
+% \sbnfbar \news{n} P \sbnfbar \inact
 \end{align*}
 \end{figure}
 
 We still have sending, receiving and parallel, and allow recursion and termination. Channel creation has been removed for simplicity: we'll use only 
 one globally available channel. This channel is implemented as a queue which means that sends are non-blocking. 
 
-In addition, we introduce non-deterministic choice. This is where instead of a value, a label is sent from a selector to an offerer. Both parties will pick the 
+In addition, we introduce. This is where instead of a value, a label is sent from a selector to an offerer. Both parties will pick the 
 branch that the label corresponds to. We'll see why this extension is useful in the next section. 
 
 Finally, we allow the sending of thunks - functions that take `Unit` as their argument and return a process term (i.e. a piece of program that can be executed). 
-The fact that we can send programs - and not just values - around means that our calculus is a higher-order calculus.
+The fact that we can send programs - and not just values - means that our calculus is a higher-order calculus. The sending of thunks provides "protocol delegation via abstraction passing".
 
 The definition of functions in the PPDP paper is a bit strange: there are two ways of recursion - on the process level and on the value level. 
 In the implementation the former has been removed.
 
-## Implementation 
+## Implementing the PPDP calculus 
 
 The implementation uses an algebraic data type (union type/sum type) to encode all the constructors of the grammar. We use 
 the `Fix` type to factor out recursion from the grammar. As mentioned we omit the process-level recursion. 
@@ -150,7 +154,7 @@ type Identifier = String
 type Program value = Fix (ProgramF value) 
 
 data ProgramF value next 
-    -- transaction primitives
+    -- communication primitives
     = Send 
         { owner :: Participant
         , value :: value
@@ -202,7 +206,7 @@ data Value
     | VLabel String
 ```
 
-# session types, global and local
+## Session Types {#session-types}
 
 As programmers we would like our programs to work as we expect. With concurrent programs, fitting the whole program in one's head becomes increasingly difficult
 as the application becomes larger. 
@@ -217,7 +221,7 @@ Session types provide three key properties:
 * **Progress** every sent message is eventually received
 * **Safety** sender and receiver always agree about the type of the sent value
 
-## Global Types 
+## Global Types {global-types}
 
 The simplest non-trivial concurrent program has two participants. In this case, the types of the two participants are exactly dual: if the one sends, the
 other must receive. However, for the multiparty (3 or more) use case, things aren't so simple.
@@ -225,13 +229,13 @@ other must receive. However, for the multiparty (3 or more) use case, things are
 We need to define globally what transactions occur in our protocol.
 
 ```haskell
-simple :: GlobalType String
+simple :: GlobalType String String
 simple = GlobalType.globalType $ do
     transaction "carol" "bob" "Bool"
     transaction "alice" "carol" "int"
 ```
 
-We can see immediately that safety and progress are guaranteed: we cannot construct a valid global type that breaks these guarantees. 
+We can see immediately that **safety and progress are guaranteed**: we cannot construct a valid global type that breaks these guarantees. 
 A more realistic example that we'll use as a running example is the three buyer protocol, defined as follows: 
 
 \begin{align*}
@@ -250,7 +254,8 @@ The full definition of global types in the haskell implementation is given by
 
 
 ```haskell
-type GlobalType participant u = Fix (GlobalTypeF participant u)
+type GlobalType participant u = 
+    Free (GlobalTypeF participant u) Void
 
 data GlobalTypeF participant u next
     = Transaction 
@@ -277,7 +282,30 @@ For instance, one branch can terminate the protocol, and the other can start fro
 The final three constructors are required for supporting nested recursion. A `RecursionPoint` is a point in the protocol that we can later jump back to. 
 A `RecursionVariable` triggers jumping to a previously encountered `RecursionPoint`. By default it will jump to the closest and most-recently encountered `RecursionPoint`, but `WeakenRecursion` makes it jump one `RecursionPoint` higher, encountering 2 weakens will jump 2 levels higher etc.
 
-## Local Types 
+Using `Monad.Free`, we can write the ThreeBuyer example type as 
+
+```haskell
+data MyParticipants = A | B | C | V 
+    deriving (Show, Eq, Ord, Enum, Bounded)
+
+data MyType = Title | Price | Share | Ok | Thunk | Address | Date
+    deriving (Show, Eq, Ord)
+
+globalType :: GlobalType.GlobalType MyParticipants MyType
+globalType = GlobalType.globalType $ do
+    GlobalType.transaction A V Title 
+    GlobalType.transactions V [A, B] Price 
+    GlobalType.transaction A B Share 
+    GlobalType.transactions B [A, V] Ok 
+    GlobalType.transaction B C Share
+    GlobalType.transaction B C Thunk
+    GlobalType.transaction B V Address
+    GlobalType.transaction V B Date
+    GlobalType.end
+```
+
+
+## Local Types {#local-types} 
 
 A global type can contain inherent parallelism: the order of its steps is not fully defined. Checking for correctness against a global
 type is therefore quite hard. The solution is to project the global type onto its participants, creating a local type. 
@@ -292,7 +320,7 @@ this occurs, all participants have to jump back to the beginning, so every choic
 -- some latex snipped with the full projection rules
 ```
 
-# reversiblilty
+## reversiblilty {#reversibility}
 
 The third component of the system is reversibility. The idea here is that we can move back to previous program states, reversing forward steps. 
 
@@ -310,7 +338,8 @@ a trail of breadcrumbs so we can always find our way back.
 The challenge, then, is to find the minimal amount of information that we need to store for every instruction.
 Broadly, we need to track information about two things: the type and the process. 
 
-For the type we define a new data type called `TypeContext`. It 
+For the type we define a new data type called `TypeContext`. It contains the actions that have been performed and for 
+some stores a bit of extra information like the `owner`.
 
 On the process level there are four things that we need to track: 
 
@@ -320,9 +349,10 @@ The rest of the program depends on the name that we assign to a received value. 
 we revert. Used variable names are stored on a stack that is popped when we revert a receive.
 
 ```haskell
-decision <- H.receive
-H.send decision
-H.send decision
+program = do
+    decision <- H.receive
+    H.send decision
+    H.send decision
 ```
 
 * unused branches
@@ -331,10 +361,14 @@ When a choice is made and then reverted, we want all our options to be available
 to make a different choice, but it will be in the future. 
 
 ```haskell
+type Zipper a = (List a, a, List a)
+
 data OtherOptions
-= OtherSelections (Zipper (String, Value, Program Value))
-| OtherOffers (Zipper (String, Program Value))
+    = OtherSelections (Zipper (String, Value, Program Value))
+    | OtherOffers (Zipper (String, Program Value))
 ```
+
+We need to store the selection that has been made. The zipper contains the taken path as its central `a`, and the options before and after as the lists on either side. 
 
 * function applications
 
@@ -372,7 +406,7 @@ The main property that reversing needs to preserve is *causal consistency*: the 
 is a state that could have been reached by moving forward only. 
 
 
-# combining 
+# Putting it all together  {#combining}
 
 With all the definitions encoded, we can now define forward and backward evaluation of our system. 
 Our aim is to implement 
@@ -392,7 +426,22 @@ Where
 
 #### Type checking 
 
-we store all the information about a participant in a type called `Monitor`. 
+We store all the information about a participant in a type called `Monitor`. 
+
+```haskell
+data Monitor value tipe = 
+    Monitor 
+        { _localType :: LocalTypeState tipe
+        , _recursiveVariableNumber :: Int
+        , _recursionPoints :: List (LocalType tipe)
+        , _store :: Map Identifier value 
+        , _usedVariables :: List Binding 
+        , _applicationHistory :: Map Identifier (value, value)
+        }
+        deriving (Show, Eq)
+
+data Binding = Binding { _visibleName :: Identifier, _internalName :: Identifier } deriving (Show, Eq) 
+```
 
 The `TypeContext` and `LocalType` are stored as a tuple. Really, this gives a curser into the local type, where everything to the left is the past 
 and everything to the right is the future. 
@@ -406,9 +455,76 @@ Finally there is a variable store with the currently defined bindings.
 With this data structure in place, we can define `ExecutionState`. It contains some counters for generating unique variable names, a monitor for every participant and
 a program for every location. Additionally every location has a default participant and a stack for unchosen branches. 
 
+```haskell
+data ExecutionState value = 
+    ExecutionState 
+        { variableCount :: Int
+        , locationCount :: Int
+        , applicationCount :: Int
+        , participants :: Map Participant (Monitor value String)
+        , locations :: Map Location (Participant, List OtherOptions, Program value)
+        , queue :: Queue value
+        , isFunction :: value -> Maybe (Identifier, Program value)
+        }
+```
+
 The message queue is global and thus also lives in the `ExecutionState`. Finally we need a way of peeking into values, to see whether they are functions and if so, to
 extract their bodies for application. 
 
+# Convenient syntax with the free monad
+
+The types we've defined for `Program`, `GlobalType` and `LocalType` form recursive tree structures. 
+Because they are all new types, there is no easy way to traverse them. A common idiom 
+is to factor out recursion using `Data.Fix` (see section \ref{factoring-recursion}).
+
+Even with `Fix`, the expressions are tedious to write. For `LocalType` that doesn't matter because
+it is (almost) never written by hand. For `Program` and `GlobalType` - which we'll construct by hand a lot - 
+we want nicer syntax. To this end we can use the free monad (see section \ref{free-monad}). 
+The free monad is a standard method in haskell to construct domain-specific languages. An extra bonus 
+is that we can use do-notation (section \ref{do-notation}) to write our examples.
+
+Concretely, the free monad makes it possible to write 
+
+```haskell
+program = compile "Alice" $ do
+    result <- receive
+    send (VInt 42)
+```
+
+instead of 
+
+```haskell
+program = 
+    Receive 
+        { owner = "Alice", variableName = "result", continuation = 
+            Send 
+                { owner = "Alice", value = VInt 42, continuation = NoOp } 
+        }
+```
+
+By using `StateT` (see \ref{state}) we can thread through the participant name and generate unique variable names using a counter. `Free` makes it possible 
+build up and produce a `Program` at the end.
+
+```haskell
+newtype HighLevelProgram a = 
+    HighLevelProgram (StateT (Participant, Int) (Free (ProgramF Value)) a)
+    deriving (Functor, Applicative, Monad, MonadState (Participant, Int))
+
+send :: Value -> HighLevelProgram ()
+send value = do
+    (participant, _) <- State.get
+    HighLevelProgram $ liftF (Send participant value ())  
+
+terminate :: HighLevelProgram a
+terminate = HighLevelProgram (liftF NoOp)
+
+-- similar for receive, select, etc.
+```
+
+Here we use the unit type `()` as a placeholder or hole. To ensure that the program is well-formed and doesn't contain any holes when we evaluate it, 
+all branches must end with `terminate`. We use the fact that `terminate :: HighLevelProgram a` contains a free type variable `a` which can 
+unify with `Void`, the type with no values. Thus `Free f Void` can contain no `Pure` because the `Pure` constructor needs a value of type `Void`, which
+don't exist. For more information see the appendix section \ref{well-formedness-free}.
 
 # Benefits of pure functional programming
 
@@ -473,14 +589,24 @@ readLn :: IO String
 ```
 
 A consequence of having no observable effects is that the compiler can reorder our code for faster execution (for instance by minimizing cache misses). 
-But this will wreak havoc when performing IO: we want our IO actions to absolutely be ordered. This is achieved by creating a data-dependency between 
-actions and a special operator bind, written as `>>=`.
+But this will wreak havoc when performing IO: we want our IO actions to absolutely be ordered. 
 
-A program that first reads a line and then prints it again can be written as
+The trick we can pull here is to wrap the later actions in a function taking one argument, and piping the result of the first action into that function. 
+The result is only available when the first action is done, so the first action is always performed before the rest: we've established a data-dependency between 
+the first and the remaining actions that enforces the order.
+
+The piping is done by the `>>=` operator. In the haskell literature this function is refered to as `bind`, but I think the elm name `andThen` is 
+more intuitive (at least for `IO`). A program that first reads a line and then prints it again can be written as
 
 ```haskell
 main = 
     readLn >>= (\line -> putStrLn line)
+
+andThen :: IO a -> (a -> IO b) -> IO b
+andThen = (>>=)
+
+main2 = do
+    readLn `andThen` (\line -> putStrLn line)
 ```
 
 The `putStrLn` can only be evaluated when `line` is available, so after `readLn` is done. More technically
@@ -495,10 +621,12 @@ main =
     putStrLn "hello " >>= (\_ -> putStrLn "world")
 ```
 
-Here we ignore the result of the first `putStrLn`, but because the second `putStrLn` is wrapped in a function it still has to wait for the first one to 
-finish.
+Here we ignore the result of the first `putStrLn`, but the second `putStrLn` still depends on its return value. Thus it has to wait 
+for the first `putStrLn` to finish before it can start.
 
-Finally, writing nested functions in this way quickly becomes tedious. Therefore, special syntax is available: do-notation
+## Do-notation {#do-notation}
+
+Writing nested functions in this way quickly becomes tedious. That is why special syntax is available: do-notation
 
 ```haskell
 main1 = do
@@ -510,13 +638,16 @@ main2 = do
     putStrLn "world"
 ```
 
-do-notation is only syntactic sugar: it is translated to the nested functions that we saw above by the compiler. 
+do-notation is only syntactic sugar: it is translated by the compiler to the nested functions that we have seen above. 
 The syntax is very convenient however. Additionally, we can use it for all types that implement `>>=`: all instances of the `Monad` typeclass.
 
 ## Monads
 
 `Monad` is a haskell typeclass (and a concept from a branch of mathematics called category theory). 
 Typeclasses are sets of types that implement some functions, similar to interfaces or traits in other languages.
+
+The monad typeclass defines two methods: bind/andThen/`>>=` which we've seen and `return :: Monad m => a -> m a`. 
+The `Monad m => ` part of the signature constrains the function to only work on types that have a `Monad` instance.
 
 I hope the above already gives some intuition about monad's main operator `>>=`: it forces order of evaluation. 
 A second property is that `Monad` can merge contexts with `join :: Monad m => m (m a) -> m a`. A common example of 
@@ -536,17 +667,15 @@ join value =
             Just x
 ```
 
-If the outer context has failed (is `Nothing`), then the total computation has failed and there is no value of type `a` to give back. If the outer computation succeeded but the inner one failed, there is still no `a` and the only thing we can return is `Nothing`. 
+If the outer context has failed (is `Nothing`), then the total computation has failed and there is no value of type `a` to give back. 
+If the outer computation succeeded but the inner one failed, there is still no `a` and the only thing we can return is `Nothing`. 
 Only if both the inner and the outer computations have succeeded can we give a result back.
-
-The full definition of `Monad` requires one more function: `return :: Monad m => a -> m a`. Additionally, join 
-can be implemented in terms of `>>=` and `>>=` has to satisfy a couple of laws.
 
 In short
 
 * `Monad` is a haskell typeclass
 * it has two main functions
-    * bind or `>>= :: Monad m => m a -> (a -> m b) -> m b` 
+    * bind or andThen or `>>= :: Monad m => m a -> (a -> m b) -> m b` 
     * `return :: Monad m => a -> m a`
 * `Monad` forces the order of operations and can flatten wrappers
 * `Monad` allows us to use do-notation
@@ -555,7 +684,7 @@ In short
 Much material on the web about monads is about establishing the general idea, but really the exact meaning of `>>=` can be very different 
 for every instance. Next we'll look at some of the types used in the code for this thesis.
 
-## Except
+## Except {#except}
 
 Except is very similar to `Either`: 
 
@@ -584,10 +713,10 @@ popQueue queue =
             return ( x, xs )
 ```
 
-In this context `return` means a non-error value, and `>>=` allows us to chain multiple operations that can fail, stopping when 
+Except and Either have a `Monad` instance. In this context `return` means a non-error value, and `>>=` allows us to chain multiple operations that can fail, stopping when 
 an error occurs.
 
-## State and StateT
+## State and StateT {#state}
 
 `State` is a wrapper around a function of type `s -> (a, s)`
 
@@ -601,9 +730,12 @@ Intuitively, we can compose functions of this kind.
 ```haskell
 f :: s -> (a,   s)
 g ::       a -> s -> (b, s)
+-- implies
+h :: s ->            (b, s)
 ```
 
-And this is exactly what monadic bind for state.
+And this is exactly what monadic bind for state does.
+
 ```haskell
 andThen :: State s a -> (a -> State s b) -> State s b
 andThen (State first) tagger = 
@@ -624,7 +756,6 @@ instance Monad (State s) where
 When we want to combine monads, for instance to have both state and error reporting, we must use monad transformers. 
 The transformer is needed because monads don't naturally combine: `m1 (m2 a)` may not have a law-abiding monad instance.
 
-
 ```haskell
 newtype StateT s m a = StateT { runStateT :: s -> m (a, s) }  
 
@@ -642,7 +773,7 @@ The `MonadTrans` typeclass defines the `lift` function that wraps a monadic valu
 because we can say "given a monad `m`, `StateT s m` is a law-abiding monad.
 
 
-## Factoring out recursion
+## Factoring out recursion {#factoring-recursion}
 
 A commonly used idiom in our code is to factor out recursion from a data structure, using the `Fix` and `Monad.Free` types.
 Both require the data type to be an instance of `Functor`: The type is of the shape `f a` - like `List a` or `Maybe a`, and there exists a mapping function `fmap :: (a -> b) -> (f a -> f b)`. 
@@ -701,7 +832,7 @@ evaluate =
 The `cata` function - a catamorphism also known as a fold or reduce - applies evaluate from the bottom up. In the code we write, we 
 only need to make local decisions and don't have to write the plumbing to get the recursion right. 
 
-## Monad.Free 
+## Monad.Free {#free-monad}
 
 The Free monad is very similar to `Fix`, but allows us to use a different type for the leaves, and 
 enables us to use do-notation. Writing expressions with `Fix` can be quite messy, free monads 
@@ -715,7 +846,7 @@ data Free f a
     | Free (f (Free f a))
 ```
 
-and as the name suggests it has a Monad instance. 
+and as the name suggests `Monad.Free` has a Monad instance. 
 
 This then makes it possible to define a functor that represents instructions, define some helpers and then use do-notation to write our actual programs.
 
@@ -743,4 +874,48 @@ pop :: Stack a a
 pop = liftFree (Pop identity)
 ```
 
+## Guaranteeing well-formedness of Free {#well-formedness-free}
 
+We use the free monad to build up programs and global types. A problem with the free monad is that the built-up tree can still contain "holes" because of the `Pure _` branch of `Free`. 
+That is fine while constructing the tree, but when evaluating it we want all `Pure`s to be gone. There are two ways of enforcing this constraint using the type systems.
+
+We observe that only our leaves have a free type variable. For instance for `HighLevelProgram`, only `terminate` (via NoOp) can have type `HighLevelProgram a` where 
+the `a` is unbound. That means that `terminate` will unify with anything: `HighLevelProgram String`, `HighLevelProgram Int`, etc. 
+
+```haskell
+terminate :: HighLevelProgram a
+terminate = HighLevelProgram (liftF NoOp)
+```
+
+There are now two ways forward:
+
+**Solution 1: Rank2Types and Universal Quantification**
+
+Now if we enforce that our whole program unifies with anything, that implies that all `Pure`s are gone from the structure. Normally, type signatures 
+are valid if there is at least one valid unification for every type variable (i.e. existential quantification). But with the language extension 
+`ExplicitForAll` we can mark type variables as universally quantified: they need to unify with all types. In this case we also need `Rank2Types` 
+because of the position where we want to use `forall`.
+
+```haskell
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE ExplicitForAll #-}
+
+compile :: Participant -> (forall a. HighLevelProgram a) -> Program Value
+compile participant (HighLevelProgram program) = ...
+```
+
+**Solution 2: Data.Void** 
+
+The second solution is to use `Data.Void`. `Void` is the data type with zero values, which means there is no valid way of creating a value of type `Void`. 
+Thus a `Free f Void` cannot have any `Pure`s, because they need a value of type `Void` and there are none. 
+
+```haskell
+import Data.Void (Void)
+
+compile :: Participant -> HighLevelProgram Void -> Program Value
+compile participant (HighLevelProgram program) = ...
+```
+
+**Tradeoffs** 
+
+In the codebase we went with solution 2 because it produces clearer error messages and doesn't introduce extra language extensions to the project. 

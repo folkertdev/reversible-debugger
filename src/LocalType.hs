@@ -15,6 +15,9 @@ import qualified Zipper
 import GlobalType (GlobalType, GlobalTypeF)
 import qualified GlobalType
 
+import qualified Control.Monad.Free as Free
+import qualified Data.Void as Void
+
 type Participant = String
 type Identifier = String
 type Location = String
@@ -104,54 +107,54 @@ projections global =
 
 {-| Project a global type into a local one for a particular participant -}
 project :: Set Participant -> Participant -> GlobalType Participant u -> LocalType u 
-project participants participant = 
-    Data.Fix.cata $ \global -> 
-        case global of 
-            GlobalType.Transaction sender receiver tipe cont -> 
-                if sender == receiver then
-                    if participant == sender then 
-                         LocalType.send sender receiver tipe $ LocalType.receive receiver sender tipe cont
+project participants participant = Free.iter helper . fmap Void.absurd
+  where helper global =
+            case global of 
+                GlobalType.Transaction sender receiver tipe cont -> 
+                    if sender == receiver then
+                        if participant == sender then 
+                             LocalType.send sender receiver tipe $ LocalType.receive receiver sender tipe cont
+                        else 
+                             cont
+                    else
+                        if participant == sender then 
+                             LocalType.send sender receiver tipe cont
+                        else if participant == receiver then 
+                             LocalType.receive receiver sender tipe cont
+                        else 
+                            cont 
+
+                GlobalType.Choice selector offerer options -> 
+                    if participant == offerer then 
+                        let others = Set.toList $ Set.difference participants (Set.fromList [ selector, offerer ]) 
+
+                            folder participant (label, accum) = 
+                                ( label, LocalType.select offerer participant [ (label, accum) ] )
+
+                            f (label, tipe ) = 
+                                List.foldr folder (label, tipe) others 
+
+                            newOptions = List.map f $ Map.toList options
+                        in
+                            LocalType.offer offerer selector newOptions
+
+                    else if participant == selector then 
+                        LocalType.select selector offerer (Map.toList options)
                     else 
-                         cont
-                else
-                    if participant == sender then 
-                         LocalType.send sender receiver tipe cont
-                    else if participant == receiver then 
-                         LocalType.receive receiver sender tipe cont
-                    else 
-                        cont 
+                        -- we cast the decision to everyone
+                        LocalType.offer participant offerer (Map.toList options)
 
-            GlobalType.Choice selector offerer options -> 
-                if participant == offerer then 
-                    let others = Set.toList $ Set.difference participants (Set.fromList [ selector, offerer ]) 
+                
 
-                        folder participant (label, accum) = 
-                            ( label, LocalType.select offerer participant [ (label, accum) ] )
+                GlobalType.R nestedGlobalType -> 
+                    recurse nestedGlobalType 
 
-                        f (label, tipe ) = 
-                            List.foldr folder (label, tipe) others 
+                GlobalType.V -> 
+                    recursionVariable
 
-                        newOptions = List.map f $ Map.toList options
-                    in
-                        LocalType.offer offerer selector newOptions
+                GlobalType.Wk nestedGlobalType -> 
+                    broadenScope nestedGlobalType
 
-                else if participant == selector then 
-                    LocalType.select selector offerer (Map.toList options)
-                else 
-                    -- we cast the decision to everyone
-                    LocalType.offer participant offerer (Map.toList options)
-
-            
-
-            GlobalType.R nestedGlobalType -> 
-                recurse nestedGlobalType 
-
-            GlobalType.V -> 
-                recursionVariable
-
-            GlobalType.Wk nestedGlobalType -> 
-                broadenScope nestedGlobalType
-
-            GlobalType.End -> 
-                end
+                GlobalType.End -> 
+                    end
 
