@@ -288,20 +288,21 @@ forwardHelper location owner monitor (historyType, futureType) program otherOpti
 
         (IfThenElse owner condition thenBranch elseBranch, _) -> do 
             verdict <- unsafeCastToBool <$> evaluateValue owner condition 
+
+            let (chosen, notChosen) = 
+                    if verdict then
+                        ( thenBranch, elseBranch )
+                    else
+                        ( elseBranch, elseBranch )
             
-            if verdict then do
-                let newLocalType = TypeContext.createState (TypeContext.Branched owner historyType) futureType
-                    newMonitor = monitor { _localType = newLocalType }  
-                
-                setParticipantWithNewStack location owner ( newMonitor, OtherBranch condition verdict elseBranch : otherOptionsStack, thenBranch )
-            else do
-                let newLocalType = TypeContext.createState (TypeContext.Branched owner historyType) futureType
-                    newMonitor = monitor { _localType = newLocalType }  
+            let newLocalType = TypeContext.createState (TypeContext.Branched owner historyType) futureType
+                newMonitor = monitor { _localType = newLocalType }  
             
-                setParticipantWithNewStack location owner ( newMonitor, OtherBranch condition verdict thenBranch : otherOptionsStack, elseBranch )
+            setParticipantWithNewStack location owner ( newMonitor, OtherBranch condition verdict notChosen : otherOptionsStack, chosen )
 
         ( NoOp, _ ) -> 
-            return () 
+            -- return () 
+            Except.throwError Terminated
 
 
 

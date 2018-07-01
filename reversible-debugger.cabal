@@ -24,6 +24,7 @@ library
                      , Program
                      , Session
                      , Synchronization
+                     , Interpreter
                      , Examples.ThreeBuyer
                      , Examples.RecursiveChoice
                      , Examples.TFP

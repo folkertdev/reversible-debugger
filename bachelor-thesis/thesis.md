@@ -221,7 +221,9 @@ Session types provide three key properties:
 * **Progress** every sent message is eventually received
 * **Safety** sender and receiver always agree about the type of the sent value
 
-## Global Types {global-types}
+Next we will look at how these types are defined and how we can check that our program implements its session type.
+
+## Global Types {#global-types}
 
 The simplest non-trivial concurrent program has two participants. In this case, the types of the two participants are exactly dual: if the one sends, the
 other must receive. However, for the multiparty (3 or more) use case, things aren't so simple.
@@ -230,13 +232,15 @@ We need to define globally what transactions occur in our protocol.
 
 ```haskell
 simple :: GlobalType String String
-simple = GlobalType.globalType $ do
-    transaction "carol" "bob" "Bool"
-    transaction "alice" "carol" "int"
+simple = do 
+    message "carol" "bob" "Bool"
+    message "alice" "carol" "int"
+    end
 ```
 
-We can see immediately that **safety and progress are guaranteed**: we cannot construct a valid global type that breaks these guarantees. 
-A more realistic example that we'll use as a running example is the three buyer protocol, defined as follows: 
+We can see immediately that **safety and progress are guaranteed**: we cannot construct a valid global type that breaks these guarantees: Every communication has a send and receive, and they both must agree on the type.
+A more realistic example that we'll use as a running example is the three buyer protocol.
+In this protocol, Alice and Bob communicate with the Vendor about the purchase of some item:
 
 \begin{align*}
 G = ~&  \gtcom{A}{\texttt{V}}{\mathsf{title}}{~~\gtcom{\mathtt{V}}{\{A,B\}}{\mathsf{price}}{\\[-0.5mm] 
@@ -247,7 +251,7 @@ G = ~&  \gtcom{A}{\texttt{V}}{\mathsf{title}}{~~\gtcom{\mathtt{V}}{\{A,B\}}{\mat
 & \quad\qquad \gtcom{B}{\mathtt{V}}{\mathsf{address}}{~~\gtcom{\mathtt{V}}{B}{\mathsf{date}}{\gend}}}}}}}}
 \end{align*}
 
-In this protocol, Alice and Bob communicate with the Vendor about the purchase of some item. Near the end of the protocol, Bob has to leave and 
+Near the end of the protocol, Bob has to leave and 
 transfers the remainder of his protocol to Carol. She will also be sent the code - a **thunk process** $\textcolor{blue}{\thunkt}$ - to complete Bob's protocol, and finish the protocol in his name by evaluating the sent thunk. 
 
 The full definition of global types in the haskell implementation is given by
@@ -292,16 +296,16 @@ data MyType = Title | Price | Share | Ok | Thunk | Address | Date
     deriving (Show, Eq, Ord)
 
 globalType :: GlobalType.GlobalType MyParticipants MyType
-globalType = GlobalType.globalType $ do
-    GlobalType.transaction A V Title 
-    GlobalType.transactions V [A, B] Price 
-    GlobalType.transaction A B Share 
-    GlobalType.transactions B [A, V] Ok 
-    GlobalType.transaction B C Share
-    GlobalType.transaction B C Thunk
-    GlobalType.transaction B V Address
-    GlobalType.transaction V B Date
-    GlobalType.end
+globalType = do 
+    message A V Title 
+    messages V [A, B] Price 
+    message A B Share 
+    messages B [A, V] Ok 
+    message B C Share
+    message B C Thunk
+    message B V Address
+    message V B Date
+    end
 ```
 
 
@@ -319,6 +323,47 @@ this occurs, all participants have to jump back to the beginning, so every choic
 ```haskell
 -- some latex snipped with the full projection rules
 ```
+
+\begin{figure}[t!]
+{
+\begin{align*}
+\tproj{(\gtcom{p}{q}{U}{G})}{\gpart{r}} & = 
+\begin{cases}
+\ltout{q}{U}{(\tproj{G}{\gpart{r}})} & \text{if $\gpart{r} = \gpart{p}$} \\
+\ltinp{p}{U}{(\tproj{G}{\gpart{r}})} & \text{if $\gpart{r} = \gpart{q}$} \\
+(\tproj{G}{\gpart{r}}) &  \text{if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$}
+\end{cases}
+\\
+\tproj{(\gtcho{p}{q}{l_i}{G_i})}{\gpart{r}}  
+& 
+{= 
+\begin{cases}
+\ltsel{q}{\lbl_i}{(\tproj{G_i}{\gpart{r}})}{i}{I}  & \text{ if $\gpart{r} = \gpart{p}$} \\
+\ltbra{p}{\lbl_i}{\tproj{G_i}{\gpart{r}}}{i}{I}  & \text{ if $\gpart{r} = \gpart{q}$} \\
+(\tproj{{G_1}}{\gpart{r}}) &  \text{ if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$ and} \\ 
+& \text{~~$\forall i, j \in I. \tproj{{G_i}}{\gpart{r}} = \tproj{{G_j}}{\gpart{r}}$}
+\end{cases}
+}
+\\
+\tproj{(\mu X. G)}{\gpart{r}} &= 
+\begin{cases}
+\mu X. \tproj{G}{\gpart{r}} & \text{if $\gpart{r}$ occurs in $G$}
+\\
+\lend & \text{otherwise}
+\end{cases}
+\\
+\tproj{X}{\gpart{r}} & = X
+\qquad
+\tproj{\gend}{\gpart{r}} = \lend
+\end{align*}
+}
+\vspace{-4mm}
+\caption{Projection of a global type $G$ onto a participant $\gpart{r}$.\label{f:proj}}
+\end{figure}
+
+> **NOTE:** the above is still wrong. For offer, it must also send the choice to all other participants
+> all participants that are not p or q must also be informed of the choice.
+> How do we write this all down? 
 
 ## reversiblilty {#reversibility}
 
@@ -508,15 +553,19 @@ build up and produce a `Program` at the end.
 ```haskell
 newtype HighLevelProgram a = 
     HighLevelProgram (StateT (Participant, Int) (Free (ProgramF Value)) a)
-    deriving (Functor, Applicative, Monad, MonadState (Participant, Int))
+    deriving 
+        ( Functor, Applicative, Monad
+        , MonadState (Participant, Int)
+        , MonadFree (ProgramF Value)
+        )
 
 send :: Value -> HighLevelProgram ()
 send value = do
     (participant, _) <- State.get
-    HighLevelProgram $ liftF (Send participant value ())  
+    liftF (Send participant value ())  
 
 terminate :: HighLevelProgram a
-terminate = HighLevelProgram (liftF NoOp)
+terminate = liftF NoOp
 
 -- similar for receive, select, etc.
 ```
@@ -525,6 +574,23 @@ Here we use the unit type `()` as a placeholder or hole. To ensure that the prog
 all branches must end with `terminate`. We use the fact that `terminate :: HighLevelProgram a` contains a free type variable `a` which can 
 unify with `Void`, the type with no values. Thus `Free f Void` can contain no `Pure` because the `Pure` constructor needs a value of type `Void`, which
 don't exist. For more information see the appendix section \ref{well-formedness-free}.
+
+
+
+# Running our programs 
+
+Finally, we want to be able to run our programs. 
+
+We use a simple round-robin scheduler that calls `forward` on the locations in order. 
+There are two error cases that we need to handle: 
+
+* **blocked on receive**, either `InvalidQueueItem` or `EmptyQueue`: the process wants to perform a receive, but the expected item is not at the top of the queue yet. 
+    In this case we want to proceed evaluating the other locations so they can send the value that the erroring location expects
+
+* **location terminates** with `Terminated`: the execution has reached a `NoOp`. In this case we don't want to schedule this location any more.
+
+Otherwise we just continue until there are no active (non-terminated) locations left. 
+For code see section \ref{scheduling-code}
 
 # Benefits of pure functional programming
 
@@ -555,17 +621,15 @@ Secondly, purity and immutability are very valuable in implementing and testing 
 that we've not forgotten to revert anything. 
 
 In a pure language, given functions `f :: a -> b` and `g :: b -> a` to prove that f and g are inverses it is enough to prove that 
-`f . g = identity && g . f = identity`. In an impure language, we also have to consider the outside world, some context C.
-
-`f (C[x]) = C'[y] => g (C'[y]) = C[x]`
-
-Because we don't need to consider a context here, checking that reversibility works is as simple as comparing initial and final states.
+`f . g = identity && g . f = identity`. In an impure language, we can never be sure that the outside world is not mutated.
+Because we don't need to consider a context here, checking that reversibility works is as simple as comparing initial and final states for all transitions.
 
 # Discussion
 
 # Conclusion
 
-we've given an encoding of the PPDP semantics in the haskell programming language
+we've given an encoding of the PPDP semantics in the haskell programming language. By embedding the semantics we can now 
+run and verify our example programs automatically. 
 
 # Notes on haskell notation and syntax 
 
@@ -919,3 +983,83 @@ compile participant (HighLevelProgram program) = ...
 **Tradeoffs** 
 
 In the codebase we went with solution 2 because it produces clearer error messages and doesn't introduce extra language extensions to the project. 
+
+## Scheduling code {#scheduling-code}
+
+```haskell
+newtype RoundRobin = RoundRobin (Zipper Location)
+    deriving (Show, Eq)
+
+next :: RoundRobin -> ( Location, RoundRobin )
+next (RoundRobin (Zipper (prev, current, next))) = 
+    let zipper a b c = RoundRobin (Zipper (a,b,c)) in
+    case next of 
+        [] -> 
+            case List.reverse (current : prev) of 
+                [] -> 
+                    ( current, zipper [] current [] )
+
+                p:ps -> 
+                    ( current, zipper [] p ps )
+
+        (n:ns) -> 
+            ( current, zipper (current : prev) n ns )
+
+removeCurrent :: RoundRobin -> Maybe RoundRobin 
+removeCurrent (RoundRobin (Zipper (prev, current, next))) = 
+    case next ++ prev of 
+            [] -> 
+                Nothing 
+
+            x:xs -> 
+                Just . RoundRobin $ Zipper ([], x, xs)
+
+step :: RoundRobin -> ExecutionState Value -> Either Session.Error (RoundRobin, ExecutionState Value)
+step scheduler state = 
+    let 
+        ( location, nextState ) = next scheduler 
+    in
+        forward location  
+            |> flip State.runStateT state
+            |> Except.runExcept
+            |> fmap (\(_, newExecutionState) -> (nextState, newExecutionState))
+
+untilError state@ExecutionState{ locations } = 
+    case Map.keys locations of 
+        [] -> 
+            Right state
+
+        x:xs -> 
+            helper (RoundRobin $ Zipper ([], x, xs)) state
+
+helper scheduler state =  
+    let -- note these are defined lazily
+        ( _, newScheduler ) = next scheduler 
+        proceed = helper newScheduler state 
+    in
+    case step scheduler state of 
+        Right (newScheduler, newState ) ->  
+            -- the forward step succeeded, so continue
+            helper newScheduler newState
+
+        Left (QueueError origin (InvalidQueueItem message)) -> 
+            -- blocked on receive, try moving others forward
+            proceed
+
+        Left (QueueError origin EmptyQueue) -> 
+            -- blocked on receive, try moving others forward
+            proceed 
+
+        Left Terminated -> 
+            -- this location is done, remove from scheduler
+            case removeCurrent scheduler of 
+                Nothing -> 
+                    Right state
+
+                Just newScheduler -> 
+                    helper newScheduler state 
+
+        Left err -> 
+            -- other errors are raised
+            Left err
+```

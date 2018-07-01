@@ -89,6 +89,7 @@ data Error
     | LabelError String
     | QueueError String Queue.QueueError
     | ChoiceError ChoiceError
+    | Terminated
     deriving (Show, Eq)
 
 data Choice = S | O deriving (Eq)

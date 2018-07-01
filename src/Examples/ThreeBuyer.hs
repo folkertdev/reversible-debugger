@@ -2,6 +2,7 @@
 module Examples.ThreeBuyer where
 
 import Control.Monad.State as State
+import Control.Monad.Except as Except
 
 import LocalType (LocalType, Location, Participant, Identifier, Transaction(..))
 import qualified TypeContext 
@@ -14,16 +15,21 @@ import qualified Data.Map as Map
 import Data.Fix as Fix
 
 import Utils ((|>), List)
+import qualified Utils.Maybe as Maybe
+import Zipper
 
-import Session (Monitor(..), ExecutionState(..), Session)
+import Session (Monitor(..), ExecutionState(..), Session, Error(..))
+import qualified Session 
 import Semantics (forward) 
 import qualified Semantics
 import Program (ProgramF(..), Value(..), Program)
+import Queue (QueueError(..))
 import qualified Queue
 
 import qualified HighLevel as H
 import Data.Void (Void)
 import Debug.Trace as Debug
+import qualified Interpreter
 
 data MyParticipants = A | B | C | V 
     deriving (Show, Eq, Ord, Enum, Bounded)
@@ -47,10 +53,6 @@ globalType = do
     GlobalType.end
 
 
-localTypes :: Map Identifier (LocalType.LocalType String)
-localTypes = LocalType.projections $ GlobalType.mapType show globalType
-
-
 alice :: H.HighLevelProgram a
 alice = do 
     let h = VInt 42 
@@ -71,6 +73,7 @@ bob = do
 
     price <- H.receive 
     share <- H.receive 
+    {-
     H.ifThenElse (price `H.lessThan` VInt 79)
         ( do
             H.send (VBool True)
@@ -80,6 +83,9 @@ bob = do
             H.send (VBool False)
             H.send (VBool False)
         )
+    -}
+    H.send (VBool True)
+    H.send (VBool True)
     H.send share
     H.send thunk 
     H.terminate
@@ -106,103 +112,10 @@ vendor = do
     H.send date
     H.terminate
 
-constructExecutionState :: List (Participant, H.HighLevelProgram Void) -> ExecutionState Value 
-constructExecutionState programs_ = 
-    let (participants, programs) = List.unzip programs_
-        createMonitor participant = Monitor 
-            { _localType = TypeContext.Unsynchronized (TypeContext.Hole, localTypes Map.! participant)
-            , _store = Map.empty
-            , _applicationHistory = Map.empty
-            , _recursiveVariableNumber = 0
-            , _recursionPoints = []
-            , _usedVariables = []
-            }
-
-    in
-        ExecutionState
-            { variableCount = 0
-            , locationCount = List.length programs_
-            , applicationCount = 0
-            , participants = Map.fromList $ List.map (\p -> ( p, createMonitor p)) participants 
-            , locations = 
-                programs_
-                    |> List.map (uncurry H.compile)
-                    |> zip3 participants (repeat [])
-                    |> zipWith (\i program -> ("l" ++ show i, program)) [1..]
-                    |> Map.fromList
-            , queue = Queue.empty
-            , isFunction = \value -> 
-                case value of 
-                    VFunction arg body -> Just (arg, body)
-                    _ -> Nothing
-
-            }
-
 executionState = 
-    constructExecutionState $ zip (List.map show [minBound..(maxBound :: MyParticipants)]) [ alice, bob, carol, vendor]
+    Interpreter.constructExecutionState globalType $
+        zip (List.map show [minBound..(maxBound :: MyParticipants)]) [ alice, bob, carol, vendor]
 
-{-
-deriveSteps :: Int -> GlobalType.GlobalType String -> Session Value ()
-deriveSteps n global = 
-    case Debug.traceShowId $ unFix global of 
-        GlobalType.Transaction p1 p2 t cont -> do
-            Semantics.forwardUntilTypeDecision "Location1" "C"
-            Semantics.forwardUntilTypeDecision "Location1" p2
-            if n <= 0 then Debug.traceShow ("here!!!!!!****", p1, p2) $ return () else do
-                Semantics.forwardUntilTypeDecision "Location1" p1 
-                Semantics.forwardTransaction ("Location1", p1) ("Location1", p2) t 
-                deriveSteps (n - 1) cont
-
-        GlobalType.End -> 
-            return ()
-
-        _ -> error "unsupported for now"
-
-derived = 
-    deriveSteps 8 globalType 
-        |> flip State.runStateT executionState
--}
-
-{-
-steps = 
-        ( do
-            -- initialize thunk
-            forward "Location1" "B" 
-
-            forward "Location1" "A" 
-            forward "Location1" "V" 
-
-            forward "Location1" "V" 
-            forward "Location1" "A" 
-            forward "Location1" "V" 
-            forward "Location1" "B" 
-
-            forward "Location1" "A" 
-            forward "Location1" "B" 
-
-            forward "Location1" "B" 
-            forward "Location1" "A" 
-            forward "Location1" "B" 
-            forward "Location1" "V" 
-
-            forward "Location1" "B" 
-            forward "Location1" "C" 
-            
-            forward "Location1" "B" 
-            forward "Location1" "C" 
-
-            -- force thunk
-            forward "Location1" "C" 
-
-            -- evaluate the thunk
-            forward "Location1" "C" 
-            forward "Location1" "V" 
-
-            forward "Location1" "V" 
-            forward "Location1" "C" 
-        )
-
--}
 steps = 
     ( do
             -- initialize thunk

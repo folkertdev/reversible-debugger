@@ -52,20 +52,20 @@ ensure condition error =
     else 
         Except.throwError error
 
-validate (expectedSender, source) (expectedReceiver, target) = do
+validate errorConstructor (expectedSender, source) (expectedReceiver, target) = do
     ensure (source == expectedSender) $ 
-        InvalidBackwardQueueItem $
+        errorConstructor $            
             "sender mismatch; the type expects " ++ expectedSender ++ " but the queue contains " ++ source  
 
     ensure (target == expectedReceiver) $
-        InvalidBackwardQueueItem $
+        errorConstructor $
             "receiver mismatch; the type expects " ++ expectedReceiver ++ " but the queue contains " ++ target  
 
 pop :: (MonadState (Queue value) m, MonadError QueueError m) => Participant -> Participant -> m value
 pop expectedSender expectedReceiver = do
     ( source, target, payload ) <- unsafePop 
     
-    validate (expectedSender, source) (expectedReceiver, target)
+    validate InvalidQueueItem (expectedSender, source) (expectedReceiver, target)
 
     return payload
 
@@ -74,7 +74,7 @@ remove :: (MonadState (Queue value) m, MonadError QueueError m) => Participant -
 remove expectedSender expectedReceiver = do
     ( source, target, payload ) <- unsafeRemove 
     
-    validate (expectedSender, source) (expectedReceiver, target)
+    validate InvalidBackwardQueueItem (expectedSender, source) (expectedReceiver, target)
 
     return payload
 
@@ -92,7 +92,7 @@ popHistory :: (MonadState (Queue value) m, MonadError QueueError m) => Participa
 popHistory expectedSender expectedReceiver = do
     ( source, target, payload ) <- popHistory_
 
-    validate (expectedSender, source) (expectedReceiver, target)
+    validate InvalidBackwardQueueItem (expectedSender, source) (expectedReceiver, target)
 
     return  payload
 

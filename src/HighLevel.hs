@@ -169,7 +169,7 @@ recursive body = do
 
 
 terminate :: HighLevelProgram a
-terminate = HighLevelProgram (liftF NoOp)
+terminate = liftF NoOp
 
 
 offer :: List (String, HighLevelProgram a) -> HighLevelProgram a

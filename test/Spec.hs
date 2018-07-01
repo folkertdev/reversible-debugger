@@ -63,7 +63,7 @@ compileBob = id
 
 testProjection = describe "projection" $ 
     it "projection of choice" $ 
-        let globalType = GlobalType.globalType $ 
+        let globalType = do 
                 GlobalType.oneOf B A 
                     [ (,) "x" $ do 
                         GlobalType.transaction C B "sometype"
@@ -344,7 +344,7 @@ testBackward = describe "backward" $ do
 
     it "nested recursion behaves 2" $ 
         let 
-            globalType = GlobalType.globalType $ 
+            globalType = 
                 GlobalType.recurse $
                     GlobalType.recurse $ do
                         GlobalType.transaction A B "number"
@@ -429,7 +429,7 @@ testForward = describe "forward_" $ do
                 (Map.singleton "v0" (VFunction "var1" (Fix (Application "A" (VReference "v0") VUnit))))
 
             
-            globalType = GlobalType.globalType $ do
+            globalType = do 
                 GlobalType.transaction B C "thunk"
                 GlobalType.transaction B A "address"
                 GlobalType.transaction A B "amount"
@@ -519,7 +519,7 @@ testForward = describe "forward_" $ do
 
     it "let in thunk assigns to the correct participant" $
         let
-            globalType = GlobalType.globalType $ do
+            globalType = do 
                 GlobalType.transaction B C "thunk" 
                 GlobalType.end
 
@@ -564,7 +564,7 @@ testForward = describe "forward_" $ do
 
     it "receive adds its variable to the correct owner" $ 
         let 
-            globalType = GlobalType.globalType $ do
+            globalType = do 
                 GlobalType.transaction C B "thunk" 
                 GlobalType.transaction A C "fourtyTwo" 
                 GlobalType.end
