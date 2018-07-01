@@ -39,7 +39,7 @@ data MyType
 
 
 globalType :: GlobalType.GlobalType MyParticipants MyType
-globalType = GlobalType.globalType $ 
+globalType = 
     GlobalType.recurse $ do
         GlobalType.transaction A V Title 
         GlobalType.transactions V [A, B] Price 

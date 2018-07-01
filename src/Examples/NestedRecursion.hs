@@ -35,7 +35,7 @@ import Data.Void (Void)
 data Participants = A | B deriving (Show, Eq, Ord, Enum, Bounded)
 
 recursiveGlobalType :: GlobalType.GlobalType Participants String
-recursiveGlobalType = GlobalType.globalType $ 
+recursiveGlobalType = 
     GlobalType.recurse $
         GlobalType.recurse $ do
             GlobalType.transaction A B "number"

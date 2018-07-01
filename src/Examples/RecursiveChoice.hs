@@ -36,7 +36,7 @@ data Participants = A | B deriving (Show, Eq, Ord, Enum, Bounded)
 
 
 recursiveGlobalType :: GlobalType.GlobalType Participants String
-recursiveGlobalType = GlobalType.globalType $
+recursiveGlobalType = 
     GlobalType.recurse $ do
         GlobalType.transaction A B "number" 
         GlobalType.oneOf B A

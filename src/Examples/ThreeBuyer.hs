@@ -33,7 +33,7 @@ data MyType = Title | Price | Share | Ok | Thunk | Address | Date
 
 
 globalType :: GlobalType.GlobalType MyParticipants MyType
-globalType = GlobalType.globalType $ do
+globalType = do 
     GlobalType.transaction A V Title 
     GlobalType.transaction V A Price 
     GlobalType.transaction V B Price 

@@ -75,8 +75,6 @@ mapType mapper (Free global) = Free $
             End
 
 
-globalType :: Free (GlobalTypeF p u) Void -> GlobalType p u 
-globalType = id
 
 transaction :: (Show participant, Ord participant) => participant -> participant -> tipe -> IGlobalType participant tipe () 
 transaction from to tipe = liftF (Transaction from to tipe ())
