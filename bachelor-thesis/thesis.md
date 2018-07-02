@@ -987,79 +987,53 @@ In the codebase we went with solution 2 because it produces clearer error messag
 ## Scheduling code {#scheduling-code}
 
 ```haskell
-newtype RoundRobin = RoundRobin (Zipper Location)
-    deriving (Show, Eq)
+data Progress = Progress | NoProgress deriving (Eq, Show)
 
-next :: RoundRobin -> ( Location, RoundRobin )
-next (RoundRobin (Zipper (prev, current, next))) = 
-    let zipper a b c = RoundRobin (Zipper (a,b,c)) in
-    case next of 
-        [] -> 
-            case List.reverse (current : prev) of 
-                [] -> 
-                    ( current, zipper [] current [] )
+round :: List Location -> ExecutionState Value 
+      -> Either Error ( List (Location, Progress), ExecutionState Value)
+round locations state = 
+    foldM helper [] locations 
+        |> flip State.runStateT state
+        |> Except.runExcept
+  where helper :: List (Location, Progress) -> Location 
+               -> Session Value (List (Location, Progress))
+        helper accum location = do
+            state <- State.get
 
-                p:ps -> 
-                    ( current, zipper [] p ps )
+            case Except.runExcept $ State.runStateT (forward location) state of 
+                Right ( _, s ) -> do
+                    State.put s
+                    return $ ( location, Progress ) : accum 
 
-        (n:ns) -> 
-            ( current, zipper (current : prev) n ns )
+                Left (QueueError origin (InvalidQueueItem message)) -> 
+                    -- blocked on receive, try moving others forward
+                    return $ ( location, NoProgress ) : accum 
 
-removeCurrent :: RoundRobin -> Maybe RoundRobin 
-removeCurrent (RoundRobin (Zipper (prev, current, next))) = 
-    case next ++ prev of 
-            [] -> 
-                Nothing 
+                Left (QueueError origin EmptyQueue) -> 
+                    -- blocked on receive, try moving others forward
+                    return $ ( location, NoProgress ) : accum 
 
-            x:xs -> 
-                Just . RoundRobin $ Zipper ([], x, xs)
+                Left Terminated -> 
+                    return accum
+                            
+                Left err -> 
+                    -- other errors are raised
+                    Except.throwError err
 
-step :: RoundRobin -> ExecutionState Value -> Either Session.Error (RoundRobin, ExecutionState Value)
-step scheduler state = 
-    let 
-        ( location, nextState ) = next scheduler 
-    in
-        forward location  
-            |> flip State.runStateT state
-            |> Except.runExcept
-            |> fmap (\(_, newExecutionState) -> (nextState, newExecutionState))
 
+untilError :: ExecutionState Value -> Either Error (ExecutionState Value)
 untilError state@ExecutionState{ locations } = 
-    case Map.keys locations of 
-        [] -> 
-            Right state
+    helper (Map.keys locations) state
+  where helper locations state = do
+            ( locationProgress, newState ) <- Interpreter.round locations state
 
-        x:xs -> 
-            helper (RoundRobin $ Zipper ([], x, xs)) state
+            if null locationProgress then 
+                -- no active locations
+                Right state
 
-helper scheduler state =  
-    let -- note these are defined lazily
-        ( _, newScheduler ) = next scheduler 
-        proceed = helper newScheduler state 
-    in
-    case step scheduler state of 
-        Right (newScheduler, newState ) ->  
-            -- the forward step succeeded, so continue
-            helper newScheduler newState
+            else if any (\(_, progress) -> progress == Progress) locationProgress then 
+                helper (List.map fst locationProgress) newState
 
-        Left (QueueError origin (InvalidQueueItem message)) -> 
-            -- blocked on receive, try moving others forward
-            proceed
-
-        Left (QueueError origin EmptyQueue) -> 
-            -- blocked on receive, try moving others forward
-            proceed 
-
-        Left Terminated -> 
-            -- this location is done, remove from scheduler
-            case removeCurrent scheduler of 
-                Nothing -> 
-                    Right state
-
-                Just newScheduler -> 
-                    helper newScheduler state 
-
-        Left err -> 
-            -- other errors are raised
-            Left err
+            else
+                error $ "DEADLOCK\n" ++ show state
 ```

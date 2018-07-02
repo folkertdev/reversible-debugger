@@ -33,9 +33,6 @@ import Data.Void (Void)
 import Debug.Trace as Debug
 
 
-newtype RoundRobin = RoundRobin (Zipper Location)
-    deriving (Show, Eq)
-
 data Progress = Progress | NoProgress deriving (Eq, Show)
 
 round :: List Location -> ExecutionState Value -> Either Error ( List (Location, Progress), ExecutionState Value)
