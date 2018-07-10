@@ -30,8 +30,8 @@ header-includes:
 # Introduction
 
 Concurrent systems run processes that communicate over channels. 
-communication introduces a new class of bugs: deadlocks. 
-The simplest example of deadlock is a receive on an empty channel: 
+Communication introduces a new classes of bugs. One of these is the deadlock 
+A simple example of deadlock is a receive on an empty channel: 
 
 ```haskell
 main = do
@@ -42,6 +42,8 @@ main = do
 *This snippet uses Haskell's do-notation. the `<-` is used to bind the result of an effectful
 computation - like reading from a channel. See also appendix \ref{do-notation}* 
 
+In general there are three classes of bugs introduced by concurrency: 
+deadlock, atomicity violation and order-violation \cite{lu2008learning}.  
 Deadlock errors are difficult to spot and debug. 
 Solutions to prevent common cases of deadlock have been proposed, but haven't really found 
 their way into the mainstream.
@@ -67,20 +69,30 @@ our actions and use minimal resources?
 
 Solutions have been proposed that try to solve common deadlock scenarios and reversing evaluation. 
 but it's not made it's way into our languages and libraries. This paper gives an implementation of a 
-framework presented in *reference ppdp* that allows reversing of computation steps and verifies communication.
+framework presented in \cite{DBLP:conf/ppdp/MezzinaP17} that allows reversing of computation steps and verifies communication.
 We additionally will look at how this implementation can be used to debug concurrent message-passing programs.
+As such this bachelor's thesis will make the following contributions: 
 
-Our contributions are 
+* We begin by anaylyzing the three core components of \cite{DBLP:conf/ppdp/MezzinaP17} (section \ref{the-main-idea}):
 
-* We provide a Haskell implementation of a concurrent calculus featuring session types and reversibility
-    * We define the **process calculus** in section \ref{process-calculi}
-        To make actually write example programs pleasant, we will use the `Free` monad to provide convenient syntax
-    * We define **session types**  for the calculus in section \ref{session-types}. The session types feature nested recursion and choice.
-    * We describe the information that needs to be stored for **reversibility** in section \ref{reversibility}.
-    * We provide **forward and backward evaluation functions** in section \ref{combining}.
-    * We show that the system preserves the properties of the formal definition (section w), notably *causal consistency*
-* We provide debugging primitives and sketch how a debugger can be built on top of this work
-* We describe why purity and reversible computation work well together
+    A process calculus, multiparty session types and reversibility. At the same time 
+    we give the encoding of the formal definition into Haskell data types. 
+
+
+    * We define a **process calculus** (section \ref{process-calculi}) from its foundations. 
+    Later (section \ref{free-monad-dsl}) we use the `Free` monad to provide convenient syntax.
+
+    * Next we look at **multiparty session types** (section \ref{session-types}) for the calculus in section. 
+    The session types feature nested recursion and choice.
+
+    * Finally we consider **reversibility** given the two previous concepts. In particular we look at
+    the information that needs to be preserved when moving forward in order to move backward correctly.
+
+* Next we combine our encodings of the core components to define forward and backward 
+    evaluation functions (section \ref{combining}). 
+
+* We further consider how our new system can be used to debug concurrent programs and provide 
+    primitives for creating a debugger (section \ref{running-debugging})
 
 <!--
  The research question is then: can the reversible semantics by Mezzina and Perez provide a basis for debugging message-passing programs in an effective, modular way?
@@ -191,8 +203,8 @@ data ProgramF value next
     deriving (Functor) 
 ```
 
-We also need values in our language. In the paper they are defined as
 
+<!--
 \begin{figure}
 \begin{align*}
 u,w  \bnfis& n \sbnfbar x,y,z
@@ -204,8 +216,11 @@ n,n' \bnfis a,b \sbnfbar \ep{s}{p}
 V,W \bnfis & {a,b} \sbnfbar  x,y,z \sbnfbar  v, v' \sbnfbar {\abs{x}{P}}
 \end{align*}
 \end{figure}
+-->
 
-But to write more interesting examples we have also added some operations on integers and booleans as builtins.
+We also need values in our language. To write more interesting examples we extend the 
+types of values that can be used from references, booleans and functions to also include
+integers, strings, and basic integer and logic operators.
 
 ```haskell
 data Value 
@@ -297,7 +312,7 @@ data GlobalTypeF participant u next
 We can now see why choice is useful: it allows us to branch on the session type level. 
 For instance, one branch can terminate the protocol, and the other can start from the beginning. 
 
-The final three constructors are required for supporting nested recursion. A `RecursionPoint` is a point in the protocol that we can later jump back to. 
+The final three constructors are required for supporting nested recursion and taken from \cite{van2017session}. A `RecursionPoint` is a point in the protocol that we can later jump back to. 
 A `RecursionVariable` triggers jumping to a previously encountered `RecursionPoint`. By default it will jump to the closest and most-recently encountered `RecursionPoint`, but `WeakenRecursion` makes it jump one `RecursionPoint` higher, encountering 2 weakens will jump 2 levels higher etc.
 
 Using `Monad.Free`, we can write the ThreeBuyer example type as 
@@ -333,10 +348,6 @@ for local types.
 
 The projection is mostly straightforward, except for choice. Because we allow recursion, a branch of a choice may recurse back to the beginning. When 
 this occurs, all participants have to jump back to the beginning, so every choice must be communicated to all participants. 
-
-```haskell
--- some latex snipped with the full projection rules
-```
 
 \begin{figure}[t!]
 {
@@ -379,7 +390,7 @@ this occurs, all participants have to jump back to the beginning, so every choic
 > all participants that are not p or q must also be informed of the choice.
 > How do we write this all down? 
 
-## reversiblilty {#reversibility}
+## Reversiblilty {#reversibility}
 
 The third component of the system is reversibility. The idea here is that we can move back to previous program states, reversing forward steps. 
 
@@ -417,8 +428,8 @@ program = do
 
 2. Unused branches
 
-When a choice is made and then reverted, we want all our options to be available again. The current semantics aren't able
-to make a different choice, but it will be in the future. 
+When a choice is made and then reverted, we want all our options to be available again. 
+Currently the semantics aren't able to make a different choice, but it will in the future.
 
 ```haskell
 type Zipper a = (List a, a, List a)
@@ -447,10 +458,6 @@ undefined: we need both orders to work. When the application keeps track of exac
 function and argument it used the end result is always the same. Just using a stack could mix 
 up the applications.
 
-
-
-The implementation here is based on the formalization in PPDP. In the implemenation it might be simpler to 
-use a sta
 4. Messages on the channel
 
 When a value is sent, the sender loses track of what has been sent. Therefore, reverting a send/receive pair must move the value from the receiver via the queue back to the 
@@ -497,8 +504,6 @@ Where
 * `Error` can be thrown when something fails
 * `Location` defines places where code is ran concurrently (threads or machines)
 
-#### Type checking 
-
 We store all the information about a participant in a type called `Monitor`. 
 
 ```haskell
@@ -544,7 +549,7 @@ data ExecutionState value =
 The message queue is global and thus also lives in the `ExecutionState`. Finally we need a way of peeking into values, to see whether they are functions and if so, to
 extract their bodies for application. 
 
-# Convenient syntax with the free monad
+# Convenient syntax with the free monad {#free-monad-dsl}
 
 The types we have defined for `Program`, `GlobalType` and `LocalType` form recursive tree structures. 
 Because they are all new types, there is no easy way to traverse them. A common idiom 
@@ -601,11 +606,11 @@ terminate = liftF NoOp
 Here we use the unit type `()` as a placeholder or hole. To ensure that the program is well-formed and doesn't contain any holes when we evaluate it, 
 all branches must end with `terminate`. We use the fact that `terminate :: HighLevelProgram a` contains a free type variable `a` which can 
 unify with `Void`, the type with no values. Thus `Free f Void` can contain no `Pure` because the `Pure` constructor needs a value of type `Void`, which
-don't exist. For more information see the appendix appendix \ref{well-formedness-free}.
+don't exist. For more information see appendix \ref{well-formedness-free}.
 
 
 
-# Running and Debugging Programs 
+# Running and Debugging Programs {#running-debugging}
 
 Finally, we want to be able to run our programs. 
 
@@ -621,6 +626,16 @@ Otherwise we just continue until there are no active (non-terminated) locations 
 For code see appendix \ref{scheduling-code}
 
 Additionally, we can define running helpers that make debugging easier. One such function is `untilCommunication` that advances all locations until they perform communication (i.e. they need to check their local type). More fine-grained helpers can be written for specific scenarios, for instance communication with a particular participant. 
+
+order violation, atomicity violation, or deadlock. 
+
+**Order Violation**
+
+Order is guaranteed by the local type. This type of bugs is ruled out 
+
+**Atomicity Violation**
+
+**Deadlock**
 
 # Discussion  
 
@@ -660,6 +675,9 @@ Because we don't need to consider a context here, checking that reversibility wo
 we have given an encoding of the PPDP semantics in the Haskell programming language. By embedding the semantics we can now 
 run and verify our example programs automatically. 
 
+\bibliographystyle{abbrv}
+\bibliography{biblio}
+
 # Appendix
 
 \appendix
@@ -672,7 +690,7 @@ Notes on Haskell notation and syntax
 One of Haskell's key characteristics is that it is pure. This means that our computations can't have any observable effect to the
 outside world. Purity enables us to reason about our programs (referential transparency) and enables compiler optimizations. 
 
-But we use computres to solve problems, and we want to be able to observe the solution to our problems. Pure programs cannot 
+But we use computers to solve problems, and we want to be able to observe the solution to our problems. Pure programs cannot 
 produce observable results: The computer becomes very hot but we can't see our solutions. 
 
 So we perform a trick: we say that constructing our program is completely pure, but evaluating may produce side-effects like printing to the console
