@@ -1,7 +1,7 @@
 ---
 documentclass: llncs
 title: Reversible Session-Based Concurrency in Haskell\thanks{F.\ de Vries is a BSc student.}
-author:  Folkert de Vries\inst{1} \and Jorge A. Pérez\inst{1}\orcidID{0000-0002-1452-6180}
+author:  Folkert de Vries\inst{1} \and Jorge A. Perez\inst{1}\orcidID{0000-0002-1452-6180}
 institute: University of Groningen, The Netherlands
 authorrunning: F.\ de Vries and J.\ A.\ Pérez
 # email: "darth.vader@hs-augsburg.de"
@@ -10,7 +10,8 @@ abstract: |
     For message-passing, concurrent programs, reversing computation steps is a challenging and delicate task; one typically aims at formal semantics which are \emph{causally-consistent}. 
     Prior work has addressed this challenge in the context of a process model of multiparty protocols (choreographies) following a so-called \emph{monitors-as-memories} approach.
     In this paper, we describe our ongoing efforts aimed at implementing this operational semantics in Haskell. 
-    \keywords{Reversible computation \and Message-passing concurrency \and Session Types \and Haskell.}
+    
+# \keywords{Reversible computation \and Message-passing concurrency \and Session Types \and Haskell.}
 usepackage: graphicx,hyperref, xcolor,xspace,amsmath,amsfonts,stmaryrd,amssymb,enumerate, mathpartir, fancyvrb
 header-includes:
     - \usepackage{graphicx}
@@ -25,34 +26,42 @@ header-includes:
 
 \pagebreak 
 
-\tableofcontents
 
 # Introduction
 
-Concurrent systems run processes that communicate over channels. 
-Communication introduces a new classes of bugs. One of these is the deadlock 
-A simple example of deadlock is a receive on an empty channel: 
+This thesis describes an implemetation of theoretical work in the area of concurrent programming. 
+In particular it is concerned with using formal tools to check the correctness of message passing and 
+allow for flexible error handling.
+
+An example of a class of errors in message passing is lack of **progress**. 
+Consider this example of a receive on an empty channel: 
 
 ```haskell
 main = do
     channel <- Channel.new
     -- will block forever
-    message <- Channel.read channel
+    message <- Channel.receive channel
 ```
 *This snippet uses Haskell's do-notation. the `<-` is used to bind the result of an effectful
-computation - like reading from a channel. See also appendix \ref{do-notation}* 
+computation - like receiveing from a channel. See also appendix \ref{do-notation}* 
 
-In general there are three classes of bugs introduced by concurrency: 
-deadlock, atomicity violation and order-violation \cite{lu2008learning}.  
-Deadlock errors are difficult to spot and debug. 
-Solutions to prevent common cases of deadlock have been proposed, but haven't really found 
-their way into the mainstream.
+No value will ever be sent on the channel, so the receive blocks forever: it can't make any progress.
 
-Additionally, concurrent systems often perform a list of individual operations that are meant to be one whole.
+<!-- In general there are three classes of bugs introduced by concurrency: deadlock, atomicity violation and order-violation \cite{lu2008learning}. -->
+
+Failing gracefully is also harder in a concurrent context, because failure may need to be communicated to other participants and joint action may be 
+necesarry to clean up the failure.
+
+
+Often, concurrent systems often perform a list of individual operations that are meant to be one whole.
 In the snippet below, there is a point where the money is subtracted from `A` but not yet added to `B`. If an error occurs at this point, 
 the system should revert back to the initial state: Just failing silently makes the money disappear.
-
 ```haskell
+-- more convincing example
+```
+
+
+<!--
 transfer sum = do
     balanceA <- DB.read accountA
     balanceB <- DB.read accountB
@@ -63,26 +72,34 @@ transfer sum = do
     else
         return ()
 ```
+-->
 
 Moving back to the initial state is non-trivial. How can we be sure that we have cleaned up all of 
 our actions and use minimal resources?
 
+The framework presented in \cite{PPDP} sets out to solve both of these issues. 
+However, so far this was purely a theoretical exercise. How well do the ideas presented translate to 
+a programming context, and is the resulting system actually convenient to use? 
+In answering these questions this bachelor's thesis will make the following contributions: 
+
+<!--
 Solutions have been proposed that try to solve common deadlock scenarios and reversing evaluation. 
 but it's not made it's way into our languages and libraries. This paper gives an implementation of a 
-framework presented in \cite{DBLP:conf/ppdp/MezzinaP17} that allows reversing of computation steps and verifies communication.
+framework presented in  that allows reversing of computation steps and verifies communication.
 We additionally will look at how this implementation can be used to debug concurrent message-passing programs.
 As such this bachelor's thesis will make the following contributions: 
+-->
 
-* We begin by anaylyzing the three core components of \cite{DBLP:conf/ppdp/MezzinaP17} (section \ref{the-main-idea}):
+* We begin by anaylyzing the three core components of \cite{PPDP} (section \ref{the-main-idea}):
 
     A process calculus, multiparty session types and reversibility. At the same time 
     we give the encoding of the formal definition into Haskell data types. 
 
 
-    * We define a **process calculus** (section \ref{process-calculi}) from its foundations. 
+    * We define and implement a **process calculus** (section \ref{process-calculi}) from its foundations. 
     Later (section \ref{free-monad-dsl}) we use the `Free` monad to provide convenient syntax.
 
-    * Next we look at **multiparty session types** (section \ref{session-types}) for the calculus in section. 
+    * Next we look at **multiparty session types** (section \ref{session-types}) for the implemented calculus. 
     The session types feature nested recursion and choice.
 
     * Finally we consider **reversibility** given the two previous concepts. In particular we look at
@@ -100,21 +117,23 @@ As such this bachelor's thesis will make the following contributions:
 
 # The Main Idea
 
-The PPDP paper builds a system that features three basic concepts: a process calculus, session types and reversibility.
+The PPDP paper builds a system that features three basic concepts: a process calculus, multiparty session types and reversibility.
 These three ideas are combined to create more robust concurrent programs. 
 
-The process calculus is a very low-level programming language that allows concurrent communication. Session types verify 
-the communication to statically eliminate or dynamically detect deadlocks. Reversibility - backwards evaluation of our process calculus - gives 
-the ability to recover from errors or to safely fail.
+The process calculus is a very low-level programming language that allows concurrent communication. 
+Their flavor of multiparty session types dynamically check the communication a process performs agains a protocol. 
+Reversibility - backwards evaluation of our process calculus - gives the ability to recover from errors or to safely fail.
 
-In this section we show how these three concepts are formally defined in PPDP and how they are defined in 
-the Haskell implementation, and how they are combined. 
+In this section we show how these three concepts are formally defined in PPDP and how they are implemented in 
+our Haskell implementation.
 
-## process calculi {#process-calculi}
+## Process Calculi {#process-calculi}
 
-We must first of all define what concurrent computation is. We use a model called the pi-calculus as our starting point.
+As said, a process calculus is like a minimal programming language that can model concurrent communication.
+We will start by considering a well-understood existing calculus - the pi calculus. Next we will look at how PPDP extends it and finally 
+give an implementation as a Haskell data type.
 
-The pi-calculus is to concurrent computation much like what the lambda calculus is for sequental computing: 
+The pi-calculus is to concurrent computation much like what the lambda calculus is for sequental computing : 
 A simple model that is convenient for reasoning and constructing proofs. The pi-calculus is defined as 
 
 \begin{align*}
@@ -126,7 +145,15 @@ P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the v
 |\,\,\, & 0 & \text{Terminate the process} \\
 \end{align*}
 
-Reduction can occur when there is a send and a receive over the same channel in parallel. 
+With this syntax we can construct programs like so:
+
+$$(\nu x)(\overline{x}\langle 42 \rangle.0\, |\, x(y).0)$$ 
+
+This program is read as "create a channel $x$ and then in parallel send 42 over $x$ then terminate, and receive a value on $x$ and bind it to the name $y$ then terminate."
+The pi-calculus is much too low-level to write real programs in, but it can compute any computable function (because the lambda calculus can be encoded into it \cite{milner1992functions}) 
+and lends itself well to proofs.
+
+A pi-calculus term can be reduced when there is a send and a receive over the same channel in parallel.
 
 $$\overline{x}\langle z \rangle.P\, |\, x(y).Q \rightarrow P | Q[z/y]$$
 
@@ -159,8 +186,9 @@ P, Q ::= \,
 We still have sending, receiving and parallel, and allow recursion and termination. Channel creation has been removed for simplicity: we'll use only 
 one globally available channel. This channel is implemented as a queue which means that sends are non-blocking. 
 
-In addition, we introduce. This is where instead of a value, a label is sent from a selector to an offerer. Both parties will pick the 
-branch that the label corresponds to. We'll see why this extension is useful in the next section. 
+The primary extension is choice: This is where instead of a value, a label is sent from a selector to an offerer. Both parties will pick the 
+branch that the label corresponds to. Choice could be implemented as a combination of send/receive and if-then-else, but they are primitives 
+here because each branch can have a different type (this will become clearer in section, \ref{session-types}.)
 
 Finally, we allow the sending of thunks - functions that take `Unit` as their argument and return a process term (i.e. a piece of program that can be executed). 
 The fact that we can send programs - and not just values - means that our calculus is a higher-order calculus. The sending of thunks provides "protocol delegation via abstraction passing".
@@ -234,6 +262,22 @@ data Value
     | VReference Identifier 
     | VLabel String
 ```
+
+We can now write the send/receive example as 
+
+```haskell
+example = 
+    Fix 
+        ( Parallel 
+            (Fix (Send "me" (VInt 42) (Fix NoOp)))
+            (Fix (Receive "you" "y" (Fix NoOp)))
+        )
+```
+
+While the above is easily manipulatable with pattern matching and functions from the `Fix` module, it's impossible to 
+write clear examples in this style. Longer expressions need ever more parentheses and in general there is too much syntactical clutter. 
+We will get back to designing a better syntax for defining programs in section \ref{free-monad-dsl}.
+
 
 ## Multiparty Session Types {#session-types}
 
@@ -349,7 +393,7 @@ for local types.
 The projection is mostly straightforward, except for choice. Because we allow recursion, a branch of a choice may recurse back to the beginning. When 
 this occurs, all participants have to jump back to the beginning, so every choice must be communicated to all participants. 
 
-\begin{figure}[t!]
+\begin{figure}[]
 {
 \begin{align*}
 \tproj{(\gtcom{p}{q}{U}{G})}{\gpart{r}} & = 
@@ -367,6 +411,17 @@ this occurs, all participants have to jump back to the beginning, so every choic
 \ltbra{p}{\lbl_i}{\tproj{G_i}{\gpart{r}}}{i}{I}  & \text{ if $\gpart{r} = \gpart{q}$} \\
 (\tproj{{G_1}}{\gpart{r}}) &  \text{ if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$ and} \\ 
 & \text{~~$\forall i, j \in I. \tproj{{G_i}}{\gpart{r}} = \tproj{{G_j}}{\gpart{r}}$}
+\end{cases}
+}
+\\
+\tproj{(\gtcho{p}{q}{l_i}{G_i})}{\gpart{r}}  
+& 
+{= 
+\begin{cases}
+\ltsel{q}{\lbl_i}{(\tproj{G_i}{\gpart{r}})}{i}{I}  & \text{ if $\gpart{r} = \gpart{p}$} \\
+\ltbra{p}{\lbl_i}{\tproj{G_i}{\gpart{r}}}{i}{I}  & \text{ if $\gpart{r} = \gpart{q}$} \\
+\ltsel{r}{\lbl_i}{\tproj{G_i}{\gpart{r}}}{i}{I} &   \text{ if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$} \\
+\ltbra{q}{\lbl_i}{\tproj{G_i}{\gpart{r}}}{i}{I} &   \text{ if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$}
 \end{cases}
 }
 \\
@@ -389,6 +444,14 @@ this occurs, all participants have to jump back to the beginning, so every choic
 > **NOTE:** the above is still wrong. For offer, it must also send the choice to all other participants
 > all participants that are not p or q must also be informed of the choice.
 > How do we write this all down? 
+
+all choices need to be communicated to all participants because a choice may trigger recursion. The recursion jumps back in protocol to an 
+earlier state and expects all participants to be at that state. Otherwise, If a choice is not communicated with everyone, the other participants cannot know
+that a jump has to be made
+
+The solution we have chosen is that the offerer relays the decision to all the other participants
+
+
 
 ## Reversiblilty {#reversibility}
 
@@ -480,11 +543,6 @@ The `owner` field stores this information. Regardless of by whom an instruction 
 local type indexed by the `owner` field is the one that is checked agains and changed. 
 
 
-## Properties of reversibility
-
-The main property that reversing needs to preserve is *causal consistency*: the state that we reach when moving backward
-is a state that could have been reached by moving forward only. 
-
 
 # Putting it all together  {#combining}
 
@@ -549,43 +607,63 @@ data ExecutionState value =
 The message queue is global and thus also lives in the `ExecutionState`. Finally we need a way of peeking into values, to see whether they are functions and if so, to
 extract their bodies for application. 
 
-# Convenient syntax with the free monad {#free-monad-dsl}
+## Properties of Reversibility
+
+The main property that reversing needs to preserve is *causal consistency*: the state that we reach when moving backward
+is a state that could have been reached by moving forward only. 
+
+The global type defines a partial order on all the communication steps. The relation of this partial order is causal dependency. 
+Stepping backward may not undo an action untill all its causally dependent actions are undone. This guarantee is baked into every part of the semantics. 
+For instance, a send can only be undone when the receive is already undone, because there is a data dependency between the two actions (the sent value).
+
+As such, we argue that *causal consistency* is preserved by our implementation.
+
+# Convenient Syntax with the Free Monad {#free-monad-dsl}
 
 The types we have defined for `Program`, `GlobalType` and `LocalType` form recursive tree structures. 
 Because they are all new types, there is no easy way to traverse them. A common idiom 
 is to factor out recursion using `Data.Fix` (see appendix \ref{factoring-recursion}).
 
-Even with `Fix`, the expressions are tedious to write. For `LocalType` that doesn't matter because
-it is (almost) never written by hand. For `Program` and `GlobalType` - which we'll construct by hand a lot - 
-we want nicer syntax. To this end we can use the free monad (see appendix \ref{free-monad}). 
-The free monad is a standard method in Haskell to construct domain-specific languages. An extra bonus 
-is that we can use do-notation (appendix \ref{do-notation}) to write our examples.
+While a `Fix`ed data type is easy to manipulate and traverse, it is even more messy to write. 
+The program below implements "receive and bind the value to `result`, then send 42": 
 
-Concretely, the free monad makes it possible to write 
+```haskell
+program =  
+    Fix 
+        ( Receive 
+            { owner = "Alice"
+            , variableName = "result"
+            , continuation = 
+                  Fix 
+                    ( Send 
+                        { owner = "Alice"
+                        , value = VInt 42
+                        , continuation = Fix NoOp 
+                        }
+                    )
+              }
+        )
+```
+
+The syntax distracts from the goal of the program, the code is not clear at all. `Program` and `GlobalType` are types that 
+we will write a lot manually, so fixing this issue is important.
+
+Luckily, Haskell has a long tradition of embedded domain-specific languages. In particular we can use a 
+cousin of `Fix`, the `Free` monad (appendix \ref{free-monad}) to get access to do-notation (appendix \ref{do-notation}).
+Concretely, the do-notation makes it possible instead of the above write 
 
 ```haskell
 program = compile "Alice" $ do
     result <- receive
     send (VInt 42)
+    terminate
 ```
 
-instead of 
+Behind the scenes, the do-notation produces a value of type `HighLevelProgram a` using some helpers like `send` and `terminate`.
 
 ```haskell
-program = 
-    Receive 
-        { owner = "Alice", variableName = "result", continuation = 
-            Send 
-                { owner = "Alice", value = VInt 42, continuation = NoOp } 
-        }
-```
-
-By using `StateT` (see \ref{state}) we can thread through the participant name and generate unique variable names using a counter. `Free` makes it possible 
-build up and produce a `Program` at the end.
-
-```haskell
-newtype HighLevelProgram a = 
-    HighLevelProgram (StateT (Participant, Int) (Free (ProgramF Value)) a)
+newtype HighLevelProgram a = HighLevelProgram 
+    (StateT (Participant, Int) (Free (ProgramF Value)) a)
     deriving 
         ( Functor, Applicative, Monad
         , MonadState (Participant, Int)
@@ -603,11 +681,18 @@ terminate = liftF NoOp
 -- similar for receive, select, etc.
 ```
 
-Here we use the unit type `()` as a placeholder or hole. To ensure that the program is well-formed and doesn't contain any holes when we evaluate it, 
-all branches must end with `terminate`. We use the fact that `terminate :: HighLevelProgram a` contains a free type variable `a` which can 
+The above snippet introduces a couple haskell concepts that we have not seen before and that require some background.
+
+Functional languages can simulate mutable state using a type called the `State` (appendix \ref{state}). `State` is an instance of monad (appendix \ref{monads}). 
+In this case our piece of state is a pair `(Participant, Int)`: the participant is the owner of the block, and the `Int` is a counter used to generate unique variable names.
+To combine `State` with `Free` (and to combine two monads in general) we need the `StateT` monad transformer (appendix \ref{state}).
+
+In the `send` helper we use the unit type `()` as a placeholder or hole. A continuation will need to fill the hole eventually but it's not available yet. 
+When a `HighLevelProgram` is cast down into a `Program`, we want to be sure there are no remaining holes.
+In this particular case that means all branches must end in `terminate`.
+We use the fact that `terminate :: HighLevelProgram a` contains a free type variable `a` which can 
 unify with `Void`, the type with no values. Thus `Free f Void` can contain no `Pure` because the `Pure` constructor needs a value of type `Void`, which
 don't exist. For more information see appendix \ref{well-formedness-free}.
-
 
 
 # Running and Debugging Programs {#running-debugging}
