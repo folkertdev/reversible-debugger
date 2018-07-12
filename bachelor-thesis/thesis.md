@@ -90,30 +90,35 @@ We additionally will look at how this implementation can be used to debug concur
 As such this bachelor's thesis will make the following contributions: 
 -->
 
-* We begin by anaylyzing the three core components of \cite{PPDP} (section \ref{the-main-idea}):
+* We begin by anaylyzing the three core components of \cite{PPDP}:
 
     A process calculus, multiparty session types and reversibility. At the same time 
     we give the encoding of the formal definition into Haskell data types. 
 
 
-    * We define and implement a **process calculus** (section \ref{process-calculi}) from its foundations. 
-    Later (section \ref{free-monad-dsl}) we use the `Free` monad to provide convenient syntax.
+    * We define and implement a **process calculus**  from its foundations. 
+    Later we use the `Free` monad to provide convenient syntax.
 
-    * Next we look at **multiparty session types** (section \ref{session-types}) for the implemented calculus. 
+    * Next we look at **multiparty session types**  for the implemented calculus. 
     The session types feature nested recursion and choice.
 
     * Finally we consider **reversibility** given the two previous concepts. In particular we look at
     the information that needs to be preserved when moving forward in order to move backward correctly.
 
 * Next we combine our encodings of the core components to define forward and backward 
-    evaluation functions (section \ref{combining}). 
+    evaluation functions. 
 
-* We further consider how our new system can be used to debug concurrent programs and provide 
-    primitives for creating a debugger (section \ref{running-debugging})
 
 <!--
  The research question is then: can the reversible semantics by Mezzina and Perez provide a basis for debugging message-passing programs in an effective, modular way?
  -->
+
+The structure looks as follows: section \ref{the-main-idea} introduces the three key foundations from the PPDP paper and how they can be encoded into haskell data types. 
+Section \ref{combining} shows how the data types 
+can be used to implement forward and backward reduction and provides the other mechanics needed to evaluate 
+the program. 
+Section \ref{free-monad-dsl} provides a more convenient syntax for writing programs. 
+The appendices \ref{performing-io} through \ref{scheduling-code} give background and extra examples for the Haskell concepts and terminology used in the paper.
 
 # The Main Idea
 
@@ -576,7 +581,12 @@ data Monitor value tipe =
         }
         deriving (Show, Eq)
 
-data Binding = Binding { _visibleName :: Identifier, _internalName :: Identifier } deriving (Show, Eq) 
+data Binding = 
+    Binding 
+        { _visibleName :: Identifier
+        , _internalName :: Identifier 
+        }
+    deriving (Show, Eq) 
 ```
 
 The `TypeContext` and `LocalType` are stored as a tuple. Really, this gives a curser into the local type, where everything to the left is the past 
@@ -598,7 +608,8 @@ data ExecutionState value =
         , locationCount :: Int
         , applicationCount :: Int
         , participants :: Map Participant (Monitor value String)
-        , locations :: Map Location (Participant, List OtherOptions, Program value)
+        , locations :: Map Location 
+                 (Participant , List OtherOptions , Program value)
         , queue :: Queue value
         , isFunction :: value -> Maybe (Identifier, Program value)
         }
@@ -606,6 +617,21 @@ data ExecutionState value =
 
 The message queue is global and thus also lives in the `ExecutionState`. Finally we need a way of peeking into values, to see whether they are functions and if so, to
 extract their bodies for application. 
+
+## Running and Debugging Programs {#running-debugging}
+
+Finally, we want to be able to run our programs. 
+
+We use a simple round-robin scheduler that calls `forward` on the locations in order. 
+There are two error cases that we need to handle: 
+
+* **blocked on receive**, either `InvalidQueueItem` or `EmptyQueue`: the process wants to perform a receive, but the expected item is not at the top of the queue yet. 
+    In this case we want to proceed evaluating the other locations so they can send the value that the erroring location expects
+
+* **location terminates** with `Terminated`: the execution has reached a `NoOp`. In this case we don't want to schedule this location any more.
+
+Otherwise we just continue until there are no active (non-terminated) locations left. 
+For code see appendix \ref{scheduling-code}
 
 ## Properties of Reversibility
 
@@ -695,33 +721,6 @@ unify with `Void`, the type with no values. Thus `Free f Void` can contain no `P
 don't exist. For more information see appendix \ref{well-formedness-free}.
 
 
-# Running and Debugging Programs {#running-debugging}
-
-Finally, we want to be able to run our programs. 
-
-We use a simple round-robin scheduler that calls `forward` on the locations in order. 
-There are two error cases that we need to handle: 
-
-* **blocked on receive**, either `InvalidQueueItem` or `EmptyQueue`: the process wants to perform a receive, but the expected item is not at the top of the queue yet. 
-    In this case we want to proceed evaluating the other locations so they can send the value that the erroring location expects
-
-* **location terminates** with `Terminated`: the execution has reached a `NoOp`. In this case we don't want to schedule this location any more.
-
-Otherwise we just continue until there are no active (non-terminated) locations left. 
-For code see appendix \ref{scheduling-code}
-
-Additionally, we can define running helpers that make debugging easier. One such function is `untilCommunication` that advances all locations until they perform communication (i.e. they need to check their local type). More fine-grained helpers can be written for specific scenarios, for instance communication with a particular participant. 
-
-order violation, atomicity violation, or deadlock. 
-
-**Order Violation**
-
-Order is guaranteed by the local type. This type of bugs is ruled out 
-
-**Atomicity Violation**
-
-**Deadlock**
-
 # Discussion  
 
 ## Benefits of pure functional programming
@@ -770,7 +769,7 @@ run and verify our example programs automatically.
 
 Notes on Haskell notation and syntax 
 
-# Performing IO in Haskell
+# Performing IO in Haskell {#performing-io}
 
 One of Haskell's key characteristics is that it is pure. This means that our computations can't have any observable effect to the
 outside world. Purity enables us to reason about our programs (referential transparency) and enables compiler optimizations. 
@@ -1127,7 +1126,9 @@ In the codebase we went with solution 2 because it produces clearer error messag
 data Progress = Progress | NoProgress deriving (Eq, Show)
 
 round :: List Location -> ExecutionState Value 
-      -> Either Error ( List (Location, Progress), ExecutionState Value)
+      -> Either Error ( List (Location, Progress)
+                      , ExecutionState Value
+                      )
 round locations state = 
     foldM helper [] locations 
         |> flip State.runStateT state
@@ -1137,7 +1138,11 @@ round locations state =
         helper accum location = do
             state <- State.get
 
-            case Except.runExcept $ State.runStateT (forward location) state of 
+            let evaluated = 
+                    State.runStateT (forward location) state 
+                        |> Except.runExcept 
+
+            case evaluated of
                 Right ( _, s ) -> do
                     State.put s
                     return $ ( location, Progress ) : accum 
@@ -1158,17 +1163,24 @@ round locations state =
                     Except.throwError err
 
 
-untilError :: ExecutionState Value -> Either Error (ExecutionState Value)
+untilError :: ExecutionState Value 
+           -> Either Error (ExecutionState Value)
 untilError state@ExecutionState{ locations } = 
     helper (Map.keys locations) state
   where helper locations state = do
-            ( locationProgress, newState ) <- Interpreter.round locations state
+            ( locationProgress, newState ) <- 
+                Interpreter.round locations state
+
+            let isProgress =  
+                    any 
+                        (\(_, progress) -> progress == Progress) 
+                        locationProgress 
 
             if null locationProgress then 
                 -- no active locations
                 Right state
 
-            else if any (\(_, progress) -> progress == Progress) locationProgress then 
+            else if then 
                 helper (List.map fst locationProgress) newState
 
             else
