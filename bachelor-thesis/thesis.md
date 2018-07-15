@@ -753,11 +753,49 @@ In a pure language, given functions `f :: a -> b` and `g :: b -> a` to prove tha
 `f . g = identity && g . f = identity`. In an impure language, we can never be sure that the outside world is not mutated.
 Because we don't need to consider a context here, checking that reversibility works is as simple as comparing initial and final states for all transitions.
 
+## Concurrent Debuggers 
+
+As mentioned we initially also set out to investigate how useful PPDP semantics are for debugging concurrent programs. 
+As it stands, there are two missing features 
+
+1. Modifying concurrent control flow 
+
+    That is, a way to specify which thread will (try to) take a step forward next.
+    The problem with concurrency is not so much technical: the primitives are available. What is needed is some way to 
+    step through a program one instruction at a time. The real challenge is providing a convenient mechanism for doing so, which brings us to
+
+2. Convenient user interface
+
+    CaReDeb provides a command line interface. While CaReDeb is interesting from a technical point of view, its interface is 
+    not frieldly. Additionally, the overhead of bringing the problem into CaReDeb's language is large: more time is probably spent 
+    translating than actually debugging.
+
+    We think that a good graphical interface is possible, but besides technical features a good user experience also needs user feedback. 
+    This means that we need to look for users and concrete use cases.
+    It would help if there were some concrete set of problems that could be extracted from code, compiled into a format/language that our debugger understands and then visually debugged. 
+    Performance can then be evaluated based on how well the debugger solves real-world problems. 
+
 
 # Conclusion
 
 we have given an encoding of the PPDP semantics in the Haskell programming language. By embedding the semantics we can now 
-run and verify our example programs automatically. 
+run and verify our example programs automatically and inspect them interactively.
+
+We have seen that the PPDP semantics can be split into three core components: a process calculus, multiparty session types and reversibility. Additonally,
+all three of these are representable as recursive haskell data types. All other features of PPDP (the authors note decoupled rollbacks and abstraction passing, including delegation) 
+can easily be integrated when these three types are established.  
+
+Relatedly, the implementation proces has shown that sticking to the formal implementation leads to better code. 
+There is less space for bugs to creep in. Furthermore, Haskell's mathematical nature means 
+that the implementation inspired by the formal specification is easy (and often idiomatic) to express.
+
+We have seen that Haskell allows for the definition of flexible embedded domain-specific languages, and makes it easy to transform between 
+different representations of our programs using among others `Monad.Free`.
+
+Finally, we've discussed how this implementation can be used for concurrent debugging.  
+With more focus on the user experience, a solid concurrent debugging can be built on the foundations presented here.
+
+
 
 \bibliographystyle{abbrv}
 \bibliography{biblio}
@@ -766,8 +804,7 @@ run and verify our example programs automatically.
 
 \appendix
 
-
-Notes on Haskell notation and syntax 
+Background information on Haskell syntax and concepts used in the thesis. 
 
 # Performing IO in Haskell {#performing-io}
 
