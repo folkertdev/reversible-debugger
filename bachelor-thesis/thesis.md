@@ -616,22 +616,27 @@ it can be safely sent over a channel.
 # Putting it all together  {#combining}
 
 With all the definitions encoded, we can now define forward and backward evaluation of our system. 
-Our aim is to implement 
+Our aim is to implement:
 
 ```haskell
-type Session a = StateT ExecutionState (Except Error) a
-
 forward  :: Location -> Session ()
 backward :: Location -> Session ()
 ```
 
-Where 
+These functions take a `Location`, our way of modeling different threads or machines, and tries to move 
+the process at that location forward or backward. The `Session` type contains the `ExecutionState`, the state of the session
+(all programs, local types, variable bindings, etc.), and can throw errors of type `Error`, for instance
+when an unbound variable is used.
 
-* `ExecutionState` stores the state of the world
-* `Error` can be thrown when something fails
-* `Location` defines places where code is ran concurrently (threads or machines)
+```haskell
+type Session a = StateT ExecutionState (Except Error) a
+```
+*See also Appendices \ref{state} on `StateT` and \ref{except} on `Except`*
 
-We store all the information about a participant in a type called `Monitor`. 
+The PPDP'17 paper guides how we store the execution state. Some data is bound to its location (for instance
+the process that is running) and other data is bound to its participant (for instance the local type). 
+
+The information about a participant grouped in a type called `Monitor`: 
 
 ```haskell
 data Monitor value tipe = 
@@ -639,9 +644,9 @@ data Monitor value tipe =
         { _localType :: LocalTypeState tipe
         , _recursiveVariableNumber :: Int
         , _recursionPoints :: List (LocalType tipe)
-        , _store :: Map Identifier value 
         , _usedVariables :: List Binding 
         , _applicationHistory :: Map Identifier (value, value)
+        , _store :: Map Identifier value 
         }
         deriving (Show, Eq)
 
@@ -653,16 +658,22 @@ data Binding =
     deriving (Show, Eq) 
 ```
 
-The `TypeContext` and `LocalType` are stored as a tuple. Really, this gives a curser into the local type, where everything to the left is the past 
-and everything to the right is the future. 
+The `TypeContext` and `LocalType` are stored as a tuple. This tuple gives a curser into the local type, 
+where everything to the left is the past and everything to the right is the future. 
 
 The next two fields are for keeping track of recursion in the local type. the `recursiveVariableNumber` is an index into the `recursionPoints` list: when 
 a `RecursionVariable` is encountered we look at that index to find the new future local type.
 
-Then follow two fields used for reversibility: the stack of used variable names and the store of function applications.
-Finally there is a variable store with the currently defined bindings. 
+Then follow two fields used for reversal: 
+As mentioned in Section \ref{a-reversible-semantics}, used variable names need to be stored in order to 
+be able to use them when reversing. We store them in a stack keeping both the original name given 
+by the programmer and the generated unique internal name. 
+For function applications we use a `Map` indexd by unique identifiers that stores function and argument. 
 
-With this data structure in place, we can define `ExecutionState`. It contains some counters for generating unique variable names, a monitor for every participant and
+Finally there is a variable store with the currently defined bindings. 
+Variable shadowing - where two processes of the same participant define the same variable name - is not an issue, because variables are assigned a guaranteed unique name.
+
+We can now define `ExecutionState`. It contains some counters for generating unique variable names, a monitor for every participant and
 a program for every location. Additionally every location has a default participant and a stack for unchosen branches. 
 
 ```haskell
@@ -695,15 +706,17 @@ There are two error cases that we need to handle:
 * **location terminates** with `Terminated`: the execution has reached a `NoOp`. In this case we don't want to schedule this location any more.
 
 Otherwise we just continue until there are no active (non-terminated) locations left. 
-For code see appendix \ref{scheduling-code}
+For code see Appendix \ref{scheduling-code}.
 
 ## Properties of Reversibility
 
-The main property that reversing needs to preserve is *causal consistency*: the state that we reach when moving backward
-is a state that could have been reached by moving forward only. 
+The main property that a reversable semantics needs to preserve is *causal consistency*: 
+the state that we reach when moving backward is a state that could have been reached by moving forward only. 
 
-The global type defines a partial order on all the communication steps. The relation of this partial order is causal dependency. 
-Stepping backward may not undo an action untill all its causally dependent actions are undone. This guarantee is baked into every part of the semantics. 
+The global type defines a partial order on all the communication steps. 
+The relation of this partial order is causal dependency. 
+Stepping backward is only allowed when all its causally dependent actions are undone. 
+This guarantee is baked into every part of the semantics. 
 For instance, a send can only be undone when the receive is already undone, because there is a data dependency between the two actions (the sent value).
 
 As such, we argue that *causal consistency* is preserved by our implementation.
@@ -712,7 +725,7 @@ As such, we argue that *causal consistency* is preserved by our implementation.
 
 The types we have defined for `Program`, `GlobalType` and `LocalType` form recursive tree structures. 
 Because they are all new types, there is no easy way to traverse them. A common idiom 
-is to factor out recursion using `Data.Fix` (see appendix \ref{factoring-recursion}).
+is to factor out recursion using `Data.Fix` (see Appendix \ref{factoring-recursion}).
 
 While a `Fix`ed data type is easy to manipulate and traverse, it is even more messy to write. 
 The program below implements "receive and bind the value to `result`, then send 42": 
@@ -735,12 +748,12 @@ program =
         )
 ```
 
-The syntax distracts from the goal of the program, the code is not clear at all. `Program` and `GlobalType` are types that 
+The syntax distracts from the goal of the program. `Program` and `GlobalType` are types that 
 we will write a lot manually, so fixing this issue is important.
 
-Luckily, Haskell has a long tradition of embedded domain-specific languages. In particular we can use a 
-cousin of `Fix`, the `Free` monad (appendix \ref{free-monad}) to get access to do-notation (appendix \ref{do-notation}).
-Concretely, the do-notation makes it possible instead of the above write 
+Conveniently, Haskell has a long tradition of embedded domain-specific languages. In particular we can use a 
+cousin of `Fix`, the `Free` monad (Appendix \ref{free-monad}) to get access to do-notation (Appendix \ref{do-notation}).
+Concretely, the do-notation makes it possible instead of the above write: 
 
 ```haskell
 program = compile "Alice" $ do
@@ -749,7 +762,7 @@ program = compile "Alice" $ do
     terminate
 ```
 
-Behind the scenes, the do-notation produces a value of type `HighLevelProgram a` using some helpers like `send` and `terminate`.
+Behind the scenes, the do-notation produces a value of type `HighLevelProgram a` using some helpers like `send` and `terminate`. 
 
 ```haskell
 newtype HighLevelProgram a = HighLevelProgram 
@@ -771,18 +784,19 @@ terminate = liftF NoOp
 -- similar for receive, select, etc.
 ```
 
-The above snippet introduces a couple haskell concepts that we have not seen before and that require some background.
-
-Functional languages can simulate mutable state using a type called the `State` (appendix \ref{state}). `State` is an instance of monad (appendix \ref{monads}). 
+The above snippet introduces some new Haskell concepts that require some background. 
+Pure languages can simulate mutable state using a type called `State` (appendix \ref{state}). `State` is an instance of monad (appendix \ref{monads}) which makes it easy to chain stateful computations. 
 In this case our piece of state is a pair `(Participant, Int)`: the participant is the owner of the block, and the `Int` is a counter used to generate unique variable names.
 To combine `State` with `Free` (and to combine two monads in general) we need the `StateT` monad transformer (appendix \ref{state}).
 
-In the `send` helper we use the unit type `()` as a placeholder or hole. A continuation will need to fill the hole eventually but it's not available yet. 
-When a `HighLevelProgram` is cast down into a `Program`, we want to be sure there are no remaining holes.
+In the `send` helper we use the unit type `()` as a placeholder or hole. 
+A continuation will need to fill the hole eventually but it's not available yet. 
+When a `HighLevelProgram` is converted into a `Program`, we want to be sure there are no remaining holes.
 In this particular case that means all branches must end in `terminate`.
 We use the fact that `terminate :: HighLevelProgram a` contains a free type variable `a` which can 
-unify with `Void`, the type with no values. Thus `Free f Void` can contain no `Pure` because the `Pure` constructor needs a value of type `Void`, which
-don't exist. For more information see appendix \ref{well-formedness-free}.
+unify with `Void`, the type with no values. 
+Thus `Free f Void` can contain no `Pure` because the `Pure` constructor needs a value of type `Void`, 
+which don't exist. For more information see Appendix \ref{well-formedness-free}.
 
 
 # Discussion  
@@ -790,7 +804,8 @@ don't exist. For more information see appendix \ref{well-formedness-free}.
 ## Benefits of pure functional programming
 
 It has consistently been the case that sticking closer to the formal model gives better code. The abilities that Haskell gives for directly 
-specifying formal statements is invaluable. The main killer feature is algebraic data types (ADTs) also known as tagged unions or sum types. 
+specifying formal statements is invaluable. 
+The primary invaluable feature is algebraic data types (ADTs) also known as tagged unions or sum types. 
 
 Observe the formal definition and the Haskell data type for global types.
 \begin{align*}
@@ -806,16 +821,22 @@ data GlobalTypeF u next =
     Transaction {..} | Choice {..}  | R next | V | End | Wk next
 ```
 
-They correspond directly. Moreover, we know that these are all the ways to construct a value of type `GlobalTypeF` and can 
+The definitions correspond directly. 
+Moreover, we know that these are all the ways to construct a value of type `GlobalTypeF` and can 
 exhaustively match on all the cases. Functional languages have had these features for a very long time. In recent years 
 they have also made their way into non-functional languages (Rust, Swift, Kotlin).  
 
-Secondly, purity and immutability are very valuable in implementing and testing reversibility. The type system can actually guarantee 
-that we have not forgotten to revert anything. 
+Secondly, purity and immutability are very valuable in implementing and testing the reversible semantics. 
+The type system can actually guarantee that we have not forgotten to revert anything. 
 
-In a pure language, given functions `f :: a -> b` and `g :: b -> a` to prove that f and g are inverses it is enough to prove that 
-`f . g = identity && g . f = identity`. In an impure language, we can never be sure that the outside world is not mutated.
-Because we don't need to consider a context here, checking that reversibility works is as simple as comparing initial and final states for all transitions.
+In a pure language, given functions `f :: a -> b` and `g :: b -> a` to prove that f and g are inverses it is enough to prove (or to test for the domain you're interested in) that 
+
+```
+f . g = identity && g . f = identity
+```
+
+In an impure language, even if the above equalities are observed we can't be sure that there were no side-effects. 
+Because we don't need to consider a context (the outside world) here, checking that reversibility works is as simple as comparing initial and final states for all backward transition rules.
 
 ## Concurrent Debuggers 
 
