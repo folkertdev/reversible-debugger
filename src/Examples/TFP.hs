@@ -39,6 +39,31 @@ data MyType
     deriving (Show, Eq, Ord)
 
 
+x = 
+    -- recursion point 1
+    GlobalType.recurse $ 
+        GlobalType.oneOf A B
+            [ ("loop"
+                -- recursion point 2
+              , GlobalType.recurse $
+                    GlobalType.oneOf A B
+                        [ ("continueLoop", do 
+                            message A B "date"
+                            -- jumps to recursion point 2
+                            GlobalType.recursionVariable
+                          )
+                
+                        , ("endInnerLoop", do 
+                            -- jumps to recursion point 1
+                            GlobalType.weakenRecursion GlobalType.recursionVariable
+                          )
+                        ]
+              )
+            , ("end", GlobalType.end)
+            ]
+
+message = GlobalType.transaction 
+
 globalType :: GlobalType.GlobalType MyParticipants MyType
 globalType = 
     GlobalType.recurse $ do

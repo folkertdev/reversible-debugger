@@ -30,10 +30,10 @@ header-includes:
 # Introduction
 
 This thesis describes an implemetation of theoretical work in the area of concurrent programming. 
-In particular it is concerned with using formal tools to check the correctness of message passing and 
+In particular it concerns the use of formal tools to check the correctness of message passing programs and 
 allow for flexible error handling.
 
-An example of a class of errors in message passing is lack of **progress**. 
+An example of a class of errors in message passing is lack of **deadlock-freedom**. 
 Consider this example of a receive on an empty channel: 
 
 ```haskell
@@ -43,57 +43,47 @@ main = do
     message <- Channel.receive channel
 ```
 *This snippet uses Haskell's do-notation. the `<-` is used to bind the result of an effectful
-computation - like receiveing from a channel. See also appendix \ref{do-notation}* 
+computation - like receiveing from a channel. See also Appendix \ref{do-notation}* 
 
 No value will ever be sent on the channel, so the receive blocks forever: it can't make any progress.
 
-<!-- In general there are three classes of bugs introduced by concurrency: deadlock, atomicity violation and order-violation \cite{lu2008learning}. -->
+Failing gracefully is also harder in a concurrent context: the state of the application is spread over 
+multiple locations which makes it harder to asses where the error originates and how to compensate for it.
 
-Failing gracefully is also harder in a concurrent context, because failure may need to be communicated to other participants and joint action may be 
-necesarry to clean up the failure.
+For instance below, if Bob fails in receiving a message or loses a message, 
+he'll have to reperform the `receive`, 
+but also inform Alice to send the message again. 
 
-
-Often, concurrent systems often perform a list of individual operations that are meant to be one whole.
-In the snippet below, there is a point where the money is subtracted from `A` but not yet added to `B`. If an error occurs at this point, 
-the system should revert back to the initial state: Just failing silently makes the money disappear.
 ```haskell
--- more convincing example
+alice channel = do 
+    Channel.send channel "hello, my name is"
+    Channel.send channel "Alice"
+    response <- Channel.receive channel
+    
+bob channel = 
+    _ <- Channel.receive channel 
+    name <- Channel.receive channel
+    Channel.send ("Hello, " ++ name) 
 ```
 
+Moving back to the initial state is non-trivial. How can we be sure that we have reverted all of 
+our actions and what is the minimal amount of information (and memory) we need for a valid reversal. 
 
-<!--
-transfer sum = do
-    balanceA <- DB.read accountA
-    balanceB <- DB.read accountB
-    if balanceA >= sum then do
-        DB.write accountA (balanceA - sum)
-        -- danger zone
-        DB.write accountB (balanceB + sum)
-    else
-        return ()
-```
--->
+The framework presented by Mezinna & Pérez (PPDP'17) \cite{PPDP} (from here on referenced as "the PPDP'17 paper") 
+sets out to solve both of these issues.
+The paper uses a theoretical approach, using techniques from programming languages and concurrency. 
+However, it does not consider in detail how the presented work can be implemented in an actual programming language.
+In earlier work during a short programming 
+project we've looked at combining the CaReDeb debugger with the PPDP'17 semantics.
+Here we look at how well the ideas presented in PPDP'17 translate to 
+a programming context, and whether the resulting system actually convenient to use.
 
-Moving back to the initial state is non-trivial. How can we be sure that we have cleaned up all of 
-our actions and use minimal resources?
-
-The framework presented in \cite{PPDP} sets out to solve both of these issues. 
-However, so far this was purely a theoretical exercise. How well do the ideas presented translate to 
-a programming context, and is the resulting system actually convenient to use? 
 In answering these questions this bachelor's thesis will make the following contributions: 
 
-<!--
-Solutions have been proposed that try to solve common deadlock scenarios and reversing evaluation. 
-but it's not made it's way into our languages and libraries. This paper gives an implementation of a 
-framework presented in  that allows reversing of computation steps and verifies communication.
-We additionally will look at how this implementation can be used to debug concurrent message-passing programs.
-As such this bachelor's thesis will make the following contributions: 
--->
+* We begin by anaylyzing the three core components of the PPDP'17 paper:
 
-* We begin by anaylyzing the three core components of \cite{PPDP}:
-
-    A process calculus, multiparty session types and reversibility. At the same time 
-    we give the encoding of the formal definition into Haskell data types. 
+    A process calculus, multiparty session types and a reversible semantics. At the same time 
+    we give the encoding of the formal definitions of these components into Haskell data types. 
 
 
     * We define and implement a **process calculus**  from its foundations. 
@@ -102,44 +92,49 @@ As such this bachelor's thesis will make the following contributions:
     * Next we look at **multiparty session types**  for the implemented calculus. 
     The session types feature nested recursion and choice.
 
-    * Finally we consider **reversibility** given the two previous concepts. In particular we look at
+    * Finally we consider **a reversible semantics** given the two previous concepts. In particular we look at
     the information that needs to be preserved when moving forward in order to move backward correctly.
 
 * Next we combine our encodings of the core components to define forward and backward 
     evaluation functions. 
+
+* Finally we consider earlier work on concurrent reversible debuggers and how the Haskell implementation
+    relates to them. 
 
 
 <!--
  The research question is then: can the reversible semantics by Mezzina and Perez provide a basis for debugging message-passing programs in an effective, modular way?
  -->
 
-The structure looks as follows: section \ref{the-main-idea} introduces the three key foundations from the PPDP paper and how they can be encoded into haskell data types. 
+The structure looks as follows: Section \ref{the-main-idea} introduces the three key foundations from the PPDP'17 paper and how they can be encoded into Haskell data types. 
 Section \ref{combining} shows how the data types 
 can be used to implement forward and backward reduction and provides the other mechanics needed to evaluate 
 the program. 
 Section \ref{free-monad-dsl} provides a more convenient syntax for writing programs. 
-The appendices \ref{performing-io} through \ref{scheduling-code} give background and extra examples for the Haskell concepts and terminology used in the paper.
+Appendices \ref{performing-io} through \ref{scheduling-code} give background and extra examples for the Haskell concepts and terminology used in the paper.
 
 # The Main Idea
 
-The PPDP paper builds a system that features three basic concepts: a process calculus, multiparty session types and reversibility.
-These three ideas are combined to create more robust concurrent programs. 
+The PPDP paper builds a programing model that features three basic concepts: a process calculus, multiparty session types and a reversible semantics. 
+The result of combining these ideas is a program that is verified at runtime and can deal with 
+failure in a flexible way.
 
-The process calculus is a very low-level programming language that allows concurrent communication. 
-Their flavor of multiparty session types dynamically check the communication a process performs agains a protocol. 
-Reversibility - backwards evaluation of our process calculus - gives the ability to recover from errors or to safely fail.
+The process calculus is a low-level programming language that allows concurrent communication. 
+The PPDP'17 multiparty session types dynamically validate the communication a process performs agains a protocol. 
+Finally, a reversible semantics for the process calculus and multiparty session types makes it possible to reverse the evaluation of a program. Reversing gives the ability to recover from errors or to safely fail.
 
-In this section we show how these three concepts are formally defined in PPDP and how they are implemented in 
+In this section we show how these three concepts are formally defined in the PPDP'17 paper and how they are implemented in 
 our Haskell implementation.
 
 ## Process Calculi {#process-calculi}
 
 As said, a process calculus is like a minimal programming language that can model concurrent communication.
-We will start by considering a well-understood existing calculus - the pi calculus. Next we will look at how PPDP extends it and finally 
+We will start by considering a well-understood existing calculus - the $\pi$-calculus. Next we will look at how the PPDP'17 paper extends it and finally 
 give an implementation as a Haskell data type.
 
-The pi-calculus is to concurrent computation much like what the lambda calculus is for sequental computing : 
-A simple model that is convenient for reasoning and constructing proofs. The pi-calculus is defined as 
+The $\pi$-calculus is to concurrent computation much like what the lambda calculus is for sequental computing : 
+a simple model that is convenient for reasoning and constructing proofs. 
+The syntax of the $\pi$-calculus is defined as 
 
 \begin{align*}
 P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the value }y\text{ over channel }x\text{, then run }P \\
@@ -148,21 +143,23 @@ P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the v
 |\,\,\, & (\nu x)P  \,\,\, &\text{Create a new channel }x\text{ and run }P \\
 |\,\,\, & !P \,\,\, &\text{Repeatedly spawn copies of }P \\
 |\,\,\, & 0 & \text{Terminate the process} \\
+|\,\,\, & P+Q \,\,\, \, \, \, \, \, \, &\text{Non-deterministic choice between }P\text{ and }Q\\
 \end{align*}
+
+The relevant part of the operational semantics for this paper is the reduction of send and receive: 
+A $\pi$-calculus term can be reduced when there is a send and a receive over the same channel in parallel.
+
+$$\overline{x}\langle z \rangle.P\, |\, x(y).Q \rightarrow P | Q[z/y]$$
 
 With this syntax we can construct programs like so:
 
 $$(\nu x)(\overline{x}\langle 42 \rangle.0\, |\, x(y).0)$$ 
 
 This program is read as "create a channel $x$ and then in parallel send 42 over $x$ then terminate, and receive a value on $x$ and bind it to the name $y$ then terminate."
-The pi-calculus is much too low-level to write real programs in, but it can compute any computable function (because the lambda calculus can be encoded into it \cite{milner1992functions}) 
+The $\pi$-calculus is much too low-level to write real programs in, but it can compute any computable function (because the $\lambda$-calculus can be encoded into it \cite{milner1992functions}) 
 and lends itself well to proofs.
 
-A pi-calculus term can be reduced when there is a send and a receive over the same channel in parallel.
-
-$$\overline{x}\langle z \rangle.P\, |\, x(y).Q \rightarrow P | Q[z/y]$$
-
-The PPDP paper makes a few generalizations to this calculus. The calculus used in PPDP is given by 
+The PPDP paper makes a few generalizations to this calculus. Their calculus is given by:  
 
 \begin{figure}
 \begin{align*}
@@ -188,20 +185,46 @@ P, Q ::= \,
 \end{align*}
 \end{figure}
 
-We still have sending, receiving and parallel, and allow recursion and termination. Channel creation has been removed for simplicity: we'll use only 
+\begin{figure}
+\begin{align*}
+u,w  \bnfis& n \sbnfbar x,y,z
+\qquad \quad
+n,n' \bnfis a,b \sbnfbar \ep{s}{p}
+\\
+ {v},  {v}'  \bnfis &  \true \sbnfbar \false \sbnfbar \cdots
+\\
+V,W \bnfis & {a,b} \sbnfbar  x,y,z \sbnfbar  v, v' \sbnfbar {\abs{x}{P}}
+\end{align*}
+\caption{\textbf{Values:}
+Names $a,b,c$ (resp. $s,s'$) range over shared (resp. session) names.
+We use session names indexed by participants, denoted $s_{[p]},s_{[q]}$.
+Names $n,m$ are session or shared names. First-order values $v,v'$ 
+include base values and constants. Variables are denoted by $x,y$ and
+recursive variables are denoted by $X,Y$. The syntax of values V includes shared names, 
+first-order values, but also name abstractions
+(higher-order values) $\lambda x. P$, where $P$ is a process.
+}
+\end{figure}
+
+
+
+We still have sending, receiving and parallel, and allow recursion and termination. Channel creation has been removed for simplicity: we will use only 
 one globally available channel. This channel is implemented as a queue which means that sends are non-blocking. 
 
-The primary extension is choice: This is where instead of a value, a label is sent from a selector to an offerer. Both parties will pick the 
-branch that the label corresponds to. Choice could be implemented as a combination of send/receive and if-then-else, but they are primitives 
-here because each branch can have a different type (this will become clearer in section, \ref{session-types}.)
+The primary extension is choice: where the $\pi$-calculus has non-deterministic choice between $\pi$-terms, 
+the process calculus has labeled deterministic choice. The choice is determined by the state of the program. 
+The selector picks a label and sends it to the offerer. 
+Both parties will pick the branch that the label corresponds to. 
+Choice could be implemented as a combination of send/receive and if-then-else, but they are primitives 
+here because each branch can have a different type (this will become clearer in Section \ref{session-types}.)
 
 Finally, we allow the sending of thunks - functions that take `Unit` as their argument and return a process term (i.e. a piece of program that can be executed). 
 The fact that we can send programs - and not just values - means that our calculus is a higher-order calculus. The sending of thunks provides "protocol delegation via abstraction passing".
 
-The definition of functions in the PPDP paper is a bit strange: there are two ways of recursion - on the process level and on the value level. 
+A side-effect of the function values is that there are two ways of defining recursion: using the $\mu$ process constructor or using the $\lambda$ value constructor. 
 In the implementation the former has been removed.
 
-## Implementing the PPDP calculus 
+## Implementing the PPDP calculus in Haskell
 
 The implementation uses an algebraic data type (union type/sum type) to encode all the constructors of the grammar. We use 
 the `Fix` type to factor out recursion from the grammar. As mentioned we omit the process-level recursion. 
@@ -268,7 +291,7 @@ data Value
     | VLabel String
 ```
 
-We can now write the send/receive example as 
+We can now write the send/receive example from the introduction as:
 
 ```haskell
 example = 
@@ -279,9 +302,9 @@ example =
         )
 ```
 
-While the above is easily manipulatable with pattern matching and functions from the `Fix` module, it's impossible to 
+While the above is easily manipulatable with pattern matching and functions from the `Fix` module, it is very hard to 
 write clear examples in this style. Longer expressions need ever more parentheses and in general there is too much syntactical clutter. 
-We will get back to designing a better syntax for defining programs in section \ref{free-monad-dsl}.
+We will get back to designing a better syntax for defining programs in Section \ref{free-monad-dsl}.
 
 
 ## Multiparty Session Types {#session-types}
@@ -291,34 +314,35 @@ as the application becomes larger.
 
 Most programmers are familiar with data types. Compilers use data types to typecheck programs. 
 Programs that typecheck are statically guaranteed to not have certain classes of bugs.
-Type systems range from very loose (dynamic languages like javascript and python) to very restrictive (Coq, Agda, Idris). 
+Type systems range from very loose (dynamic languages like Javascript and Python) to very restrictive (Coq, Agda, Idris). 
 
-In the late 90s, a similar tool was developed for "typing" and checking the interaction between concurrent processes: Session types. Session types provide three key properties: 
+In the late 90s, a similar tool was developed for typing and checking the interaction between concurrent processes: Session types. Session types use protocols to enforce three key properties: 
 
-* **Order** every participant has an ordered list of sends and receives that it must perform
-* **Progress** every sent message is eventually received
-* **Safety** sender and receiver always agree about the type of the sent value
+* **Order:** every protocol participant has an ordered list of sends and receives that it must perform
+* **Progress:** every sent message is eventually received
+* **Communication Safety:** sender and receiver always agree about the type of the exchanged values
 
 Next we will look at how these types are defined and how we can check that our program implements its session type.
 
 ### Global Types {#global-types}
 
 The simplest non-trivial concurrent program has two participants. In this case, the types of the two participants are exactly dual: if the one sends, the
-other must receive. However, for the multiparty (3 or more) use case, things aren't so simple.
+other must receive. However, for the multiparty use case (3 or more participants), things are not so simple.
 
-We need to define globally what transactions occur in our protocol.
+We need to define globally what communications occur in our protocol.
+The snippet below is a basic global type where Carol and Bob exchange a value of type `Bool`, next 
+Alice and Carol exchange a value of type `Int` and then the protocol ends.
 
 ```haskell
 simple :: GlobalType String String
 simple = do 
     message "carol" "bob" "Bool"
-    message "alice" "carol" "int"
+    message "alice" "carol" "Int"
     end
 ```
 
-We can see immediately that **safety and progress are guaranteed**: we cannot construct a valid global type that breaks these guarantees: Every communication has a send and receive, and they both must agree on the type.
-A more realistic example that we'll use as a running example is the three buyer protocol.
-In this protocol, Alice and Bob communicate with the Vendor about the purchase of some item:
+We can see immediately that **safety and progress are guaranteed**: we cannot construct a valid global type that breaks these guarantees. Every communication has a send and receive, and they both must agree on the type.
+A more realistic scenario that we will use as a running example is the three buyer protocol from the PPDP'17 paper. In this protocol, Alice and Bob communicate with the Vendor about the purchase of some item:
 
 \begin{align*}
 G = ~&  \gtcom{A}{\texttt{V}}{\mathsf{title}}{~~\gtcom{\mathtt{V}}{\{A,B\}}{\mathsf{price}}{\\[-0.5mm] 
@@ -364,15 +388,48 @@ For instance, one branch can terminate the protocol, and the other can start fro
 The final three constructors are required for supporting nested recursion and taken from \cite{van2017session}. A `RecursionPoint` is a point in the protocol that we can later jump back to. 
 A `RecursionVariable` triggers jumping to a previously encountered `RecursionPoint`. By default it will jump to the closest and most-recently encountered `RecursionPoint`, but `WeakenRecursion` makes it jump one `RecursionPoint` higher, encountering 2 weakens will jump 2 levels higher etc.
 
-Using `Monad.Free`, we can write the ThreeBuyer example type as 
+Using `Monad.Free` (Appendix \ref{monad-free}), we can write examples with a more idiomatic Haskell syntax.
+
+The snippet below shows the use of nested recursion. There is an outer loop that will perform a piece
+of protocol or end, and an inner loop that sends messages from `A` to `B`. When the inner loop is done, 
+control flow returns to the outer loop.
 
 ```haskell
+import GlobalType as G
+
+G.recurse $ -- recursion point 1
+    G.oneOf A B
+        [ ("loop"
+          , G.recurse $ -- recursion point 2
+                G.oneOf A B
+                    [ ("continueLoop", do 
+                        G.message A B "date"
+                        -- jumps to recursion point 2
+                        G.recursionVariable
+                      )
+            
+                    , ("endInnerLoop", do 
+                        -- jumps to recursion point 1
+                        G.weakenRecursion G.recursionVariable
+                      )
+                    ]
+          )
+        , ("end", G.end)
+        ]
+```
+
+Similarly, the ThreeBuyer example can be written as: 
+
+```haskell
+-- a data type representing the participants
 data MyParticipants = A | B | C | V 
     deriving (Show, Eq, Ord, Enum, Bounded)
 
+-- a data type representing the used types 
 data MyType = Title | Price | Share | Ok | Thunk | Address | Date
     deriving (Show, Eq, Ord)
 
+-- a description of the protocol
 globalType :: GlobalType.GlobalType MyParticipants MyType
 globalType = do 
     message A V Title 
@@ -392,11 +449,19 @@ globalType = do
 A global type can contain inherent parallelism: the order of its steps is not fully defined. Checking for correctness against a global
 type is therefore quite hard. The solution is to project the global type onto its participants, creating a local type. 
 
-The local type is an ordered list of steps that the participant must execute to comply with the protocol. Thus the third property **Order** is satisfied
-for local types. 
+The local type is an ordered list of steps that the participant must execute to comply with the protocol. Thus the **order** property is enforced for local types. 
 
-The projection is mostly straightforward, except for choice. Because we allow recursion, a branch of a choice may recurse back to the beginning. When 
+The projection is mostly straightforward, except for choice. 
+Because we allow recursion, a branch of a choice may recurse back to the beginning. When 
 this occurs, all participants have to jump back to the beginning, so every choice must be communicated to all participants. 
+
+The PPDP'17 paper deals with this problem by disallowing different branches using different participants.
+All branches must use the same participants. This may require adding dummy communication to get a program 
+to typecheck.
+
+In the Haskell implementation we use a different method where every choice causes a broadcast of 
+that choice to the other participants. Once again, some participants may not need the information 
+about the choice and the communication with them is just to satisfy the type checker.  
 
 \begin{figure}[]
 {
@@ -419,17 +484,6 @@ this occurs, all participants have to jump back to the beginning, so every choic
 \end{cases}
 }
 \\
-\tproj{(\gtcho{p}{q}{l_i}{G_i})}{\gpart{r}}  
-& 
-{= 
-\begin{cases}
-\ltsel{q}{\lbl_i}{(\tproj{G_i}{\gpart{r}})}{i}{I}  & \text{ if $\gpart{r} = \gpart{p}$} \\
-\ltbra{p}{\lbl_i}{\tproj{G_i}{\gpart{r}}}{i}{I}  & \text{ if $\gpart{r} = \gpart{q}$} \\
-\ltsel{r}{\lbl_i}{\tproj{G_i}{\gpart{r}}}{i}{I} &   \text{ if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$} \\
-\ltbra{q}{\lbl_i}{\tproj{G_i}{\gpart{r}}}{i}{I} &   \text{ if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$}
-\end{cases}
-}
-\\
 \tproj{(\mu X. G)}{\gpart{r}} &= 
 \begin{cases}
 \mu X. \tproj{G}{\gpart{r}} & \text{if $\gpart{r}$ occurs in $G$}
@@ -443,38 +497,29 @@ this occurs, all participants have to jump back to the beginning, so every choic
 \end{align*}
 }
 \vspace{-4mm}
-\caption{Projection of a global type $G$ onto a participant $\gpart{r}$.\label{f:proj}}
+\caption{Projection of a global type $G$ onto a participant $\gpart{r}$ from PPDP'17.\label{f:proj}}
 \end{figure}
 
-> **NOTE:** the above is still wrong. For offer, it must also send the choice to all other participants
-> all participants that are not p or q must also be informed of the choice.
-> How do we write this all down? 
 
-all choices need to be communicated to all participants because a choice may trigger recursion. The recursion jumps back in protocol to an 
-earlier state and expects all participants to be at that state. Otherwise, If a choice is not communicated with everyone, the other participants cannot know
-that a jump has to be made
-
-The solution we have chosen is that the offerer relays the decision to all the other participants
-
-
-
-## Reversiblilty {#reversibility}
+## A Reversible Semantics {#reversibility}
 
 The third component of the system is reversibility. The idea here is that we can move back to previous program states, reversing forward steps. 
 
 Reversibility is useful in a concurrent setting when an error is encountered but the current state is invalid. 
 In such a case the program should revert to its initial state, from which next steps can be considered (e.g. to retry or to log the failure). 
 
-The naive way to achieve reversal is to store a snapshot of the initial state, but the memory consumption of this method is a deal-breaker. 
+The naive way to achieve reversal is to store a snapshot of the initial state, but the memory consumption of this method is too large for this method to be practical. 
 For instance, the system may interact with a large database. 
 Keeping many copies of the database around is inconvenient and may not even be 
 physically possible. 
 
-A nicer approach is to keep track of our forward steps, and store just enough information to reverse those steps. Conceptually, we're leaving behind 
-a trail of breadcrumbs so we can always find our way back. 
+The PPDP'17 paper provides a nicer approach tailored to the process calculus and local types that we have seen.
+For every forward step, just enough information is stored to undo it. 
+Conceptually, we're leaving behind a trail of breadcrumbs so we can always find our way back. 
 
-The challenge, then, is to find the minimal amount of information that we need to store for every instruction.
-Broadly, we need to track information about two things: the type and the process. 
+The challenge, then, is to find what the minimal amount of information actually is for 
+every instruction. PPDP'17 tells us that broadly, 
+we need to track information about two things: the type and the process. 
 
 For the type we define a new data type called `TypeContext`. It contains the actions that have been performed and for 
 some stores a bit of extra information like the `owner`.
@@ -484,70 +529,89 @@ On the process level there are four things that we need to track:
 
 1. Used variable names in receives
 
-The rest of the program depends on the name that we assign to a received value. Therefore we need to restore the original name when
-we revert. Used variable names are stored on a stack that is popped when we revert a receive.
+    The rest of the program depends on the name that we assign to a received value. Therefore we need to restore the original name when
+    we revert. Used variable names are stored on a stack that is popped when we revert a receive.
 
-```haskell
-program = do
-    decision <- H.receive
-    H.send decision
-    H.send decision
-```
+    ```haskell
+    program = do
+        decision <- H.receive
+        H.send decision
+        H.send decision
+    ```
 
 2. Unused branches
 
-When a choice is made and then reverted, we want all our options to be available again. 
-Currently the semantics aren't able to make a different choice, but it will in the future.
+    When a choice is made and then reverted, we want all our options to be available again. 
+    Currently, another label cannot actually be selected after reverting: the selected label depends only
+    on the values of variables in the program. Future work may make it possible to also use the 
+    failure information to influence the choice made.
 
-```haskell
-type Zipper a = (List a, a, List a)
+    ```haskell
+    type Zipper a = (List a, a, List a)
 
-data OtherOptions
-    = OtherSelections (Zipper (String, Value, Program Value))
-    | OtherOffers (Zipper (String, Program Value))
-```
+    data OtherOptions
+        = OtherSelections (Zipper (String, Value, Program Value))
+        | OtherOffers (Zipper (String, Program Value))
+    ```
 
-We need to store the selection that has been made. The zipper contains the taken path as its central `a`, and the options before and after as the lists on either side. 
+    We need to store the selection that has been made. The zipper contains the taken path as its central `a`, and the options before and after as the lists on either side. 
 
 3. Function applications
 
-When applying a function we lose information about the applied function and the argument. Therefore we store them in a map and associate them with a unique identifier. 
-This identifier is given to the `Application` constructor so when stepping backward the function and the 
-argument can be recovered.
+    When applying a function we lose information about the applied function and the argument. Therefore we store them in a map and associate them with a unique identifier. 
+    This identifier is given to the `Application` constructor so when stepping backward the function and the 
+    argument can be recovered.
 
-```haskell
-Map Identifier (Value, Value)
-```
+    ```haskell
+    Map Identifier (Value, Value)
+    ```
 
-You might think that a stack would be a simpler solution, but a stack can give undesired behavior. 
-Say that a participant is running in two locations, and the last-performed action at both locations is 
-a function application. Now we want to undo both applications, but the order in which to undo them is 
-undefined: we need both orders to work. When the application keeps track of exactly which 
-function and argument it used the end result is always the same. Just using a stack could mix 
-up the applications.
+    You might think that a stack would be a simpler solution, but a stack can give undesired behavior. 
+    Say that a participant is running in two locations, and the last-performed action at both locations is 
+    a function application. Now we want to undo both applications, but the order in which to undo them is 
+    undefined: we need both orders to work. When the application keeps track of exactly which 
+    function and argument it used the end result is always the same. Only using a stack could mix 
+    up the applications.
 
 4. Messages on the channel
 
-When a value is sent, the sender loses track of what has been sent. Therefore, reverting a send/receive pair must move the value from the receiver via the queue back to the 
-sender. To this end, the queue holds on to received values: the value is popped from the queue but pushed onto the history stack. Now when the receive is rolled, the value 
-is moved back onto the queue, and when the send is rolled the value is moved from the head of the queue into the sender's process.
+    When a value is sent, the sender loses track of what has been sent. Therefore, reverting a send/receive pair must move the value from the receiver via the queue back to the 
+    sender. The image below illustrates this process. 
+    
+    \includegraphics[scale=0.60]{img/queue-history-stack.pdf}
 
-\includegraphics[scale=0.60]{img/queue-history-stack.pdf}
+    1. **receive**: the value 42 is popped from the queue but pushed onto the history stack. 
+    2. **roll receive**: Now when the receive is rolled, the value is moved back from the history stack onto the queue.
+    3. **rol send**: When the send is rolled the value is moved from the head of the queue into the sender's process.
+
 
 <!-- Q: Why store the information in the queue stack, and not move the value from the receiver's variable definitions onto the top of the queue?** <- that could work but it's probably harder to use in proofs, so it's not what PPDP picked
 -->
 
 
-## Abstraction passing is protocol delegation
+## Abstraction Passing is Protocol Delegation
 
 Protocol delegation is where a participant can delegate (a part of) their protocol to be fulfilled by another participant. An example of where this idea is useful is a load balancing server: from the client's perspective,
 the server handles the request, but actually the load balancer delegates incoming requests to workers. The client does not need to be aware of this implementation detail.
 
-To implement this idea, instructuions need to keep track of whose protocol they should move forward. 
-The `owner` field stores this information. Regardless of by whom an instruction is evaluated, the 
-local type indexed by the `owner` field is the one that is checked agains and changed. 
+Recall the definition of `ProgramF`:
+```haskell
+data ProgramF value next 
+    -- communication primitives
+    = Send 
+        { owner :: Participant
+        , value :: value
+        , continuation :: next 
+        }
+    | ... 
+```
+The `ProgramF` constructors that move the local type forward (send/receive, select/offer) have an `owner` field
+that stores whose local type they should be checked agains and modfiy. This field is also present in the 
+`TypeContext`.
 
-
+Because we allow references to values in the implementation, 
+all references in a function have to be dereferenced before 
+it can be safely sent over a channel. 
 
 # Putting it all together  {#combining}
 
@@ -782,7 +846,7 @@ we have given an encoding of the PPDP semantics in the Haskell programming langu
 run and verify our example programs automatically and inspect them interactively.
 
 We have seen that the PPDP semantics can be split into three core components: a process calculus, multiparty session types and reversibility. Additonally,
-all three of these are representable as recursive haskell data types. All other features of PPDP (the authors note decoupled rollbacks and abstraction passing, including delegation) 
+all three of these are representable as recursive Haskell data types. All other features of PPDP (the authors note decoupled rollbacks and abstraction passing, including delegation) 
 can easily be integrated when these three types are established.  
 
 Relatedly, the implementation proces has shown that sticking to the formal implementation leads to better code. 
@@ -919,7 +983,7 @@ In short
 * `IO` is an instance of `Monad`
 
 Much material on the web about monads is about establishing the general idea, but really the exact meaning of `>>=` can be very different 
-for every instance. Next we'll look at some of the types used in the code for this thesis.
+for every instance. Next we will look at some of the types used in the code for this thesis.
 
 # Except {#except}
 
