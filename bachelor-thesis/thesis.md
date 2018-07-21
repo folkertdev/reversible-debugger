@@ -210,9 +210,7 @@ first-order values, but also name abstractions
 }
 \end{figure}
 
-
-
-We still have sending, receiving and parallel, and allow recursion and termination. 
+We preserve sending, receiving and parallel, and allow recursion and termination. 
 Channel creation is still part of the grammar (the $n$ in $\news{n}P$ can take a session name $s_{[p]}$) but 
 is restricted to mean that all endpoints in $P$ are simultaneously bound. 
 In practice this means that there is only one globally available message channel. 
@@ -271,8 +269,9 @@ The `Fix` data type is the fixed point type:
 data Fix f = Fix (f (Fix f))
 ```
 
-`Fix` allows us to express a type of the shape `f (f (f (f (..))))` concisely. For the 
-values of this type to be finite, the `f` must have a leaf constructor.
+`Fix` allows us to concisely express an infinite nesting of a type (of the shape `f (f (f (f (..))))`). 
+Such a type will look like a tree. 
+For the values of this type to be finite, the `f` must have a leaf constructor.
 Take for instance this simple expression language
 
 ```haskell
@@ -301,11 +300,11 @@ complex =
 
 In the above snippet and in the process syntax definition, `next` is a placeholder or hole for an arbitrarily 
 deep nesting of `ExprF`s or `ProgramF`s respectively. The main usage of `Fix` is that it gives traversals and 
-folds of our syntax tree for free. 
+folds of our syntax tree for free because these are generically defined on `Fix`. 
 
 We also need values in our language. To write more interesting examples we extend the 
-types of values that can be used from references, booleans and functions to also include
-integers, strings, and basic integer and logic operators.
+types of values that can be used from names, booleans and functions to also include
+references, integers, strings, and basic integer and logic operators.
 
 ```haskell
 data Value 
@@ -563,14 +562,22 @@ On the process level there are four things that we need to track:
 
 1. Used variable names in receives
 
-    The rest of the program depends on the name that we assign to a received value. Therefore we need to restore the original name when
-    we revert. Used variable names are stored on a stack that is popped when we revert a receive.
+    The rest of the program depends on the name that we assign to a received value. When reverting, we need to 
+    use the name that the rest of the program expects. Picking a new name like at 2 in the snippet below is obviously 
+    wrong. We could revert to the internal name used for the variable - as shown in 3 - but this name is uninformative. 
+    Therefore, we store the name given by the programmer so we can use that name again when reverting. 
 
     ```haskell
-    program = do
-        decision <- H.receive
-        H.send decision
-        H.send decision
+    decision <- H.receive    
+    H.send decision          
+                             
+    -- 1) => forward         -- 3) => valid but undesired backward                                     
+    H.send var1              var1 <- H.receive
+                             H.send var1
+
+    -- 2) => wrong backward  -- 4) => actual backward
+    var2 <- H.receive        decision <- H.receive
+    H.send var1              H.send decision
     ```
 
 2. Unused branches
@@ -587,8 +594,9 @@ On the process level there are four things that we need to track:
         = OtherSelections (Zipper (String, Value, Program Value))
         | OtherOffers (Zipper (String, Program Value))
     ```
-
-    We need to store the selection that has been made. The zipper contains the taken path as its central `a`, and the options before and after as the lists on either side. 
+    
+    The code above shows how the choices are stored. We need to remember which choice was made, and the order of the options is important. We use a `Zipper` to store the elements
+    in order and use the central `a` to store the choice that was made.
 
 3. Function applications
 
@@ -596,11 +604,7 @@ On the process level there are four things that we need to track:
     This identifier is given to the `Application` constructor so when stepping backward the function and the 
     argument can be recovered.
 
-    ```haskell
-    Map Identifier (Value, Value)
-    ```
-
-    You might think that a stack would be a simpler solution, but a stack can give undesired behavior. 
+    You might think that a stack would be a simpler solution, but a stack can give invalid behavior. 
     Say that a participant is running in two locations, and the last-performed action at both locations is 
     a function application. Now we want to undo both applications, but the order in which to undo them is 
     undefined: we need both orders to work. When the application keeps track of exactly which 
@@ -622,7 +626,7 @@ On the process level there are four things that we need to track:
 
     1. \textbf{receive}: the value 42 is popped from the queue but pushed onto the history stack. 
     1. \textbf{roll receive}: Now when the receive is rolled, the value is moved back from the history stack onto the queue.
-    1. \textbf{rol send}: When the send is rolled the value is moved from the head of the queue into the sender's process.
+    1. \textbf{roll send}: When the send is rolled the value is moved from the head of the queue into the sender's process.
 
 <!-- Q: Why store the information in the queue stack, and not move the value from the receiver's variable definitions onto the top of the queue?** <- that could work but it's probably harder to use in proofs, so it's not what PPDP picked
 -->
