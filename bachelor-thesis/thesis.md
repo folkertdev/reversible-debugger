@@ -9,11 +9,11 @@ abstract: |
     Under a reversible semantics, computation steps can be undone. 
     For message-passing, concurrent programs, reversing computation steps is a challenging and delicate task; one typically aims at formal semantics which are \emph{causally-consistent}. 
     Prior work has addressed this challenge in the context of a process model of multiparty protocols (choreographies) following a so-called \emph{monitors-as-memories} approach.
-    In this paper, we describe our ongoing efforts aimed at implementing this operational semantics in Haskell. 
+    In this paper, we describe our efforts aimed at implementing this operational semantics in Haskell. 
     We provide an encoding based on the formal definition of prior work's three core concepts: 
     a process calculus, multiparty session types and a reversible semantics.
     Additionally, we provide an implementation of the forward and backward transition functions, 
-    make it possible to run and typecheck programs, and finally reflect on uses of the implementation of these semantics.
+    which make it possible to run and typecheck programs, and finally reflect on uses of the implementation of these semantics.
     
 # \keywords{Reversible computation \and Message-passing concurrency \and Session Types \and Haskell.}
 usepackage: graphicx,hyperref, xcolor,xspace,amsmath,amsfonts,stmaryrd,amssymb,enumerate, mathpartir, fancyvrb
@@ -51,10 +51,10 @@ computation - like receiveing from a channel. See also Appendix \ref{do-notation
 
 No value will ever be sent on the channel, so the receive blocks forever: it cannot make any progress.
 
-Failing gracefully is harder in a concurrent context: the state of the application is typically spread over 
-multiple locations which makes it harder to determine where the error originates and how to compensate for it.
+Failing gracefully is challenging in a concurrent context: the state of the application is typically spread over 
+multiple locations which makes it hard to determine where the error originates and how to compensate for it.
 
-Consider the follow example: if Bob fails in receiving a message or loses a message, 
+Consider the following example: if Bob fails in receiving a message or loses a message, 
 he will have to repeat the `receive`, but also inform Alice to send the message again. 
 
 ```haskell
@@ -77,32 +77,34 @@ sets out to address both these issues.
 The paper develops a theoretical approach, using techniques from programming languages and concurrency. 
 However, it does not consider how the presented approach can be implemented in an actual programming language.
 In earlier work during a short programming 
-project we have looked at combining the CaReDeb debugger \cite{caredeb} with the PPDP'17 semantics.
-Here we go further and look at how well the ideas presented in PPDP'17 translate to 
+project we have looked at combining the CaReDeb debugger \cite{caredeb} with the PPDP'17 paper. 
+Here we go further and look at how well the ideas presented in the PPDP'17 paper translate to 
 a programming context, and whether the resulting system turnns out to be convenient to use.
 
 In answering these questions this bachelor's thesis makes the following contributions: 
 
-1. We begin by anaylyzing the three core components of the PPDP'17 paper:
+1. We begin by analyzing the three core components of the PPDP'17 paper:
 
     A process calculus, multiparty session types and a reversible semantics. At the same time 
     we give the encoding of the formal definitions of these components into Haskell data types. 
 
 
-    * First define and implement a **process calculus**  from its foundations. 
+    * First, we define and implement a **process calculus**  from its foundations. 
     Later, we use the `Free` monad to provide convenient syntax.
 
-    * Next we look at **multiparty session types**  for the implemented calculus. 
+    * Next, we look at **multiparty session types**  for the implemented calculus. 
     The session types feature nested recursion and labelled choice.
 
-    * Finally, we consider **a reversible semantics** given the two previous concepts. In particular we look at
+    * Finally, we consider **a reversible semantics** given the two previous concepts. In particular, we look at
     the information that needs to be preserved when moving forward in order maintain causal consistency. 
 
+<!--
 2. Next we combine our encodings of the core components to define forward and backward 
     evaluation functions. 
 
 3. Finally we consider earlier work on concurrent reversible debuggers and how the Haskell implementation
     relates to them. 
+-->
 
 
 <!--
@@ -111,20 +113,20 @@ In answering these questions this bachelor's thesis makes the following contribu
 
 The rest of the document is structured as follows: Section \ref{the-main-idea} introduces the three key foundations from the PPDP'17 paper and how they can be encoded into Haskell data types. 
 Section \ref{combining} shows how the data types 
-can be used to implement forward and backward reduction and provides the other mechanics needed to evaluate 
+can be used to implement forward and backward operational semantics and provide the other mechanics needed to evaluate 
 the program. 
-Section \ref{free-monad-dsl} provides a more convenient syntax for writing (reversible) programs. 
+Section \ref{free-monad-dsl} provides a more convenient syntax for writing (reversible) message-passing programs. 
 Appendices \ref{performing-io} through \ref{scheduling-code} give background and extra examples for the Haskell concepts and terminology used in the paper.
 
 # The Main Idea
 
 The PPDP'17 paper builds a programing model that features three basic concepts: a process calculus, multiparty session types and a reversible semantics. 
-The result of combining these ideas is a program that is verified at runtime and can deal with 
-failure in a flexible way.
+The result of combining these ideas allows runtime verification of programs, with the possibility of dealing with failure in a flexible way. 
 
 The process calculus is a low-level programming language that allows concurrent communication. 
-The PPDP'17 multiparty session types dynamically validate the communication a process performs against a protocol. 
-Finally, a reversible semantics for the process calculus and multiparty session types makes it possible to reverse the evaluation of a program. Reversing gives the ability to recover from errors or to safely fail.
+The multiparty session types defined in the PPDP'17 paper dynamically validate the communication a process performs against a protocol. 
+Finally, a reversible semantics for the process calculus in combination with local types derived from multiparty session types make it possible to reverse the evaluation of a program. 
+Reversing gives the ability to recover from errors or to safely fail.
 
 In this section we show how these three concepts are formally defined in the PPDP'17 paper and how they are implemented in 
 our Haskell implementation.
@@ -132,12 +134,12 @@ our Haskell implementation.
 ## Process Calculi {#process-calculi}
 
 As already mentioned, a process calculus is a minimal programming language that can model concurrent communication.
-We will start by considering a well-understood existing calculus - the $\pi$-calculus. Next we will look at how the PPDP'17 paper extends it and finally 
+We will start by considering a well-understood existing calculus: the $\pi$-calculus. Next we will look at how the PPDP'17 paper extends it and finally 
 give an implementation as a Haskell data type.
 
 The $\pi$-calculus is to concurrent computation much like what the $\lambda$-calculus is for sequental computing: 
 a simple model that is convenient for reasoning about a program's correctness. 
-The syntax of the $\pi$-calculus is defined as 
+The syntax of the $\pi$-calculus is defined as: 
 
 \begin{align*}
 P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the value }y\text{ over channel }x\text{, then run }P \\
@@ -150,7 +152,7 @@ P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the v
 \end{align*}
 
 The relevant part of the operational semantics for this paper is the reduction of send and receive: 
-A $\pi$-calculus term can reduce when there is a send and a receive over the same channel running in parallel.
+a $\pi$-calculus term can reduce when there is a send and a receive over the same channel running in parallel: 
 
 $$\overline{x}\langle z \rangle.P\, |\, x(y).Q \rightarrow P | Q[z/y]$$
 
@@ -159,7 +161,7 @@ With this syntax we can construct programs like so:
 $$(\nu x)(\overline{x}\langle 42 \rangle.0\, |\, x(y).0)$$ 
 
 This program can be read as "create a channel $x$ and then in parallel send 42 over $x$ then terminate, and receive a value on $x$ and bind it to the name $y$ then terminate."
-The $\pi$-calculus is much too low-level to write real programs in, but it can compute any computable function (because the $\lambda$-calculus can be encoded into it \cite{milner1992functions}.)
+The $\pi$-calculus is much too low-level to write real programs in, but it can compute any computable function (because the $\lambda$-calculus can be encoded into it \cite{milner1992functions}).
 
 The PPDP'17 paper makes a few generalizations to this calculus. Their calculus is given by the syntax in Fig. \ref{fig:process-syntax}.
 
@@ -210,7 +212,7 @@ first-order values, but also name abstractions
 }
 \end{figure}
 
-We preserve sending, receiving and parallel, and allow recursion and termination. 
+The PPDP'17 paper preserves sending, receiving and parallel, and allow recursion and termination. 
 Channel creation is still part of the grammar (the $n$ in $\news{n}P$ can take a session name $s_{[p]}$) but 
 is restricted to mean that all endpoints in $P$ are simultaneously bound. 
 In practice this means that there is only one globally available message channel. 
@@ -219,9 +221,9 @@ This global channel is implemented as a queue which means that sends are non-blo
 The primary extension is choice: where the $\pi$-calculus has non-deterministic choice between $\pi$-terms, 
 the process calculus has labeled deterministic choice. The choice is determined by the state of the program. 
 The selector picks a label and sends it to the offerer. 
-Both parties will coordinate to pick the branch that the label corresponds to. 
+Both parties will coordinate to pick the branch that the label corresponds to and discard the alternative branches.
 Choice could be implemented as a combination of send/receive and if-then-else, but they are primitives 
-here because each branch can have a different type (this will become clearer in Section \ref{session-types}.)
+here because each branch can have a different type (this will become clearer in Section \ref{session-types}).
 
 Finally, we allow the sending of thunks - functions that take `Unit` as their argument and return a process term (i.e. a piece of program that can be executed). 
 The fact that we can send programs - and not just values - means that our calculus is a higher-order calculus. The sending of thunks provides protocol delegation via abstraction passing (see Section \ref{abstraction-passing}).
@@ -230,8 +232,52 @@ A side-effect of the function values is that there are two ways of defining recu
 
 ## Implementing the PPDP calculus in Haskell
 
-The implementation uses an algebraic data type (union type/sum type) to encode all the constructors of the grammar. We use 
-the `Fix` type (Appendix \ref{fix}) to factor out recursion from the grammar. As mentioned we omit the process-level recursion. 
+The implementation uses an algebraic data type (union type/sum type) to encode all the constructors of the grammar. 
+We use the `Fix` type (Appendix \ref{fix}) to factor out recursion from the grammar. 
+`Fix` is the fixed point type:
+
+```haskell
+data Fix f = Fix (f (Fix f))
+```
+
+`Fix` allows us to concisely express an infinite nesting of a type (of the shape `f (f (f (f (..))))`). 
+Such a type will look like a tree. 
+For the values of this type to be finite, the `f` must have a leaf constructor.
+Take for instance this simple expression language
+
+```haskell
+data Expr
+    = Literal Int
+    | Add Expr Expr 
+```
+
+`Literal` is the only constructor that can occur as a leaf, and `Add` is the only node.
+Using `Fix` we can equivalently write 
+
+```haskell
+data ExprF next
+    = Literal Int
+    | Add next next 
+```
+
+In the above snippet, `next` is a placeholder or hole for an arbitrarily 
+deep nesting of `ExprF`s. The main usage of `Fix` is that it gives traversals and 
+folds of our syntax tree for free because these are generically defined on `Fix`. 
+
+```haskell
+simple :: Fix ExprF
+simple = Fix (Literal 42)
+
+complex :: Fix ExprF
+complex = 
+    Fix (Add (Fix (Literal 40)) (Fix (Literal 2)))
+```
+
+The above snippet shows that defining values of type `Fix ExprF` requires wrapping of constructors with `Fix`.
+We will describe a better way of writing `Fix`ed values in Section \ref{free-monad-dsl}.
+
+The full definition of `Program` is given below.
+As mentioned we omit the process-level recursion. 
 
 ```haskell
 type Participant = String
@@ -263,44 +309,6 @@ data ProgramF value next
     deriving (Functor) 
 ```
 
-The `Fix` data type is the fixed point type:
-
-```haskell
-data Fix f = Fix (f (Fix f))
-```
-
-`Fix` allows us to concisely express an infinite nesting of a type (of the shape `f (f (f (f (..))))`). 
-Such a type will look like a tree. 
-For the values of this type to be finite, the `f` must have a leaf constructor.
-Take for instance this simple expression language
-
-```haskell
-data Expr
-    = Literal Int
-    | Add Expr Expr 
-```
-
-`Literal` is the only constructor that can occur as a leaf, and `Add` is the only node.
-Using `Fix` We can equivalently write 
-
-```haskell
-type Expr = Fix ExprF
-
-data ExprF next
-    = Literal Int
-    | Add next next 
-
-simple :: Expr 
-simple = Fix (Literal 42)
-
-complex :: Expr 
-complex = 
-    Fix (Add (Fix (Literal 40)) (Fix (Literal 2)))
-```
-
-In the above snippet and in the process syntax definition, `next` is a placeholder or hole for an arbitrarily 
-deep nesting of `ExprF`s or `ProgramF`s respectively. The main usage of `Fix` is that it gives traversals and 
-folds of our syntax tree for free because these are generically defined on `Fix`. 
 
 We also need values in our language. To write more interesting examples we extend the 
 types of values that can be used from names, booleans and functions to also include
@@ -344,22 +352,22 @@ Most programmers are familiar with data types. Compilers use data types to typec
 Programs that typecheck are statically guaranteed to not have certain classes of bugs.
 Type systems range from very loose (dynamic languages like Javascript and Python) to very restrictive (Coq, Agda, Idris). 
 
-In the late 90s, a similar tool was developed for typing and checking the interaction between concurrent processes: Session types. Session types use protocols to enforce three key properties: 
+In the late 90s, a similar tool was developed for typing and checking the interaction between concurrent processes: Session types. Session types abstract protocols to enforce three key properties: 
 
-* **Order:** every protocol participant has an ordered list of sends and receives that it must perform
-* **Progress:** every sent message is eventually received
+* **Order:** every protocol participant has a sequence of sends and receives that it must perform;
+* **Progress:** every sent message is eventually received;
 * **Communication Safety:** sender and receiver always agree about the type of the exchanged values
 
-Next we will look at how these types are defined and how we can check that our program implements its session type.
+Next we will look at how these types are defined and how we can check that our programs implement their session type.
 
 ### Global Types {#global-types}
 
-The simplest non-trivial concurrent program has two participants. In this case, the types of the two participants are exactly dual: if the one sends, the
-other must receive. However, for the multiparty use case (three or more participants), things are not so simple.
+The simplest non-trivial concurrent program has two participants. In this case, the types of the two participants should be exactly dual: if the one sends, the
+other must receive. However, for the multiparty use case (three or more participants), things are not so simple as duality is hard to define.
 
 We need to define globally what communications occur in our protocol.
-The snippet below is a basic global type where Carol and Bob exchange a value of type `Bool`, next 
-Alice and Carol exchange a value of type `Int` and then the protocol ends.
+The snippet below is a basic global type where Carol and Bob first exchange a value of type `Bool`, next 
+Alice and Carol exchange a value of type `Int` and finally the protocol ends:
 
 ```haskell
 simple :: GlobalType String String
@@ -480,11 +488,11 @@ globalType = do
 
 A global type can contain inherent parallelism: the order of its steps is not fully defined. 
 For instance in `messages V [A, B] Price`, `V` can send the price first to `B` or first to `A`: both 
-are valid according to the type. This parallelism makes checking for correctness agains a global type 
+are valid according to the type. This parallelism makes checking for correctness against a global type 
 difficult and also unpractical because the global type mentions all participants.
 The solution is to project the global type onto its participants, creating a local type. 
 
-The local type is an ordered list of steps that the participant must execute to comply with the protocol. Thus the **order** property is enforced for local types. 
+The local type is an ordered list of communication actions that the participant must execute to comply with the protocol. Thus the **order** property is enforced for local types. 
 
 The projection is mostly straightforward, except for choice. 
 Because we allow recursion, a branch of a choice may recurse back to the beginning. When 
@@ -546,7 +554,7 @@ For instance, the system may interact with a large database.
 Keeping many copies of the database around is inconvenient and may not even be 
 physically possible. 
 
-The PPDP'17 paper provides a nicer approach tailored to the process calculus and local types that we have seen.
+The PPDP'17 paper provides a convenient approach tailored to the process calculus and local types that we have seen.
 For every forward step, just enough information is stored to undo it. 
 Conceptually, we are leaving behind a trail of breadcrumbs so we can always find our way back. 
 
@@ -555,7 +563,7 @@ every instruction. The PPDP'17 paper tells us that broadly,
 we need to track information about two things: the type and the process. 
 
 For the type we define a new data type called `TypeContext`. It contains the actions that have been performed and for 
-some stores a bit of extra information like the `owner`.
+some of them it stores a bit of extra information like the `owner`.
 
 On the process level there are four things that we need to track: 
 
@@ -676,7 +684,7 @@ type Session a = StateT ExecutionState (Except Error) a
 ```
 *See also Appendices \ref{state} on `StateT` and \ref{except} on `Except`*
 
-The PPDP'17 paper guides how we store the execution state. Some data is bound to its location (for instance
+The semantics in the PPDP'17 paper guides how we store the execution state. Some data is bound to its location (for instance
 the process that is running) and other data is bound to its participant (for instance the local type). 
 
 The information about a participant grouped in a type called `Monitor`: 
@@ -701,23 +709,23 @@ data Binding =
     deriving (Show, Eq) 
 ```
 
-The `TypeContext` and `LocalType` are stored as a tuple. This tuple gives a curser into the local type, 
+* `_localType` contains `TypeContext` and `LocalType` stored as a tuple. This tuple gives a curser into the local type, 
 where everything to the left is the past and everything to the right is the future. 
 
-The next two fields are for keeping track of recursion in the local type. the `recursiveVariableNumber` is an index into the `recursionPoints` list: when 
+* The next two fields are for keeping track of recursion in the local type. the `_recursiveVariableNumber` is an index into the `_recursionPoints` list: when 
 a `RecursionVariable` is encountered we look at that index to find the new future local type.
 
-Then follow two fields used for reversal: 
+* `_usedVariables` and `_applicationHistory` are used in reversal. 
 As mentioned in Section \ref{a-reversible-semantics}, used variable names need to be stored in order to 
 be able to use them when reversing. We store them in a stack keeping both the original name given 
 by the programmer and the generated unique internal name. 
 For function applications we use a `Map` indexd by unique identifiers that stores function and argument. 
 
-Finally there is a variable store with the currently defined bindings. 
+* Finally `_store` is a variable store with the currently defined bindings. 
 Variable shadowing - where two processes of the same participant define the same variable name - is not an issue, because variables are assigned a guaranteed unique name.
 
 We can now define `ExecutionState`. It contains some counters for generating unique variable names, a monitor for every participant and
-a program for every location. Additionally every location has a default participant and a stack for unchosen branches. 
+a program for every location. Additionally, every location has a default participant and a stack for unchosen branches: 
 
 ```haskell
 data ExecutionState value = 
@@ -733,7 +741,7 @@ data ExecutionState value =
         }
 ```
 
-The message queue is global and thus also lives in the `ExecutionState`. Finally we need a way of peeking into values, to see whether they are functions and if so, to
+The message queue is global and thus also lives in the `ExecutionState`. Finally we need a way of inspecting values, to see whether they are functions and if so, to
 extract their bodies for application. 
 
 ## Running and Debugging Programs {#running-debugging}
@@ -746,7 +754,7 @@ There are two error cases that we need to handle:
 * **blocked on receive**, either `InvalidQueueItem` or `EmptyQueue`: the process wants to perform a receive, but the expected item is not at the top of the queue yet. 
     In this case we want to proceed evaluating the other locations so they can send the value that the erroring location expects
 
-* **location terminates** with `Terminated`: the execution has reached a `NoOp`. In this case we don't want to schedule this location any more.
+* **location terminates** with `Terminated`: the execution has reached a `NoOp`. In this case we do not want to schedule this location any more.
 
 Otherwise we just continue until there are no active (non-terminated) locations left. 
 For code see Appendix \ref{scheduling-code}.
@@ -770,7 +778,7 @@ The types we have defined for `Program`, `GlobalType` and `LocalType` form recur
 Because they are all new types, there is no easy way to traverse them. A common idiom 
 is to factor out recursion using `Data.Fix` (see Appendix \ref{factoring-recursion}).
 
-While a `Fix`ed data type is easy to manipulate and traverse, it is even more messy to write. 
+While a `Fix`ed data type is easy to manipulate and traverse, it can be messy to write. 
 The program below implements "receive and bind the value to `result`, then send 42": 
 
 ```haskell
@@ -828,12 +836,12 @@ terminate = liftF NoOp
 ```
 
 The above snippet introduces some new Haskell concepts that require some background. 
-Pure languages can simulate mutable state using a type called `State` (appendix \ref{state}). `State` is an instance of monad (appendix \ref{monads}) which makes it easy to chain stateful computations. 
+Pure languages can simulate mutable state using a type called `State` (Appendix \ref{state}). `State` is an instance of monad (Appendix \ref{monads}) which makes it easy to chain stateful computations. 
 In this case our piece of state is a pair `(Participant, Int)`: the participant is the owner of the block, and the `Int` is a counter used to generate unique variable names.
-To combine `State` with `Free` (and to combine two monads in general) we need the `StateT` monad transformer (appendix \ref{state}).
+To combine `State` with `Free` (and to combine two monads in general) we need the `StateT` monad transformer (Appendix \ref{state}).
 
 In the `send` helper we use the unit type `()` as a placeholder or hole. 
-A continuation will need to fill the hole eventually but it's not available yet. 
+A continuation will need to fill the hole eventually but it is not available yet. 
 When a `HighLevelProgram` is converted into a `Program`, we want to be sure there are no remaining holes.
 In this particular case that means all branches must end in `terminate`.
 We use the fact that `terminate :: HighLevelProgram a` contains a free type variable `a` which can 
@@ -850,7 +858,7 @@ It has consistently been the case that sticking closer to the formal model gives
 specifying formal statements is invaluable. 
 The primary invaluable feature is algebraic data types (ADTs) also known as tagged unions or sum types. 
 
-Observe the formal definition and the Haskell data type for global types.
+Compare the formal definition and the Haskell data type for global types.
 \begin{align*}
     G, G'  \bnfis & \gtcom{p}{q}{U}{G} %\bnfbar 
     \sbnfbar
@@ -872,14 +880,14 @@ they have also made their way into non-functional languages (Rust, Swift, Kotlin
 Secondly, purity and immutability are very valuable in implementing and testing the reversible semantics. 
 The type system can actually guarantee that we have not forgotten to revert anything. 
 
-In a pure language, given functions `f :: a -> b` and `g :: b -> a` to prove that f and g are inverses it is enough to prove (or to test for the domain you're interested in) that 
+In a pure language, given functions `f :: a -> b` and `g :: b -> a` to prove that $f$ and $g$ are inverses it is enough to prove (or to test for the domain you're interested in) that 
 
 ```
 f . g = identity && g . f = identity
 ```
 
 In an impure language, even if the above equalities are observed we cannot be sure that there were no side-effects. 
-Because we don't need to consider a context (the outside world) here, checking that reversibility works is as simple as comparing initial and final states for all backward transition rules.
+Because we do not need to consider a context (the outside world) here, checking that reversibility works is as simple as comparing initial and final states for all backward transition rules.
 
 ## Concurrent Debuggers 
 
@@ -890,12 +898,12 @@ As it stands, there are two missing features
 
     That is, a way to specify which thread will (try to) take a step forward next.
     The problem with concurrency is not so much technical: the primitives are available. What is needed is some way to 
-    step through a program one instruction at a time. The real challenge is providing a convenient mechanism for doing so, which brings us to
+    step through a program one instruction at a time. The real challenge is providing a convenient mechanism for doing so.
 
 2. Convenient user interface
 
     CaReDeb provides a command line interface. While CaReDeb is interesting from a technical point of view, its interface is 
-    not frieldly. Additionally, the overhead of bringing the problem into CaReDeb's language is large: more time is probably spent 
+    not convenient. Additionally, the overhead of bringing the problem into CaReDeb's language is large: more time is probably spent 
     translating than actually debugging.
 
     We think that a good graphical interface is possible, but besides technical features a good user experience also needs user feedback. 
@@ -906,11 +914,11 @@ As it stands, there are two missing features
 
 # Conclusion
 
-we have given an encoding of the PPDP semantics in the Haskell programming language. By embedding the semantics we can now 
+We have given an encoding of the PPDP'17 semantics in the Haskell programming language. By embedding the semantics we can now 
 run and verify our example programs automatically and inspect them interactively.
 
-We have seen that the PPDP semantics can be split into three core components: a process calculus, multiparty session types and reversibility. Additonally,
-all three of these are representable as recursive Haskell data types. All other features of PPDP (the authors note decoupled rollbacks and abstraction passing, including delegation) 
+We have seen that the formal programming model in the PPDP'17 paper can be split into three core components: a process calculus, multiparty session types and reversibility. Additonally,
+all three of these are representable as recursive Haskell data types. All other features of PPDP'17 (the authors note decoupled rollbacks and abstraction passing, including delegation) 
 can easily be integrated when these three types are established.  
 
 Relatedly, the implementation proces has shown that sticking to the formal implementation leads to better code. 
@@ -928,7 +936,7 @@ With more focus on the user experience, a solid concurrent debugging can be buil
 \bibliographystyle{abbrv}
 \bibliography{biblio}
 
-# Appendix
+\section*{Appendix}
 
 \appendix
 
@@ -1016,7 +1024,7 @@ The `Monad m => ` part of the signature constrains the function to only work on 
 
 I hope the above already gives some intuition about monad's main operator `>>=`: it forces order of evaluation. 
 A second property is that `Monad` can merge contexts with `join :: Monad m => m (m a) -> m a`. A common example of 
-join is `List.concat :: List (List a) -> List a`. A bit more illustrative is the implementation for `Maybe`
+join is `List.concat :: List (List a) -> List a`. A bit more illustrative is the implementation for `Maybe`:
 
 ```haskell
 join :: Maybe (Maybe a) -> Maybe a
@@ -1036,7 +1044,7 @@ If the outer context has failed (is `Nothing`), then the total computation has f
 If the outer computation succeeded but the inner one failed, there is still no `a` and the only thing we can return is `Nothing`. 
 Only if both the inner and the outer computations have succeeded can we give a result back.
 
-In short
+In short:
 
 * `Monad` is a Haskell typeclass
 * it has two main functions
@@ -1119,7 +1127,7 @@ instance Monad (State s) where
 ```
 
 When we want to combine monads, for instance to have both state and error reporting, we must use monad transformers. 
-The transformer is needed because monads don't naturally combine: `m1 (m2 a)` may not have a law-abiding monad instance.
+The transformer is needed because monads do not naturally combine: `m1 (m2 a)` may not have a law-abiding monad instance.
 
 ```haskell
 newtype StateT s m a = StateT { runStateT :: s -> m (a, s) }  
@@ -1135,7 +1143,7 @@ instance (Monad m) => Monad (StateT s m) where
 ```
 
 The `MonadTrans` typeclass defines the `lift` function that wraps a monadic value into the transformer. Next we define an instance 
-because we can say "given a monad `m`, `StateT s m` is a law-abiding monad.
+because we can say *given a monad `m`, `StateT s m` is a law-abiding monad*.
 
 
 # Factoring out recursion {#factoring-recursion}
@@ -1164,13 +1172,18 @@ data Expr
 ```
 
 `Literal` is the only constructor that can occur as a leaf, and `Add` is the only node.
-Using `Fix` We can equivalently write 
+Using `Fix` we can equivalently write 
 
 ```haskell
 data ExprF next
     = Literal Int
     | Add next next 
+```
 
+Defining values of type `Fix ExprF` requires wrapping of constructors with `Fix`.
+We will describe a better way of writing `Fix`ed values in Section \ref{free-monad-dsl} 
+
+```haskell
 simple :: Fix ExprF
 simple = Fix (Literal 42)
 
@@ -1283,7 +1296,7 @@ compile participant (HighLevelProgram program) = ...
 
 **Tradeoffs** 
 
-In the codebase we went with solution 2 because it produces clearer error messages and doesn't introduce extra language extensions to the project. 
+In the codebase we went with solution 2 because it produces clearer error messages and does not introduce extra language extensions to the project. 
 
 # Scheduling code {#scheduling-code}
 
@@ -1345,7 +1358,7 @@ untilError state@ExecutionState{ locations } =
                 -- no active locations
                 Right state
 
-            else if then 
+            else if isProgress then 
                 helper (List.map fst locationProgress) newState
 
             else
