@@ -498,11 +498,17 @@ The projection is mostly straightforward, except for choice.
 Because we allow recursion, a branch of a choice may recurse back to the beginning. When 
 this occurs, all participants have to jump back to the beginning, so every choice must be communicated to all participants. 
 
-The PPDP'17 paper and many other papers deal with this problem by disallowing different branches using different participants. In practice this means that all branches must perform the same communication to satisfy the global type, even if the communication is not needed in every branch (some branches have dummy communication). 
+The PPDP'17 paper and many other papers deal with this problem by disallowing different branches using different participants. In practice this means that all branches must perform the same communication to satisfy the global type, even if the communication is not needed in every branch (some branches may have dummy communication). 
 
 In the Haskell implementation we use a different method where every choice causes a broadcast of 
 that choice to the other participants. Once again, some participants may not need the information 
-about the choice and the communication with them is just to satisfy the type checker.  
+about the choice and the communication with them is just to satisfy the type checker.
+
+The underlying is that 
+problem global types only have meaning with respect to their projection into local types. 
+If a global type cannot be projected - even though it is gramatically valid - it has no meaning. 
+A simple projection disallows many (gramatically valid) global types and implementations. 
+A more sophisticated projection allows more global types, but with the associated cost of more dummy communications. 
 
 \begin{figure}[]
 {
@@ -570,22 +576,40 @@ On the process level there are four things that we need to track:
 
 1. Used variable names in receives
 
-    The rest of the program depends on the name that we assign to a received value. When reverting, we need to 
-    use the name that the rest of the program expects. Picking a new name like at 2 in the snippet below is obviously 
-    wrong. We could revert to the internal name used for the variable - as shown in 3 - but this name is uninformative. 
-    Therefore, we store the name given by the programmer so we can use that name again when reverting. 
-
+    The rest of the program depends on the name that is assigned to a received value, like `decision` in the example below.     
+    When reverting, we need to reinstate the name that the rest of the program expects. 
     ```haskell
     decision <- H.receive    
     H.send decision          
-                             
-    -- 1) => forward         -- 3) => valid but undesired backward                                     
-    H.send var1              var1 <- H.receive
-                             H.send var1
+    ```
 
-    -- 2) => wrong backward  -- 4) => actual backward
-    var2 <- H.receive        decision <- H.receive
-    H.send var1              H.send decision
+
+    When we advance the snippet above, `decision` is internally renamed to `var1` and this binding is added to the store.
+
+
+    ```haskell
+    H.send var1        
+    ```
+
+    Now we want to move back. We can't simply create a new name: if we then move forward again, `var1` will not be defined.
+
+    ```haskell
+    var2 <- H.receive       
+    H.send var1             
+    ```
+    
+    Instead, the receive needs to store the name of the value its result is bound to, in this case `var1`:
+        
+    ```haskell
+    var1 <- H.receive
+    H.send var1
+    ```
+
+    But we also store the original name (given by the programmer) and actually restore that. 
+    The original name can helpful in debugging programs, to know what value is actually used:
+    ```haskell
+    decision <- H.receive
+    H.send decision
     ```
 
 2. Unused branches
