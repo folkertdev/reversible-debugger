@@ -1,10 +1,6 @@
 ---
-documentclass: llncs
-title: Reversible Session-Based Concurrency in Haskell\thanks{F.\ de Vries is a BSc student.}
-author:  Folkert de Vries\inst{1} \and Jorge A. Perez\inst{1}\orcidID{0000-0002-1452-6180}
-institute: University of Groningen, The Netherlands
-authorrunning: F.\ de Vries and J.\ A.\ Pérez
-# email: "darth.vader@hs-augsburg.de"
+documentclass: article
+title: Reversible Session-Based Concurrency in Haskell
 abstract: | 
     Under a reversible semantics, computation steps can be undone. 
     For message-passing, concurrent programs, reversing computation steps is a challenging and delicate task; one typically aims at formal semantics which are \emph{causally-consistent}. 
@@ -13,7 +9,7 @@ abstract: |
     We provide an encoding based on the formal definition of prior work's three core concepts: 
     a process calculus, multiparty session types and a reversible semantics.
     Additionally, we provide an implementation of the forward and backward transition functions, 
-    which make it possible to run and typecheck programs, and finally reflect on uses of the implementation of these semantics.
+    which make it possible to run and typecheck programs, and finally reflect on uses of the implementation of these semantics. \pagebreak
     
 # \keywords{Reversible computation \and Message-passing concurrency \and Session Types \and Haskell.}
 usepackage: graphicx,hyperref, xcolor,xspace,amsmath,amsfonts,stmaryrd,amssymb,enumerate, mathpartir, fancyvrb
@@ -26,9 +22,9 @@ header-includes:
         \let\End\end
       }
     - \input{macrosCR}
+    - \author{Folkert de Vries\vspace{1cm}\\Supervisors:\\ Jorge A. Pérez \\ Gerard Renardel de Lavalette}
+    - \date{\today}
 ...
-
-\pagebreak 
 
 
 # Introduction
