@@ -767,12 +767,27 @@ extract their bodies for application.
 ## Running and Debugging Programs {#running-debugging}
 
 Finally, we want to be able to run our programs. 
+First we define a concrete error type that  
 
-We use a simple round-robin scheduler that calls `forward` on the locations in order. 
-There are two error cases that we need to handle: 
+```haskell
+data Error 
+    = UndefinedParticipant Participant
+    | UndefinedVariable Participant Identifier
+    | SynchronizationError String
+    | LabelError String
+    | QueueError String Queue.QueueError
+    | ChoiceError ChoiceError
+    | Terminated
+```
 
-* **blocked on receive**, either `InvalidQueueItem` or `EmptyQueue`: the process wants to perform a receive, but the expected item is not at the top of the queue yet. 
-    In this case we want to proceed evaluating the other locations so they can send the value that the erroring location expects
+Next use a simple round-robin scheduler that calls `forward` on the locations in order. 
+A forward step can produce an error. There are two error cases that we can recover from:
+
+* **blocked on receive**, either `QueueError _ InvalidQueueItem` or `QueueError _ EmptyQueue`: 
+    the process wants to perform a receive, but the expected item is not at the top of the queue yet. 
+    In this case we want to proceed evaluating the other locations so they can send the value that the erroring location expects.
+    The `_` in the patterns above means that we ignore the `String` field that is used to provide better error messages. Because 
+    no error message is generated, that field is not needed. 
 
 * **location terminates** with `Terminated`: the execution has reached a `NoOp`. In this case we do not want to schedule this location any more.
 
@@ -956,13 +971,36 @@ With more focus on the user experience, a solid concurrent debugging can be buil
 \bibliographystyle{abbrv}
 \bibliography{biblio}
 
-\section*{Appendix}
+# Appendix
 
-\appendix
 
 Background information on Haskell syntax and concepts used in the thesis. 
 
-# Performing IO in Haskell {#performing-io}
+## Installing and Running 
+
+This project is written in Haskell and built with its *stack* build tool. Stack can be downloaded from [here](https://docs.haskellstack.org/en/stable/README/).
+The next step is to clone the repository, which is [available on github](https://github.com/folkertdev/reversible-debugger).
+
+The snippet below will clone the repository (assumes ssh is set up) and build it. 
+This can take a while because it also has to download and install the Haskell GHC compiler.
+
+```sh
+git clone git@github.com:folkertdev/reversible-debugger.git
+cd reversible-debugger
+stack build
+```
+
+Finally we can run an example program in the REPL: 
+
+```sh
+stack ghci # opens the interactive environment
+:l src/Examples/ThreeBuyer.hs # loads the example
+executionState # runs the program to completion
+```
+
+The above snippet will print the `ExecutionState` at the end, when all locations have terminated. 
+
+## Performing IO in Haskell {#performing-io}
 
 One of Haskell's key characteristics is that it is pure. This means that our computations cannot have any observable effect to the
 outside world. Purity enables us to reason about our programs (referential transparency) and enables compiler optimizations. 
@@ -1017,7 +1055,7 @@ main =
 Here we ignore the result of the first `putStrLn`, but the second `putStrLn` still depends on its return value. Thus it has to wait 
 for the first `putStrLn` to finish before it can start.
 
-# Do-notation {#do-notation}
+## Do-notation {#do-notation}
 
 Writing nested functions in this way quickly becomes tedious. That is why special syntax is available: do-notation
 
@@ -1034,7 +1072,7 @@ main2 = do
 do-notation is only syntactic sugar: it is translated by the compiler to the nested functions that we have seen above. 
 The syntax is very convenient however. Additionally, we can use it for all types that implement `>>=`: all instances of the `Monad` typeclass.
 
-# Monads
+## Monads
 
 `Monad` is a Haskell typeclass (and a concept from a branch of mathematics called category theory). 
 Typeclasses are sets of types that implement some functions, similar to interfaces or traits in other languages.
@@ -1077,7 +1115,7 @@ In short:
 Much material on the web about monads is about establishing the general idea, but really the exact meaning of `>>=` can be very different 
 for every instance. Next we will look at some of the types used in the code for this thesis.
 
-# Except {#except}
+## Except {#except}
 
 Except is very similar to `Either`: 
 
@@ -1109,7 +1147,7 @@ popQueue queue =
 Except and Either have a `Monad` instance. In this context `return` means a non-error value, and `>>=` allows us to chain multiple operations that can fail, stopping when 
 an error occurs.
 
-# State and StateT {#state}
+## State and StateT {#state}
 
 `State` is a wrapper around a function of type `s -> (a, s)`
 
@@ -1166,14 +1204,14 @@ The `MonadTrans` typeclass defines the `lift` function that wraps a monadic valu
 because we can say *given a monad `m`, `StateT s m` is a law-abiding monad*.
 
 
-# Factoring out recursion {#factoring-recursion}
+## Factoring out recursion {#factoring-recursion}
 
 A commonly used idiom in our code is to factor out recursion from a data structure, using the `Fix` and `Monad.Free` types.
 Both require the data type to be an instance of `Functor`: The type is of the shape `f a` - like `List a` or `Maybe a`, and there exists a mapping function `fmap :: (a -> b) -> (f a -> f b)`. 
 
 Fix requires the data type to have a natural leaf: a constructor that does not contain an `a`. `Free` on the other hand lets us choose some other type for the leaves.
 
-# Fix 
+## Fix 
 
 The `Fix` data type is the fixed point type. 
 
@@ -1230,7 +1268,7 @@ evaluate =
 The `cata` function - a catamorphism also known as a fold or reduce - applies evaluate from the bottom up. In the code we write, we 
 only need to make local decisions and don't have to write the plumbing to get the recursion right. 
 
-# Monad.Free {#free-monad}
+## Monad.Free {#free-monad}
 
 The Free monad is very similar to `Fix`, but allows us to use a different type for the leaves, and 
 enables us to use do-notation. Writing expressions with `Fix` can be quite messy, free monads 
@@ -1272,7 +1310,7 @@ pop :: Stack a a
 pop = liftFree (Pop identity)
 ```
 
-# Guaranteeing well-formedness of Free {#well-formedness-free}
+## Guaranteeing well-formedness of Free {#well-formedness-free}
 
 We use the free monad to build up programs and global types. A problem with the free monad is that the built-up tree can still contain "holes" because of the `Pure _` branch of `Free`. 
 That is fine while constructing the tree, but when evaluating it we want all `Pure`s to be gone. There are two ways of enforcing this constraint using the type systems.
@@ -1318,7 +1356,7 @@ compile participant (HighLevelProgram program) = ...
 
 In the codebase we went with solution 2 because it produces clearer error messages and does not introduce extra language extensions to the project. 
 
-# Scheduling code {#scheduling-code}
+## Scheduling code {#scheduling-code}
 
 ```haskell
 data Progress = Progress | NoProgress deriving (Eq, Show)
