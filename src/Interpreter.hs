@@ -1,5 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables, DuplicateRecordFields, NamedFieldPuns #-}
-module Interpreter (constructExecutionState, untilError) where 
+module Interpreter (constructExecutionState, untilError, initializeProgram, stepForward, stepBackward) where 
 
 import Control.Monad.State as State
 import Control.Monad.Except as Except
@@ -32,6 +32,35 @@ import qualified HighLevel as H
 import Data.Void (Void)
 import Debug.Trace as Debug
 
+import Data.IORef
+
+initializeProgram :: ExecutionState a -> IO (IORef (ExecutionState  a))
+initializeProgram = newIORef  
+
+stepForward :: Location -> IORef (ExecutionState Value) -> IO () 
+stepForward location stateRef = do 
+    state <- readIORef stateRef 
+
+    case Except.runExcept (State.execStateT (Semantics.forward location) state) of 
+        Left e -> 
+            error (show e)
+
+        Right newState -> do
+            print newState
+            writeIORef stateRef newState 
+
+
+stepBackward :: Location -> IORef (ExecutionState Value) -> IO () 
+stepBackward location stateRef = do 
+    state <- readIORef stateRef 
+
+    case Except.runExcept (State.execStateT (Semantics.backward location) state) of 
+        Left e -> 
+            error (show e)
+
+        Right newState -> do
+            print newState
+            writeIORef stateRef newState 
 
 data Progress = Progress | NoProgress deriving (Eq, Show)
 
@@ -58,11 +87,13 @@ round locations state =
                     return $ ( location, NoProgress ) : accum 
 
                 Left Terminated -> 
+                    -- don't add this location to the accumulator
                     return accum
                             
                 Left err -> 
                     -- other errors are raised
-                    Except.throwError err
+                    -- Except.throwError $ Debug.traceShowId err
+                    error (show err)
 
 
 untilError :: ExecutionState Value -> Either Error (ExecutionState Value)
@@ -79,7 +110,8 @@ untilError state@ExecutionState{ locations } =
                 helper (List.map fst locationProgress) newState
 
             else
-                error $ "DEADLOCK\n" ++ show state
+               error $ "DEADLOCK\n" ++ show locationProgress 
+
         
 
 
@@ -121,5 +153,6 @@ constructExecutionState globalType programs_ =
                     _ -> Nothing
 
             }
+
 
 

@@ -15,6 +15,7 @@ abstract: |
 usepackage: graphicx,hyperref, xcolor,xspace,amsmath,amsfonts,stmaryrd,amssymb,enumerate, mathpartir, fancyvrb
 header-includes:
     - \usepackage{graphicx}
+    - \usepackage{hyperref}
     - \usepackage[toc,page]{appendix}
     - \newcommand{\hideFromPandoc}[1]{#1}
     - \hideFromPandoc{
@@ -81,7 +82,7 @@ In answering these questions this bachelor's thesis makes the following contribu
 
 1. We begin by analyzing the three core components of the PPDP'17 paper:
 
-    A process calculus, multiparty session types and a reversible semantics. At the same time 
+    A process calculus, multiparty session types \cite{DBLP:conf/esop/HondaVK98, DBLP:conf/popl/HondaYC08} and a reversible semantics. At the same time 
     we give the encoding of the formal definitions of these components into Haskell data types. 
 
 
@@ -766,8 +767,56 @@ extract their bodies for application.
 
 ## Running and Debugging Programs {#running-debugging}
 
-Finally, we want to be able to run our programs. 
-First we define a concrete error type that  
+Finally, we want to be able to run our programs. The implementation offers mechanisms to step through a program interactively, and run it to completion. 
+
+We can step through the program interactively in the Haskell REPL environment (Appendix \ref{installing-and-running}). 
+Assuming the `ThreeBuyer` example is loaded, we can print the initial state of our program: 
+
+```haskell
+> initialProgram
+locations: fromList [("l1",("A",[],Fix (Send {owner = "A", ... 
+```
+
+Next we introduce the `stepForward` and `stepBackward` functions. They use mutability, normally frowned upon in Haskell, to avoid having to manually 
+keep track of the updated program state like in the snippet below: 
+
+```haskell
+state1 = stepForwardInconvenient "l1" state0
+state2 = stepForwardInconvenient "l1" state1
+state3 = stepForwardInconvenient "l1" state2
+```
+
+Manual state passing is error-prone and inconvenient. We provide helpers (that internally use `IORef`) to work around this
+issue. We must first initialize the program state: 
+
+```haskell
+> import Interpreter
+> state <- initializeProgram initialProgram
+```
+
+Then we can use `stepForward` and `stepBackward` to evaluate the program:
+```haskell
+> stepForward "l1" state
+locations: fromList [("l1",("A",[],Fix (Receive {owner = "A", ... 
+> stepForward "l4" state 
+locations: fromList [("l1",("A",[],Fix (Receive {owner = "A", ... 
+```
+
+When the user tries an invalid step, an error is displayed. 
+for instance after $l_1$ and $l_2$ have been moved forward once like in the snippet above, 
+$l_1$ cannot move forward (it needs to receive but there is nothing in the queue) and not backward ($l_4$, the receiver, must undo its action first).
+```haskell
+> stepForward "l1" state
+*** Exception: QueueError "Receive" EmptyQueue
+CallStack (from HasCallStack):
+  error, called at ... 
+> stepBackward "l1" state
+*** Exception: QueueError "BackwardSend" EmptyQueue state
+CallStack (from HasCallStack):
+  error, called at ... 
+```
+
+Errors are defined as: 
 
 ```haskell
 data Error 
@@ -780,7 +829,7 @@ data Error
     | Terminated
 ```
 
-Next use a simple round-robin scheduler that calls `forward` on the locations in order. 
+To fully evaluate a program, we use a round-robin scheduler that calls `forward` on the locations in order. 
 A forward step can produce an error. There are two error cases that we can recover from:
 
 * **blocked on receive**, either `QueueError _ InvalidQueueItem` or `QueueError _ EmptyQueue`: 
@@ -791,8 +840,33 @@ A forward step can produce an error. There are two error cases that we can recov
 
 * **location terminates** with `Terminated`: the execution has reached a `NoOp`. In this case we do not want to schedule this location any more.
 
-Otherwise we just continue until there are no active (non-terminated) locations left. 
+Otherwise we continue until there are no active (non-terminated) locations left. 
 For code see Appendix \ref{scheduling-code}.
+
+Running until completion (or error) is also available in the repl: 
+```haskell
+> untilError initialProgram
+Right locations: fromList [("l1",("A",[],Fix NoOp)), ... 
+```
+
+Note that this scheduler can still get into deadlocks, for instance consider these two equivalent global types: 
+```haskell
+globalType1 = do 
+    GlobalType.transaction A V Title 
+    GlobalType.transaction V B Price 
+    GlobalType.transaction V A Price 
+    GlobalType.transaction A B Share 
+
+globalType2 = do 
+    GlobalType.transaction A V Title 
+    GlobalType.transaction V A Price 
+    GlobalType.transaction V B Price 
+    GlobalType.transaction A B Share 
+```
+
+The second and third line are swapped. The communication they describe is the same, but in practice they are very different. 
+The first one will run to completion, the second one can deadlock because `A` can send a `Share` before `V` does. `B` expects the share from `V` first, but the share from `A` is the 
+first in the queue. Therefore, no progress can be made.
 
 ## Properties of Reversibility
 
@@ -971,8 +1045,11 @@ With more focus on the user experience, a solid concurrent debugging can be buil
 \bibliographystyle{abbrv}
 \bibliography{biblio}
 
-# Appendix
 
+\pagebreak
+\appendix
+
+# Appendix
 
 Background information on Haskell syntax and concepts used in the thesis. 
 
@@ -990,15 +1067,17 @@ cd reversible-debugger
 stack build
 ```
 
-Finally we can run an example program in the REPL: 
+Finally we can load an example program in the REPL: 
 
 ```sh
 stack ghci # opens the interactive environment
 :l src/Examples/ThreeBuyer.hs # loads the example
-executionState # runs the program to completion
 ```
 
-The above snippet will print the `ExecutionState` at the end, when all locations have terminated. 
+
+
+
+
 
 ## Performing IO in Haskell {#performing-io}
 
