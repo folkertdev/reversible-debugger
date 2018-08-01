@@ -23,7 +23,7 @@ header-includes:
         \let\End\end
       }
     - \input{macrosCR}
-    - \author{Folkert de Vries\vspace{1cm}\\Supervisors:\\ Jorge A. Pérez \\ Gerard Renardel de Lavalette}
+    - \author{Folkert de Vries\\(S2993740)\vspace{1cm}\\Supervisors:\\ Jorge A. Pérez \\ Gerard Renardel de Lavalette}
     - \date{\today}
 ...
 
@@ -44,7 +44,7 @@ main = do
     message <- Channel.receive channel
 ```
 *This snippet uses Haskell's do-notation. the `<-` is used to bind the result of an effectful
-computation - like receiveing from a channel. See also Appendix \ref{do-notation}* 
+computation - like receiving from a channel. See also Appendix \ref{do-notation}* 
 
 No value will ever be sent on the channel, so the receive blocks forever: it cannot make any progress.
 
@@ -76,7 +76,7 @@ However, it does not consider how the presented approach can be implemented in a
 In earlier work during a short programming 
 project we have looked at combining the CaReDeb debugger \cite{caredeb} with the PPDP'17 paper. 
 Here we go further and look at how well the ideas presented in the PPDP'17 paper translate to 
-a programming context, and whether the resulting system turnns out to be convenient to use.
+a programming context, and whether the resulting system turns out to be convenient to use.
 
 In answering these questions this bachelor's thesis makes the following contributions: 
 
@@ -117,7 +117,7 @@ Appendices \ref{performing-io} through \ref{scheduling-code} give background and
 
 # The Main Idea
 
-The PPDP'17 paper builds a programing model that features three basic concepts: a process calculus, multiparty session types and a reversible semantics. 
+The PPDP'17 paper builds a programming model that features three basic concepts: a process calculus, multiparty session types and a reversible semantics. 
 The result of combining these ideas allows runtime verification of programs, with the possibility of dealing with failure in a flexible way. 
 
 The process calculus is a low-level programming language that allows concurrent communication. 
@@ -134,7 +134,7 @@ As already mentioned, a process calculus is a minimal programming language that 
 We will start by considering a well-understood existing calculus: the $\pi$-calculus. Next we will look at how the PPDP'17 paper extends it and finally 
 give an implementation as a Haskell data type.
 
-The $\pi$-calculus is to concurrent computation much like what the $\lambda$-calculus is for sequental computing: 
+The $\pi$-calculus is to concurrent computation much like what the $\lambda$-calculus is for sequential computing: 
 a simple model that is convenient for reasoning about a program's correctness. 
 The syntax of the $\pi$-calculus is defined as: 
 
@@ -227,7 +227,7 @@ The fact that we can send programs - and not just values - means that our calcul
 
 A side-effect of the function values is that there are two ways of defining recursion: using the $\mu X.P$ process constructor or using the $\lambda x.P$ value constructor. In the implementation the former has been removed.
 
-## Implementing the PPDP calculus in Haskell
+## Implementing the PPDP'17 calculus in Haskell
 
 The implementation uses an algebraic data type (union type/sum type) to encode all the constructors of the grammar. 
 We use the `Fix` type (Appendix \ref{fix}) to factor out recursion from the grammar. 
@@ -503,8 +503,8 @@ about the choice and the communication with them is just to satisfy the type che
 
 The underlying is that 
 problem global types only have meaning with respect to their projection into local types. 
-If a global type cannot be projected - even though it is gramatically valid - it has no meaning. 
-A simple projection disallows many (gramatically valid) global types and implementations. 
+If a global type cannot be projected - even though it is grammatically valid - it has no meaning. 
+A simple projection disallows many (grammatically valid) global types and implementations. 
 A more sophisticated projection allows more global types, but with the associated cost of more dummy communications. 
 
 \begin{figure}[]
@@ -843,7 +843,7 @@ A forward step can produce an error. There are two error cases that we can recov
 Otherwise we continue until there are no active (non-terminated) locations left. 
 For code see Appendix \ref{scheduling-code}.
 
-Running until completion (or error) is also available in the repl: 
+Running until completion (or error) is also available in the REPL: 
 ```haskell
 > untilError initialProgram
 Right locations: fromList [("l1",("A",[],Fix NoOp)), ... 
@@ -879,7 +879,8 @@ Stepping backward is only allowed when all its causally dependent actions are un
 This guarantee is baked into every part of the semantics. 
 For instance, a send can only be undone when the receive is already undone, because there is a data dependency between the two actions (the sent value).
 
-As such, we argue that *causal consistency* is preserved by our implementation.
+Causal consistency is formally proven for the PPDP'17 semantics. We claim that the Haskell implementation is faithfull enough that 
+causal consistency is preserved. 
 
 # Convenient Syntax with the Free Monad {#free-monad-dsl}
 
@@ -1040,7 +1041,8 @@ different representations of our programs using among others `Monad.Free`.
 Finally, we have discussed how this implementation can be used for concurrent debugging.  
 With more focus on the user experience, a solid concurrent debugging can be built on the foundations presented here.
 
-
+The work in this thesis has been presented at the TFP'18 conference in Gothenburg, Sweden. Attending the conference was made possible by financial support from the 
+undergratudate school of science and the Bernoulli Institute, for which we are extremely grateful.
 
 \bibliographystyle{abbrv}
 \bibliography{biblio}
