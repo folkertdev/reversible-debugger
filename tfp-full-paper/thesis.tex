@@ -1,4 +1,4 @@
-\documentclass[]{llncs}
+\documentclass[runningheads,plain]{llncs}
 
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
@@ -147,21 +147,25 @@ Types \and Haskell.}
 \section{Introduction}
 This paper describes a Haskell implementation of 
 a \emph{reversible semantics} for message-passing concurrent programs. 
-Our implementation is framed within a prolific line of research, which aims at  
+Our work is framed within a prolific line of research, which aims at  
 establishing  semantic foundations for reversible computing in a 
 concurrent setting (see, e.g., the survey~\cite{DBLP:journals/eatcs/Lanese14}).
-Our key interest is the interplay of reversibility and message-passing concurrency, which is typically governed by
-\emph{protocols} among possibly distributed partners.
-A central observation here is that those protocols may inform the implementation of a reversible semantics.
+When considering the interplay of reversibility and message-passing concurrency, 
+a key observation  is that
+ communication is governed by
+\emph{protocols} among possibly distributed partners, and that 
+ those protocols may inform the implementation of a reversible semantics.
 
 In a language with a reversible semantics, computation steps can be undone.
 Thus, a program can perform standard \emph{forward} steps, but also \emph{backward} steps.
-Reversing a sequential program is not hard: it suffices to record enough information about  forward steps in case we wish to return to a prior state using a backward step. Reversing a concurrent program is  more difficult: since  control may simultaneously reside in more than one point, we require carefully designed \emph{memories} that not only record information about the steps performed in each thread, but also about the \emph{causal dependencies} between steps from different threads.
+Reversing a sequential program is not hard: it suffices to record enough information about  forward steps in case we wish to return to a prior state using a backward step. Reversing a concurrent program is  more difficult: since  control may simultaneously reside in more than one point, we require carefully designed \emph{memories} that  record information about the steps performed in each thread, but also about the \emph{causal dependencies} between steps from different threads.
 This motivates the definition of reversible semantics which are \emph{causally consistent}, i.e., that ensure that backward steps lead to states that could been have reached by performing forward steps only~\cite{DBLP:journals/eatcs/Lanese14}. Hence, a causally consistent  semantics never leads to states that are not reachable through forward steps. 
 
-Causal consistency is an important correctness criterion in the definition of reversible programming languages. The quest for causally consistent reversible semantics for (message-passing) concurrency has led to a number of valuable proposals (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several prior works is that the memories used are rather heavy, and so the resulting reversible semantics are overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the context of concurrent processes which exchange messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{HYC08}. The reversible semantics developed in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent; however, it is unclear whether it can be implemented as  actual tools for the  analysis of message-passing, concurrent programs.
+Causal consistency then arises as an important correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of valuable proposals (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of such works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of concurrent processes that exchange messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{HYC08}. While the reversible semantics   in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
 
 In this paper, we describe a Haskell implementation of the reversible semantics proposed in~\cite{DBLP:conf/ppdp/MezzinaP17}. More precisely, we present a Haskell interpreter of message-passing programs written in the reversible process framework in~\cite{DBLP:conf/ppdp/MezzinaP17}. This allows us to assess in practice the benefits and features of the memories and mechanisms deployed in~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In this process, we have found the use of a functional programming language---and in particular, of Haskell---a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully implement the formal semantics and trust that our implementation is correct. In particular, algebraic data types (sums and products) are invaluable in expressing grammars and recursive data structures. 
+
+The rest of the paper is structured as follows...
 
 \section{The Process Model}
 \section{Introduction}\label{introduction}
