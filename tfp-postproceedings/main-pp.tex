@@ -95,23 +95,25 @@
 % \fi
 % 
 \urlstyle{same}  % don't use monospace font for urls
-\setlength{\parindent}{0pt}
-\setlength{\parskip}{6pt plus 2pt minus 1pt}
-\setlength{\emergencystretch}{3em}  % prevent overfull lines
-\setcounter{secnumdepth}{5}
+%\setlength{\parindent}{0pt}
+%\setlength{\parskip}{6pt plus 2pt minus 1pt}
+%\setlength{\emergencystretch}{3em}  % prevent overfull lines
+%\setcounter{secnumdepth}{5}
 
-%\usepackage{times}
+\usepackage{times}
 
 \begin{document}
 
 %
-\title{Reversible Choreographies in Haskell \\ (Draft of a Full Research Paper)\thanks{This work was partially supported by the EU COST action IC1405 (Reversible Computation -- Extending Horizons of Computing).}}
+\title{Reversible Choreographies in Haskell 
+%\thanks{This work was partially supported by the EU COST action IC1405 (Reversible Computation -- Extending Horizons of Computing).}
+}
 %
 \titlerunning{Reversible Session-Based Concurrency in Haskell}
 % If the paper title is too long for the running head, you can set
 % an abbreviated paper title here
 %
-\author{Folkert de Vries\thanks{Main author - BSc student.} \and
+\author{Folkert de Vries \and
 Jorge A. P\'{e}rez%\orcidID{0000-0002-1452-6180}}
 }
 %
@@ -135,19 +137,21 @@ In this paper, we describe our ongoing work on implementing this specific revers
 %
 %
 \section{Introduction}
-This paper describes ongoing work aimed at developing a Haskell implementation of 
-\emph{reversible, message-passing concurrency}. 
+This paper describes a Haskell implementation of 
+a \emph{reversible semantics} for message-passing concurrent programs. 
 Our implementation is framed within a prolific line of research, which aims at  
 establishing rigorous semantic foundations for reversible computing in a 
 concurrent setting (see, e.g., the survey~\cite{DBLP:journals/eatcs/Lanese14}).
 Our key interest is the interplay of reversibility and message-passing concurrency, which is typically governed by
 \emph{protocols} among possibly distributed partners.
+A central observation here is that those protocols may inform the implementation of a reversible semantics.
 
-In a programming language with a reversible semantics, computation steps can be undone.
-Reversing a sequential program is not hard: we should record enough information about standard forward steps in case we wish to return to a prior state. Reversing a concurrent program is  more difficult: since in this case control may simultaneously reside in more than one point, we require carefully designed \emph{memories} that not only record information about prior actions, but also about the \emph{causal dependencies} between actions originated in different threads.
-For this reason, in a reversible, concurrent setting it is highly desirable to have a semantics which is \emph{causally consistent}. Causal consistency ensures that reversible steps lead to system states that could been have reached by performing forward steps only. That is, causally consistent reversibility does not lead to extraneous states, not reachable through ordinary forward computations.
+In a language with a reversible semantics, computation steps can be undone.
+Thus, a program can perform standard \emph{forward} steps, but also \emph{backward} steps.
+Reversing a sequential program is not hard: it suffices to record enough information about  forward steps in case we wish to return to a prior state using a backward step. Reversing a concurrent program is  more difficult: since  control may simultaneously reside in more than one point, we require carefully designed \emph{memories} that not only record information about the steps performed in each thread, but also about the \emph{causal dependencies} between steps from different threads.
+This motivates the definition of reversible semantics which are \emph{causally consistent}, i.e., that ensure that backward steps lead to states that could been have reached by performing forward steps only~\cite{DBLP:journals/eatcs/Lanese14}. Hence, a causally consistent  semantics never leads to states that are not reachable through forward steps. 
 
-The quest for causally consistent reversible semantics for (message-passing) concurrency has led to a number of valuable proposals (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of those works is that the memories used are rather heavy, and so the resulting reversible semantics are overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the context of concurrent processes which communicate following \emph{choreographies} defined by \emph{multiparty session types}~\cite{HYC08}. The reversible semantics developed in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent; however, it is far from clear whether it can be implemented as  actual tools for the  analysis of message-passing, concurrent programs.
+Causal consistency is an important correctness criterion in the definition of reversible programming languages. The quest for causally consistent reversible semantics for (message-passing) concurrency has led to a number of valuable proposals (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several prior works is that the memories used are rather heavy, and so the resulting reversible semantics are overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the context of concurrent processes which exchange messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{HYC08}. The reversible semantics developed in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent; however, it is unclear whether it can be implemented as  actual tools for the  analysis of message-passing, concurrent programs.
 
 In this paper, we describe a Haskell implementation of the reversible semantics proposed in~\cite{DBLP:conf/ppdp/MezzinaP17}. More precisely, we present a Haskell interpreter of message-passing programs written in the reversible process framework in~\cite{DBLP:conf/ppdp/MezzinaP17}. This allows us to assess in practice the benefits and features of the memories and mechanisms deployed in~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In this process, we have found the use of a functional programming language---and in particular, of Haskell---a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully implement the formal semantics and trust that our implementation is correct. In particular, algebraic data types (sums and products) are invaluable in expressing grammars and recursive data structures. 
 
