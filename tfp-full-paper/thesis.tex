@@ -2,7 +2,7 @@
 
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\usepackage{amssymb,amsmath}
+\usepackage{amssymb,amsmath,stmaryrd}
 \usepackage{ifxetex,ifluatex}
 \usepackage{xspace}
 
@@ -239,6 +239,27 @@ include base values and constants. Variables are denoted  $x,y, \ldots$.
 The syntax of values $V$ includes shared names, 
 first-order values, but also \emph{name abstractions} $\lambda x. P$, where $P$ is a process.
 Notice that values do not include (indexed) session names, for session communication (\emph{delegation}) is  representable using abstraction passing~\cite{KPY2016}.
+
+The syntax of \emph{configurations} builds upon that of processes; indeed, we may consider configurations as compositions of located processes:
+
+\begin{align*}
+M,N		 \bnfis &
+\myloc{\loc}{\bout{a}{x}{P}}
+\sbnfbar 
+\myloc{\loc}{\binp{a}{x}{P}}
+\sbnfbar 
+M \Par N 
+\sbnfbar 
+\news{n} M
+\sbnfbar 
+\inact 
+\\
+& \sbnfbar 
+\rtsyn{\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}} %% running process
+\sbnfbar 
+\rtsyn{\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}}  %% monitor
+\end{align*}
+
 
 
 \subsection{Old Material (From The Thesis)}
