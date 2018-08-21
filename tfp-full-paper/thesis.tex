@@ -174,6 +174,33 @@ The rest of the paper is structured as follows...
 \section{The Process Model}
 \textbf{\emph{Here we introduce the PPDP calculus, multiparty session types, and the operational semantics by example. We also copy-paste the three-buyer example, which we use as running example.}}
 
+\subsection{New Material}
+\begin{figure}
+\begin{center}
+    \includegraphics[width=8.7cm]{./img/figmodel.pdf}
+\end{center}
+\vspace{-4mm}
+\caption{The process model of multiparty, reversible communications developed in~\cite{DBLP:conf/ppdp/MezzinaP17}.}\label{f:model}
+\end{figure}
+
+Our aim is to develop a Haskell implementation of the process model presented in~\cite{DBLP:conf/ppdp/MezzinaP17}, and depicted in Fig.~\ref{f:model}. 
+Here we shall  informally describe the key elements of the model, guided by a running example. Interested readers are referred to~\cite{DBLP:conf/ppdp/MezzinaP17} for further details, in particular the definition and proof of causal consistency. 
+
+\paragraph{Overview.}
+Fig.~\ref{f:model} depicts two of the three salient ingredients of the model:
+\emph{configurations/processes} and
+\emph{choreography}, which represent the communicating partners and their intended governing protocol, respectively. 
+There is a {configuration} for each protocol participant: it includes a \emph{located process} that specifies asynchronous communication behavior and is subject to a \emph{monitor} that enables forward/backward steps at run-time. This monitor is obtained via the choreography, which  declaratively describes a protocol among two or more participants. 
+Formally, the model considers choreographies defined in terms of \emph{global types} in the sense of multiparty session types~\cite{DBLP:conf/popl/HondaYC08}. 
+For this reason, we often use `choreographies' and `global types' as synonyms.
+A global type can be \emph{projected} onto each participant so as to obtain 
+its corresponding  \emph{local type}, i.e., a session type that abstracts a participant's contribution to the global protocol. These local types may then be used as the monitors of the located processes. 
+
+The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the operational semantics for configurations. This semantics is defined in terms of forward and backward reduction relations, denoted $\fw$  and $\bk$, respectively. We shall not recall these relations here; rather, we will introduce their key underlying intuitions by means of an example.
+
+\paragraph{Syntax of Configurations and Processes.}
+
+
 \subsection{Old Material (From The Thesis)}
 The PPDP'17 paper builds a programming model that features three basic
 concepts: a process calculus, multiparty session types and a reversible
