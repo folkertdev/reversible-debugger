@@ -567,7 +567,7 @@ types, but with the associated cost of more dummy communications.
 \subsection{Implementing the PPDP'17 calculus in
 Haskell}\label{implementing-the-ppdp17-calculus-in-haskell}
 
-The implementation uses an algebraic data type (union type/sum type) to
+The implementation uses an algebraic data type (also known as union type or sum type) to
 encode all the constructors of the grammar. We use the \texttt{Fix} type
 (Appendix \ref{fix}) to factor out recursion from the grammar.
 \texttt{Fix} is the fixed point type:
@@ -663,7 +663,7 @@ omit the process-level recursion.
 We also need values in our language. To write more interesting examples
 we extend the types of values that can be used from names, booleans and
 functions to also include references, integers, strings, and basic
-integer and logic operators.
+integer and comparison operators.
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -809,25 +809,8 @@ The third component of the system a reversible semantics. The idea here
 is that we can move back to previous program states, reversing forward
 steps.
 
-Reversibility is useful in a concurrent setting when an error is
-encountered but the current state is invalid. In such a case the program
-should revert to its initial state, from which next steps can be
-considered (e.g.~to retry or to log the failure).
-
-The naive way to achieve reversibility in the semantics is to store a
-snapshot of the initial state, but the memory consumption of this method
-is too large for this method to be practical. For instance, the system
-may interact with a large database. Keeping many copies of the database
-around is inconvenient and may not even be physically possible.
-
-The PPDP'17 paper provides a convenient approach tailored to the process
-calculus and local types that we have seen. For every forward step, just
-enough information is stored to undo it. Conceptually, we are leaving
-behind a trail of breadcrumbs so we can always find our way back.
-
-The challenge, then, is to find what the minimal amount of information
-actually is for every instruction. The PPDP'17 paper tells us that
-broadly, we need to track information about two things: the type and the
+To be able to move backward, we need to store some information when we move forward.
+The PPDP'17 paper tells us that, broadly, we need to track information about two things: the type and the
 process.
 
 For the type we define a new data type called \texttt{TypeContext}. It
@@ -1108,7 +1091,7 @@ The message queue is global and thus also lives in the
 see whether they are functions and if so, to extract their bodies for
 application.
 
-\section{Running and Debugging Programs}\label{running-debugging}
+\subsection{Running and Debugging Programs}\label{running-debugging}
 
 Finally, we want to be able to run our programs. The implementation
 offers mechanisms to step through a program interactively, and run it to
@@ -1248,9 +1231,9 @@ consider these two equivalent global types:
 \end{Highlighting}
 \end{Shaded}
 
-The second and third line are swapped. The communication they describe
-is the same, but in practice they are very different. The first one will
-run to completion, the second one can deadlock because \texttt{A} can
+The second and third transaction are swapped. The communication they describe
+is the same, but in practice they are very different. The first example will
+run to completion, the second can deadlock because \texttt{A} can
 send a \texttt{Share} before \texttt{V} does. \texttt{B} expects the
 share from \texttt{V} first, but the share from \texttt{A} is the first
 in the queue. Therefore, no progress can be made.
