@@ -4,6 +4,12 @@
 \usepackage{lmodern}
 \usepackage{amssymb,amsmath}
 \usepackage{ifxetex,ifluatex}
+\usepackage{xspace}
+
+\usepackage{xcolor}
+\newcommand{\erase}[1]{\textcolor{orange}{#1}}
+
+
 \usepackage{fixltx2e} % provides \textsubscript
 % use upquote if available, for straight quotes in verbatim environments
 
@@ -188,7 +194,7 @@ Here we shall  informally describe the key elements of the model, guided by a ru
 
 \paragraph{Overview.}
 Fig.~\ref{f:model} depicts two of the three salient ingredients of the model:
-\emph{configurations/processes} and
+\emph{configurations/processes} and the
 \emph{choreography}, which represent the communicating partners and their intended governing protocol, respectively. 
 There is a {configuration} for each protocol participant: it includes a \emph{located process} that specifies asynchronous communication behavior and is subject to a \emph{monitor} that enables forward/backward steps at run-time. This monitor is obtained via the choreography, which  declaratively describes a protocol among two or more participants. 
 Formally, the model considers choreographies defined in terms of \emph{global types} in the sense of multiparty session types~\cite{DBLP:conf/popl/HondaYC08}. 
@@ -196,9 +202,22 @@ For this reason, we often use `choreographies' and `global types' as synonyms.
 A global type can be \emph{projected} onto each participant so as to obtain 
 its corresponding  \emph{local type}, i.e., a session type that abstracts a participant's contribution to the global protocol. These local types may then be used as the monitors of the located processes. 
 
-The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the operational semantics for configurations. This semantics is defined in terms of forward and backward reduction relations, denoted $\fw$  and $\bk$, respectively. We shall not recall these relations here; rather, we will introduce their key underlying intuitions by means of an example.
+The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the operational semantics for configurations. This semantics is defined in terms two reduction relations, forward and backward, denoted $\fw$  and $\bk$, respectively. We shall not recall these relations here; rather, we will introduce their key underlying intuitions by means of an example.
 
 \paragraph{Syntax of Configurations and Processes.}
+The syntax of processes $P, Q, \ldots$, with their intuitive semantics, is given as follows:
+\begin{align*}
+P, Q ::= \, 
+        & \bout{u}{V}{P} \,\,\, \, \, &\text{send value $V$, then run $P$} \\
+\sbnfbar & \binp{u}{x}{P} \,\,\, \, \, & \text{receive a value and bind it to $x$, then run $P$} \\
+\sbnfbar &  \bsel{u}{\lbl_i. P_i}_{i\in I}\,\,\, \, \, & \text{select an $l_j$, broadcast this choice, then run $P_j$} \\
+\sbnfbar & \bbra{u}{\lbl_i:P_i}_{i \in I} \,\,\, \, \, & \text{receive a   $l_j$, then run  $P_j$} \\
+\sbnfbar   & P \Par Q  &\text{parallel composition of $P$ and $Q$} \\
+\sbnfbar  & \rvar{X} \sbnfbar  \recp{X}{P} \,\,\, &\text{variable and function abstraction}\\
+\sbnfbar & \appl{V}{u} \,\,\, &\text{function application} \\
+\sbnfbar  & \news{n}P \,\,\, &\text{name restriction: make $n$ local (or private) to $P$} \\
+\sbnfbar  & \inact \,\,\, &\text{terminated process}
+\end{align*}
 
 
 \subsection{Old Material (From The Thesis)}
