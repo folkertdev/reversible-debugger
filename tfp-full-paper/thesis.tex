@@ -115,14 +115,17 @@ Jorge A. P\'{e}rez%\orcidID{0000-0002-1452-6180}}
 
 
 \begin{abstract}
-Under a reversible semantics, computation steps can be undone. For
-message-passing, concurrent programs, reversing computation steps is a
-challenging and delicate task; one typically aims at formal semantics
-which are \emph{causally-consistent}. Prior work has addressed this
+A reversible semantics enables to undo computation steps. 
+Reversing  
+message-passing, concurrent programs is a
+challenging and delicate task; one typically aims at 
+\emph{causally-consistent} reversible semantics.
+Prior work has addressed this
 challenge in the context of a process model of multiparty protocols
 (choreographies) following a so-called \emph{monitors-as-memories}
-approach. In this paper, we describe our efforts aimed at implementing
-this operational semantics in Haskell. We provide an encoding based on
+approach. In this paper, we describe our work on implementing
+this reversible operational semantics in Haskell. 
+We provide an encoding based on
 the formal definition of prior work's three core concepts: a process
 calculus, multiparty session types and a reversible semantics.
 Additionally, we provide an implementation of the forward and backward
