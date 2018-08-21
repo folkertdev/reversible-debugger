@@ -202,22 +202,43 @@ For this reason, we often use `choreographies' and `global types' as synonyms.
 A global type can be \emph{projected} onto each participant so as to obtain 
 its corresponding  \emph{local type}, i.e., a session type that abstracts a participant's contribution to the global protocol. These local types may then be used as the monitors of the located processes. 
 
-The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the operational semantics for configurations. This semantics is defined in terms two reduction relations, forward and backward, denoted $\fw$  and $\bk$, respectively. We shall not recall these relations here; rather, we will introduce their key underlying intuitions by means of an example.
+The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the operational semantics for configurations. This semantics is defined in terms of two reduction relations, forward and backward, denoted $\fw$  and $\bk$, respectively. We shall not recall these relations here; rather, we will introduce their key underlying intuitions by means of an example.
 
 \paragraph{Syntax of Configurations and Processes.}
-The syntax of processes $P, Q, \ldots$, with their intuitive semantics, is given as follows:
+The language of processes $P, Q, \ldots$ is a $\pi$-calculus with constructs for labeled (deterministic) choice, communication of abstractions, and function application.
+While labeled choice is typical of session $\pi$-calculi (cf.~\cite{DBLP:conf/esop/HondaVK98}), the latter constructs are typical of \emph{higher-order} process calculi, which blend together functional and concurrent programming~\cite{DBLP:journals/tcs/Sangiorgi01}. The complete process syntax, with their intuitive semantics, is given as follows:
 \begin{align*}
 P, Q ::= \, 
         & \bout{u}{V}{P} \,\,\, \, \, &\text{send value $V$, then run $P$} \\
 \sbnfbar & \binp{u}{x}{P} \,\,\, \, \, & \text{receive a value and bind it to $x$, then run $P$} \\
 \sbnfbar &  \bsel{u}{\lbl_i. P_i}_{i\in I}\,\,\, \, \, & \text{select an $l_j$, broadcast this choice, then run $P_j$} \\
-\sbnfbar & \bbra{u}{\lbl_i:P_i}_{i \in I} \,\,\, \, \, & \text{receive a   $l_j$, then run  $P_j$} \\
+\sbnfbar & \bbra{u}{\lbl_i:P_i}_{i \in I} \,\,\, \, \, & \text{receive an   $l_j$, then run  $P_j$} \\
 \sbnfbar   & P \Par Q  &\text{parallel composition of $P$ and $Q$} \\
 \sbnfbar  & \rvar{X} \sbnfbar  \recp{X}{P} \,\,\, &\text{variable and function abstraction}\\
 \sbnfbar & \appl{V}{u} \,\,\, &\text{function application} \\
 \sbnfbar  & \news{n}P \,\,\, &\text{name restriction: make $n$ local (or private) to $P$} \\
 \sbnfbar  & \inact \,\,\, &\text{terminated process}
 \end{align*}
+The higher-order character of our process language may be better understood by spelling out the syntax of values:
+\begin{align*}
+u,w  \bnfis& n \sbnfbar x,y,z
+\qquad \quad
+n,n' \bnfis a,b \sbnfbar \ep{s}{\p}
+\qquad \quad
+ {v},  {v}'  \bnfis   \true \sbnfbar \false \sbnfbar \cdots
+\\
+V,W \bnfis & {a,b} \sbnfbar  x,y,z \sbnfbar  v, v' \sbnfbar {\abs{x}{P}}
+\end{align*}
+\noindent 
+where  $a,b,c,\ldots$ and $s,s',\ldots$ range over shared and session names, respectively.
+Shared names are public names used to establish a session protocol; once established, the protocol runs along a session name, which is private to session participants.
+We shall use $\p, \q, \ldots$ to denote protocol participants, and 
+use session names indexed by participants (e.g., $s_{[\p]}$).
+First-order values $v,v',\ldots$ 
+include base values and constants. Variables are denoted  $x,y, \ldots$. 
+The syntax of values $V$ includes shared names, 
+first-order values, but also \emph{name abstractions} $\lambda x. P$, where $P$ is a process.
+Notice that values do not include (indexed) session names, for session communication (\emph{delegation}) is  representable using abstraction passing~\cite{KPY2016}.
 
 
 \subsection{Old Material (From The Thesis)}
