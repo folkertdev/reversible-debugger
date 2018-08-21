@@ -169,114 +169,9 @@ In this paper, we describe a Haskell implementation of the reversible semantics 
 The rest of the paper is structured as follows...
 
 \section{The Process Model}
-\section{Introduction}\label{introduction}
+\textbf{\emph{Here we introduce the PPDP calculus, multiparty session types, and the operational semantics by example. We also copy-paste the three-buyer example, which we use as running example.}}
 
-This thesis describes an implementation of theoretical work in the area
-of concurrent programming. In particular it concerns the use of formal
-tools to check the correctness of message-passing programs and allow for
-flexible error handling.
-
-An example of a class of errors in message-passing are
-\textbf{deadlocks}. Consider this example of a receive on an empty
-channel:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{main }\FunctionTok{=} \KeywordTok{do}
-\NormalTok{    channel }\OtherTok{<-}\NormalTok{ Channel.new}
-    \CommentTok{-- will block forever}
-\NormalTok{    message }\OtherTok{<-}\NormalTok{ Channel.receive channel}
-\end{Highlighting}
-\end{Shaded}
-
-\emph{This snippet uses Haskell's do-notation. the \texttt{\textless{}-}
-is used to bind the result of an effectful computation - like receiving
-from a channel. See also Appendix \ref{do-notation}}
-
-No value will ever be sent on the channel, so the receive blocks
-forever: it cannot make any progress.
-
-Failing gracefully is challenging in a concurrent context: the state of
-the application is typically spread over multiple locations which makes
-it hard to determine where the error originates and how to compensate
-for it.
-
-Consider the following example: if Bob fails in receiving a message or
-loses a message, he will have to repeat the \texttt{receive}, but also
-inform Alice to send the message again.
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{alice channel }\FunctionTok{=} \KeywordTok{do} 
-\NormalTok{    Channel.send channel }\StringTok{"hello, my name is"}
-\NormalTok{    Channel.send channel }\StringTok{"Alice"}
-\NormalTok{    response }\OtherTok{<-}\NormalTok{ Channel.receive channel}
-    
-\NormalTok{bob channel }\FunctionTok{=} 
-\NormalTok{    _ }\OtherTok{<-}\NormalTok{ Channel.receive channel }
-\NormalTok{    name }\OtherTok{<-}\NormalTok{ Channel.receive channel}
-\NormalTok{    Channel.send (}\StringTok{"Hello, "} \FunctionTok{++}\NormalTok{ name) }
-\end{Highlighting}
-\end{Shaded}
-
-Moving back to the initial state is non-trivial. How can we be sure that
-we have reverted all our actions? What is the minimal amount of
-information (and memory) we need for a valid reversal?
-
-The framework presented by Mezinna \& Pérez (PPDP'17) \cite{PPDP} (from
-here on referenced as ``the PPDP'17 paper'') sets out to address both
-these issues. The paper develops a theoretical approach, using
-techniques from programming languages and concurrency. However, it does
-not consider how the presented approach can be implemented in an actual
-programming language. In earlier work during a short programming project
-we have looked at combining the CaReDeb debugger \cite{caredeb} with the
-PPDP'17 paper. Here we go further and look at how well the ideas
-presented in the PPDP'17 paper translate to a programming context, and
-whether the resulting system turns out to be convenient to use.
-
-In answering these questions this bachelor's thesis makes the following
-contributions:
-
-\begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
-\item
-  We begin by analyzing the three core components of the PPDP'17 paper:
-
-  A process calculus, multiparty session types
-  \cite{DBLP:conf/esop/HondaVK98,DBLP:conf/popl/HondaYC08} and a
-  reversible semantics. At the same time we give the encoding of the
-  formal definitions of these components into Haskell data types.
-
-  \begin{itemize}
-  \item
-    First, we define and implement a \textbf{process calculus} from its
-    foundations. Later, we use the \texttt{Free} monad to provide
-    convenient syntax.
-  \item
-    Next, we look at \textbf{multiparty session types} for the
-    implemented calculus. The session types feature nested recursion and
-    labelled choice.
-  \item
-    Finally, we consider \textbf{a reversible semantics} given the two
-    previous concepts. In particular, we look at the information that
-    needs to be preserved when moving forward in order maintain causal
-    consistency.
-  \end{itemize}
-\end{enumerate}
-
-The rest of the document is structured as follows: Section
-\ref{the-main-idea} introduces the three key foundations from the
-PPDP'17 paper and how they can be encoded into Haskell data types.
-Section \ref{combining} shows how the data types can be used to
-implement forward and backward operational semantics and provide the
-other mechanics needed to evaluate the program. Section
-\ref{free-monad-dsl} provides a more convenient syntax for writing
-(reversible) message-passing programs. Appendices \ref{performing-io}
-through \ref{scheduling-code} give background and extra examples for the
-Haskell concepts and terminology used in the paper.
-
-\section{The Main Idea}\label{the-main-idea}
-
+\subsection{Old Material (From The Thesis)}
 The PPDP'17 paper builds a programming model that features three basic
 concepts: a process calculus, multiparty session types and a reversible
 semantics. The result of combining these ideas allows runtime
@@ -415,6 +310,169 @@ defining recursion: using the \(\mu X.P\) process constructor or using
 the \(\lambda x.P\) value constructor. In the implementation the former
 has been removed.
 
+
+
+\subsection{Multiparty Session Types}\label{session-types}
+
+As programmers we would like our programs to work as we expect. With
+concurrent programs, fitting the whole program in one's head becomes
+increasingly difficult as the application becomes larger and program
+behavior becomes harder to predict.
+
+Most programmers are familiar with data types. Compilers use data types
+to typecheck programs. Programs that typecheck are statically guaranteed
+to not have certain classes of bugs. Type systems range from very loose
+(dynamic languages like Javascript and Python) to very restrictive (Coq,
+Agda, Idris).
+
+In the late 90s, a similar tool was developed for typing and checking
+the interaction between concurrent processes: Session types. Session
+types abstract protocols to enforce three key properties:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Order:} every protocol participant has a sequence of sends and
+  receives that it must perform;
+\item
+  \textbf{Progress:} every sent message is eventually received;
+\item
+  \textbf{Communication Safety:} sender and receiver always agree about
+  the type of the exchanged values
+\end{itemize}
+
+Next we will look at how these types are defined and how we can check
+that our programs implement their session type.
+
+\subsubsection{Global Types}\label{global-types}
+
+The simplest non-trivial concurrent program has two participants. In
+this case, the types of the two participants should be exactly dual: if
+the one sends, the other must receive. However, for the multiparty use
+case (three or more participants), things are not so simple as duality
+is hard to define.
+
+We need to define globally what communications occur in our protocol.
+The snippet below is a basic global type where Carol and Bob first
+exchange a value of type \texttt{Bool}, next Alice and Carol exchange a
+value of type \texttt{Int} and finally the protocol ends:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{simple ::} \DataTypeTok{GlobalType} \DataTypeTok{String} \DataTypeTok{String}
+\NormalTok{simple }\FunctionTok{=} \KeywordTok{do} 
+\NormalTok{    message }\StringTok{"carol"} \StringTok{"bob"} \StringTok{"Bool"}
+\NormalTok{    message }\StringTok{"alice"} \StringTok{"carol"} \StringTok{"Int"}
+\NormalTok{    end}
+\end{Highlighting}
+\end{Shaded}
+
+We can see immediately that \textbf{safety and progress are guaranteed}:
+Every communication has a send and receive, and they both must agree on
+the type. We cannot construct a valid global type that does not check
+for these properties. As a result, every program that implements a
+global type also has these properties.
+
+A more realistic scenario that we will use as a running example is the
+three buyer protocol from the PPDP'17 paper. In this protocol, Alice and
+Bob communicate with the Vendor about the purchase of some item:
+
+\begin{align*}
+G = ~&  \gtcom{A}{\texttt{V}}{\mathsf{title}}{~~\gtcom{\mathtt{V}}{\{A,B\}}{\mathsf{price}}{\\[-0.5mm] 
+& \quad\gtcom{A}{B}{\mathsf{share}}{~~\gtcom{B}{\{A,\mathtt{V}\}}{\mathsf{OK}}{
+\\[-0.5mm]
+& \quad\quad \gtcom{B}{C}{\mathsf{share}}{~~\gtcom{B}{C}{\textcolor{blue}{\thunkt}}{
+\\[-0.5mm]
+& \quad\qquad \gtcom{B}{\mathtt{V}}{\mathsf{address}}{~~\gtcom{\mathtt{V}}{B}{\mathsf{date}}{\gend}}}}}}}}
+\end{align*}
+
+Near the end of the protocol, Bob has to leave and transfers the
+remainder of his protocol to Carol. She will also be sent the code - a
+\textbf{thunk process} denoted \(\textcolor{blue}{\thunkt}\) - to
+complete Bob's protocol, and finish the protocol in his name by
+evaluating the sent thunk.
+
+
+\subsubsection{Local Types}\label{local-types}
+
+A global type can contain inherent parallelism: the order of its steps
+is not fully defined. For instance in
+\texttt{messages\ V\ {[}A,\ B{]}\ Price}, \texttt{V} can send the price
+first to \texttt{B} or first to \texttt{A}: both are valid according to
+the type. This parallelism makes checking for correctness against a
+global type difficult and also unpractical because the global type
+mentions all participants. The solution is to project the global type
+onto its participants, creating a local type.
+
+The local type is an ordered list of communication actions that the
+participant must execute to comply with the protocol. Thus the
+\textbf{order} property is enforced for local types.
+
+The projection is mostly straightforward, except for choice. Because we
+allow recursion, a branch of a choice may recurse back to the beginning.
+When this occurs, all participants have to jump back to the beginning,
+so every choice must be communicated to all participants.
+
+The PPDP'17 paper and many other papers deal with this problem by
+disallowing different branches using different participants. In practice
+this means that all branches must perform the same communication to
+satisfy the global type, even if the communication is not needed in
+every branch (some branches may have dummy communication).
+
+In the Haskell implementation we use a different method where every
+choice causes a broadcast of that choice to the other participants. Once
+again, some participants may not need the information about the choice
+and the communication with them is just to satisfy the type checker.
+
+The underlying is that problem global types only have meaning with
+respect to their projection into local types. If a global type cannot be
+projected - even though it is grammatically valid - it has no meaning. A
+simple projection disallows many (grammatically valid) global types and
+implementations. A more sophisticated projection allows more global
+types, but with the associated cost of more dummy communications.
+
+\begin{figure}[]
+{
+\begin{align*}
+\tproj{(\gtcom{p}{q}{U}{G})}{\gpart{r}} & = 
+\begin{cases}
+\ltout{q}{U}{(\tproj{G}{\gpart{r}})} & \text{if $\gpart{r} = \gpart{p}$} \\
+\ltinp{p}{U}{(\tproj{G}{\gpart{r}})} & \text{if $\gpart{r} = \gpart{q}$} \\
+(\tproj{G}{\gpart{r}}) &  \text{if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$}
+\end{cases}
+\\
+\tproj{(\gtcho{p}{q}{l_i}{G_i})}{\gpart{r}}  
+& 
+{= 
+\begin{cases}
+\ltsel{q}{\lbl_i}{(\tproj{G_i}{\gpart{r}})}{i}{I}  & \text{ if $\gpart{r} = \gpart{p}$} \\
+\ltbra{p}{\lbl_i}{\tproj{G_i}{\gpart{r}}}{i}{I}  & \text{ if $\gpart{r} = \gpart{q}$} \\
+(\tproj{{G_1}}{\gpart{r}}) &  \text{ if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$ and} \\ 
+& \text{~~$\forall i, j \in I. \tproj{{G_i}}{\gpart{r}} = \tproj{{G_j}}{\gpart{r}}$}
+\end{cases}
+}
+\\
+\tproj{(\mu X. G)}{\gpart{r}} &= 
+\begin{cases}
+\mu X. \tproj{G}{\gpart{r}} & \text{if $\gpart{r}$ occurs in $G$}
+\\
+\lend & \text{otherwise}
+\end{cases}
+\\
+\tproj{X}{\gpart{r}} & = X
+\qquad
+\tproj{\gend}{\gpart{r}} = \lend
+\end{align*}
+}
+\vspace{-4mm}
+\caption{Projection of a global type $G$ onto a participant $\gpart{r}$ from PPDP'17.\label{f:proj}}
+\end{figure}
+
+
+
+\section{IMPLEMENTATION}
+\textbf{\emph{In this section we show how we implement the processes, types, and semantics in the PPDP paper}}
+
 \subsection{Implementing the PPDP'17 calculus in
 Haskell}\label{implementing-the-ppdp17-calculus-in-haskell}
 
@@ -551,86 +609,7 @@ and in general there is too much syntactical clutter. We will get back
 to designing a better syntax for defining programs in Section
 \ref{free-monad-dsl}.
 
-\subsection{Multiparty Session Types}\label{session-types}
-
-As programmers we would like our programs to work as we expect. With
-concurrent programs, fitting the whole program in one's head becomes
-increasingly difficult as the application becomes larger and program
-behavior becomes harder to predict.
-
-Most programmers are familiar with data types. Compilers use data types
-to typecheck programs. Programs that typecheck are statically guaranteed
-to not have certain classes of bugs. Type systems range from very loose
-(dynamic languages like Javascript and Python) to very restrictive (Coq,
-Agda, Idris).
-
-In the late 90s, a similar tool was developed for typing and checking
-the interaction between concurrent processes: Session types. Session
-types abstract protocols to enforce three key properties:
-
-\begin{itemize}
-\tightlist
-\item
-  \textbf{Order:} every protocol participant has a sequence of sends and
-  receives that it must perform;
-\item
-  \textbf{Progress:} every sent message is eventually received;
-\item
-  \textbf{Communication Safety:} sender and receiver always agree about
-  the type of the exchanged values
-\end{itemize}
-
-Next we will look at how these types are defined and how we can check
-that our programs implement their session type.
-
-\subsubsection{Global Types}\label{global-types}
-
-The simplest non-trivial concurrent program has two participants. In
-this case, the types of the two participants should be exactly dual: if
-the one sends, the other must receive. However, for the multiparty use
-case (three or more participants), things are not so simple as duality
-is hard to define.
-
-We need to define globally what communications occur in our protocol.
-The snippet below is a basic global type where Carol and Bob first
-exchange a value of type \texttt{Bool}, next Alice and Carol exchange a
-value of type \texttt{Int} and finally the protocol ends:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\OtherTok{simple ::} \DataTypeTok{GlobalType} \DataTypeTok{String} \DataTypeTok{String}
-\NormalTok{simple }\FunctionTok{=} \KeywordTok{do} 
-\NormalTok{    message }\StringTok{"carol"} \StringTok{"bob"} \StringTok{"Bool"}
-\NormalTok{    message }\StringTok{"alice"} \StringTok{"carol"} \StringTok{"Int"}
-\NormalTok{    end}
-\end{Highlighting}
-\end{Shaded}
-
-We can see immediately that \textbf{safety and progress are guaranteed}:
-Every communication has a send and receive, and they both must agree on
-the type. We cannot construct a valid global type that does not check
-for these properties. As a result, every program that implements a
-global type also has these properties.
-
-A more realistic scenario that we will use as a running example is the
-three buyer protocol from the PPDP'17 paper. In this protocol, Alice and
-Bob communicate with the Vendor about the purchase of some item:
-
-\begin{align*}
-G = ~&  \gtcom{A}{\texttt{V}}{\mathsf{title}}{~~\gtcom{\mathtt{V}}{\{A,B\}}{\mathsf{price}}{\\[-0.5mm] 
-& \quad\gtcom{A}{B}{\mathsf{share}}{~~\gtcom{B}{\{A,\mathtt{V}\}}{\mathsf{OK}}{
-\\[-0.5mm]
-& \quad\quad \gtcom{B}{C}{\mathsf{share}}{~~\gtcom{B}{C}{\textcolor{blue}{\thunkt}}{
-\\[-0.5mm]
-& \quad\qquad \gtcom{B}{\mathtt{V}}{\mathsf{address}}{~~\gtcom{\mathtt{V}}{B}{\mathsf{date}}{\gend}}}}}}}}
-\end{align*}
-
-Near the end of the protocol, Bob has to leave and transfers the
-remainder of his protocol to Carol. She will also be sent the code - a
-\textbf{thunk process} denoted \(\textcolor{blue}{\thunkt}\) - to
-complete Bob's protocol, and finish the protocol in his name by
-evaluating the sent thunk.
-
+\subsection{Global Types}
 The full definition of global types in the Haskell implementation is
 given by
 
@@ -732,81 +711,6 @@ Similarly, the three buyer example can be written as:
 \NormalTok{    end}
 \end{Highlighting}
 \end{Shaded}
-
-\subsubsection{Local Types}\label{local-types}
-
-A global type can contain inherent parallelism: the order of its steps
-is not fully defined. For instance in
-\texttt{messages\ V\ {[}A,\ B{]}\ Price}, \texttt{V} can send the price
-first to \texttt{B} or first to \texttt{A}: both are valid according to
-the type. This parallelism makes checking for correctness against a
-global type difficult and also unpractical because the global type
-mentions all participants. The solution is to project the global type
-onto its participants, creating a local type.
-
-The local type is an ordered list of communication actions that the
-participant must execute to comply with the protocol. Thus the
-\textbf{order} property is enforced for local types.
-
-The projection is mostly straightforward, except for choice. Because we
-allow recursion, a branch of a choice may recurse back to the beginning.
-When this occurs, all participants have to jump back to the beginning,
-so every choice must be communicated to all participants.
-
-The PPDP'17 paper and many other papers deal with this problem by
-disallowing different branches using different participants. In practice
-this means that all branches must perform the same communication to
-satisfy the global type, even if the communication is not needed in
-every branch (some branches may have dummy communication).
-
-In the Haskell implementation we use a different method where every
-choice causes a broadcast of that choice to the other participants. Once
-again, some participants may not need the information about the choice
-and the communication with them is just to satisfy the type checker.
-
-The underlying is that problem global types only have meaning with
-respect to their projection into local types. If a global type cannot be
-projected - even though it is grammatically valid - it has no meaning. A
-simple projection disallows many (grammatically valid) global types and
-implementations. A more sophisticated projection allows more global
-types, but with the associated cost of more dummy communications.
-
-\begin{figure}[]
-{
-\begin{align*}
-\tproj{(\gtcom{p}{q}{U}{G})}{\gpart{r}} & = 
-\begin{cases}
-\ltout{q}{U}{(\tproj{G}{\gpart{r}})} & \text{if $\gpart{r} = \gpart{p}$} \\
-\ltinp{p}{U}{(\tproj{G}{\gpart{r}})} & \text{if $\gpart{r} = \gpart{q}$} \\
-(\tproj{G}{\gpart{r}}) &  \text{if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$}
-\end{cases}
-\\
-\tproj{(\gtcho{p}{q}{l_i}{G_i})}{\gpart{r}}  
-& 
-{= 
-\begin{cases}
-\ltsel{q}{\lbl_i}{(\tproj{G_i}{\gpart{r}})}{i}{I}  & \text{ if $\gpart{r} = \gpart{p}$} \\
-\ltbra{p}{\lbl_i}{\tproj{G_i}{\gpart{r}}}{i}{I}  & \text{ if $\gpart{r} = \gpart{q}$} \\
-(\tproj{{G_1}}{\gpart{r}}) &  \text{ if $\gpart{r} \neq \gpart{q}, \gpart{r} \neq \gpart{p}$ and} \\ 
-& \text{~~$\forall i, j \in I. \tproj{{G_i}}{\gpart{r}} = \tproj{{G_j}}{\gpart{r}}$}
-\end{cases}
-}
-\\
-\tproj{(\mu X. G)}{\gpart{r}} &= 
-\begin{cases}
-\mu X. \tproj{G}{\gpart{r}} & \text{if $\gpart{r}$ occurs in $G$}
-\\
-\lend & \text{otherwise}
-\end{cases}
-\\
-\tproj{X}{\gpart{r}} & = X
-\qquad
-\tproj{\gend}{\gpart{r}} = \lend
-\end{align*}
-}
-\vspace{-4mm}
-\caption{Projection of a global type $G$ onto a participant $\gpart{r}$ from PPDP'17.\label{f:proj}}
-\end{figure}
 
 \subsection{A Reversible Semantics}\label{a-reversible-semantics}
 
@@ -1002,7 +906,8 @@ Because we allow references to values in the implementation, all
 references in a function have to be dereferenced before it can be safely
 sent over a channel.
 
-\section{Putting it all together}\label{combining}
+
+\subsection{Putting it all together}\label{combining}
 
 With all the definitions encoded, we can now define forward and backward
 evaluation of our system. Our aim is to implement:
@@ -1112,7 +1017,7 @@ The message queue is global and thus also lives in the
 see whether they are functions and if so, to extract their bodies for
 application.
 
-\subsection{Running and Debugging Programs}\label{running-debugging}
+\section{Running and Debugging Programs}\label{running-debugging}
 
 Finally, we want to be able to run our programs. The implementation
 offers mechanisms to step through a program interactively, and run it to
