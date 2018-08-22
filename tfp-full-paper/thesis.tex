@@ -1343,24 +1343,26 @@ send a \texttt{Share} before \texttt{V} does. \texttt{B} expects the
 share from \texttt{V} first, but the share from \texttt{A} is the first
 in the queue. Therefore, no progress can be made.
 
-\subsection{Properties of
-Reversibility}\label{properties-of-reversibility}
+\subsection{Properties of Reversibility}\label{properties-of-reversibility}
 
-The main property that a reversable semantics needs to preserve is
-\emph{causal consistency}: the state that we reach when moving backward
-is a state that could have been reached by moving forward only.
+The Introduction mentions causal consistency as a key correctness criterion. 
+Causal consistency is proven for the formal semantics laid out in Section \ref{the-process-model}, 
+but does the translation into Haskell preserve this property? 
+
+In basic terms, causal consistency is the property that backward steps always lead to states that 
+could have been reached by moving forward only.
 
 The global type defines a partial order on all the communication steps.
 The relation of this partial order is causal dependency. Stepping
 backward is only allowed when all its causally dependent actions are
-undone. This guarantee is baked into every part of the semantics. For
-instance, a send can only be undone when the receive is already undone,
-because there is a data dependency between the two actions (the sent
-value).
+undone. 
 
-Causal consistency is formally proven for the PPDP'17 semantics. We
-claim that the Haskell implementation is faithfull enough that causal
-consistency is preserved.
+In the semantics and the implementation, this causal dependency becomes a data dependency. 
+For instance, a send can only be undone when the queue is in a state that can only be reached by first undoing the corresponding receive.
+Being able to undo a send means that the corresponding receive has already been rolled back, so it is impossible to introduce causal inconsistencies. 
+
+Because of the encoding of causal dependencies as data dependencies, and the fact that these data dependencies are preserved in the implementation,  
+we claim that the Haskell implementation is faithfull enough that causal consistency is preserved.
 
 \section{Convenient Syntax with the Free Monad}\label{free-monad-dsl}
 
