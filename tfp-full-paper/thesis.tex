@@ -271,7 +271,7 @@ $H$ is a  local type \emph{with history} (see below);
 $\mytilde{x}$ is a set of free variables;
 and  $\store$ is a store that records the value of such variables.
 Moreover, the \emph{tag} $\mytagg$ serves to determine whether 
-the running process associated to the monitor is currently involved in a backward step.
+the running process associated to the monitor is currently involved in a backward step ($\mytagg = \rmark$) or not ($\mytagg = \normark$).
 
 \paragraph{Global and Local Types.}
 As already mentioned, choreographies represent multiparty protocols expressed as global types $G, G', \ldots$. Global types can be \emph{projected} onto local types  ($T, T', \ldots$), one per participant. Their syntax follows~\cite{HYC08}:
@@ -317,8 +317,8 @@ Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respect
  cursor (denoted $\past$) that serves to distinguish  the (local) protocol actions  that have been already executed (the past of the protocol) from those that are yet to be performed (the future of the protocol).
  
  \paragraph{Projection.}
- Given these intuitions, the projection of a global type onto the various protocol participants is mostly straightforward, except for choice. 
- The formal definition is presented in Fig.~\ref{f:proj}.
+ Given these intuitions, the projection of a global type $G$ onto a protocol participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is mostly straightforward, except for choice. 
+ The   definition is given in Fig.~\ref{f:proj}.
  Because of recursion, a branch of a choice may recurse back to the beginning.
 When this occurs, all participants have to jump back to the beginning,
 so every choice must be communicated to all participants.
@@ -365,13 +365,12 @@ choice causes a broadcast of that choice to the other participants.
 \end{figure}
 
 \paragraph{Example: Three-Buyer Protocol.}
-We illustrate our  framework by presenting a reversible variant of the \emph{Three-Buyer protocol}   (see, e.g.,~\cite{CDYP2015})
-with abstraction passing (code mobility), one of the 
-distinctive traits of our framework. 
-\erase{(In App.~\ref{app:choices} we discuss an additional example involving labeled choices.)}
-
+We illustrate the 
+forward and backward reduction semantics, denoted \fw and \bk, by example: we recall the running example introduced in~\cite{DBLP:conf/ppdp/MezzinaP17}, namely
+  a reversible variant of the \emph{Three-Buyer protocol}  (cf, e.g.,~\cite{CDYP2015})
+with abstraction passing. 
 The protocol 
-involves three buyers---Alice ($\pA$), Bob ($\pB$), and Carol ($\pC$)---who interact with a Vendor ($\pS$) as follows:
+involves three buyers (Alice ($\pA$), Bob ($\pB$), Carol ($\pC$)) who interact with a Vendor ($\pS$) as follows:
 
 \begin{enumerate}[1.]
 \item Alice sends a book title to Vendor, which replies back to Alice and Bob with a quote. Alice tells Bob how much she can contribute.
@@ -379,24 +378,10 @@ involves three buyers---Alice ($\pA$), Bob ($\pB$), and Carol ($\pC$)---who inte
 To delegate his remaining interactions with Alice and Vendor to Carol, Bob sends her %both an endpoint and 
 the code she must execute.
 \item Carol continues the rest of the protocol with Vendor and Alice as if she were Bob. 
-She sends Bob's address (contained in the mobile code she received) to Vendor.
+She sends Bob's address (contained in the  code she received) to Vendor.
 \item Vendor answers to Alice and Carol (who represents Bob) with the delivery date.
 \end{enumerate}
-
-%\newpage
-
-We formalize this protocol is 
-as the global type $G$ below.
-%, another one involving Bob and Carol ($G_2$).
-We write
-$\gtcom{\p}{\{\q_1,\q_2\}}{U}{G}$
-as a shorthand notation for 
-$\gtcom{\p}{\q_1}{U}{\gtcom{\p}{\q_2}{U}{G}}$
-(and similarly for local types).
-We write $\thunkt$ to denote the type $\shot{\lend}$, associated to a \emph{thunk process} $\abs{x}{P}$ with $x \not \in \fn{P}$, written
-$\thunkp{P}$. A thunk is an inactive process; it can be activated by applying to it a dummy name of type $\lend$, denoted $\dummyn$.
-This way, we have 
-$(\appl{\thunkp{P}}{\dummyn}) \fw P$.
+This protocol may be formalized as the following global type $G$:
 \begin{align*}
 G = ~&  \gtcom{A}{\pS}{\mathsf{title}}{\gtcom{\pS}{\{A,B\}}{\mathsf{price}}{\gtcom{A}{B}{\mathsf{share}}{
 \\
@@ -408,10 +393,15 @@ G = ~&  \gtcom{A}{\pS}{\mathsf{title}}{\gtcom{\pS}{\{A,B\}}{\mathsf{price}}{\gtc
 %\\
 %G_2 = ~& \gtcom{B}{C}{\mathsf{share}}{\gtcom{B}{C}{T}{\gtcom{B}{C}{\shot{T}}{\gend}}}
 \end{align*}
-%where $T = \ltout{S}{\mathsf{address}}{\ltinp{S}{\mathsf{date}}{\lend}}$ is the protocol that Bob delegates to Carol.
-where  $\mathsf{price}$ and $\mathsf{share}$ are base types treated as integers,
+Above, we   write
+$\gtcom{\p}{\{\q_1,\q_2\}}{U}{G}$
+as a shorthand notation for 
+$\gtcom{\p}{\q_1}{U}{\gtcom{\p}{\q_2}{U}{G}}$
+(and similarly for local types).
+Also, we write $\thunkt$ to denote the type $\shot{\lend}$, associated to a \emph{thunk process} $\abs{x}{P}$ with $x \not \in \fn{P}$, written
+$\thunkp{P}$. A thunk is an inactive process; it can be activated by applying to it a dummy name of type $\lend$, denoted $\dummyn$.
+Moreover, $\mathsf{price}$ and $\mathsf{share}$ are base types treated as integers,
 and $\mathsf{title}$, $\mathsf{OK}$, $\mathsf{address}$, and $\mathsf{date}$ are base types treated as strings.
-
 Then we have the following projections of $G$ onto local types:
 \begin{align*}
 \tproj{G}{\pS} & = \ltinp{A}{\mathsf{title}}{\ltout{\{A,B\}}{\mathsf{price}}{\ltinp{B}{\mathsf{OK}}{\ltinp{B}{\mathsf{address}}{\ltout{B}{\mathsf{date}}{\lend}}}}}
@@ -427,8 +417,7 @@ Then we have the following projections of $G$ onto local types:
 \end{align*}
 We now give processes for each participant:
 \begin{align*}
-\text{Vendor} & =  \bout{d}{x:\tproj{G}{\pS}}\binp{x}{t}\bout{x}{price(t)}\bout{x}{price(t)}\\
-& \qquad \binp{x}{ok}\binp{x}{a} \bout{x}{date}\inact  
+\text{Vendor} & =  \bout{d}{x:\tproj{G}{\pS}}\binp{x}{t}\bout{x}{price(t)}\bout{x}{price(t)} \binp{x}{ok}\binp{x}{a} \bout{x}{date}\inact  
 \\
 \text{Alice} & =  \binp{d}{y:\tproj{G}{\pA}}\bout{y}{\exBook}\binp{y}{p}\bout{y}{h}\binp{y}{ok}\inact  
 \\
@@ -441,10 +430,9 @@ We now give processes for each participant:
 %&Q_C = \binp{y}{share}\binp{y}{T}\binp{y}{X}\inact  \\
 \end{align*}
 where $price(\cdot)$ returns a value of type $\mathsf{price}$ given a $\mathsf{title}$.
-Observe how Bob's implementation sends part of its protocol to Carol in the form of a thunk containing 
-his session name and address. This is how abstraction passing may serve to implement session delegation.
-
-The whole system, given by configuration $M$ below, is obtained by placing these process implementations in appropriate locations:
+Observe how Bob's implementation sends part of its protocol to Carol as a thunk containing 
+his session name and address. 
+The whole system, given by configuration $M$ below, is obtained by placing these processes   in appropriate locations ($\loc_1, \ldots, \loc_4$):
 $$
 M = \myloc{\loc_1}{\text{Vendor}} 
 \Par
@@ -455,8 +443,9 @@ M = \myloc{\loc_1}{\text{Vendor}}
 \myloc{\loc_4}{\text{Carol}} 
 $$
 %\end{document}
+We now use $M$ to informally discuss forward and backward reduction rules for \fw and \bk; their formal definition is in~\cite{DBLP:conf/ppdp/MezzinaP17}.
 From $M$, the session starts with an application of 
-Rule \fwcolor{\textsc{(Init)}}:
+Rule \fwcolor{\textsc{(Init)}}, which initializes the protocol by creating the necessary run-time structures (running processes and monitors):
 %To simplify readability, below
 %we write 
 %$\mathtt{r}$,
@@ -480,22 +469,20 @@ M & \fw  \news{s}\big(\,
 \\
 & \Par \np{\key{{\loc_4}}{\pC}}{ \conf{\inact}{C_1\subst{\epC}{w}}} \Par 
 \hmoni{\ep{s}{\pC}}{\past \tproj{G}{\pC}}{w}{\upd{w}{d}}  
-\\
-& \Par \codah{s}{\emp}{\emp}{}~\big)  = M_1
+  \Par \codah{s}{\emp}{\emp}{}~\big)  = M_1
 %\end{array}
 \end{align*}
 %$$
 where 
 $V_1$, $A_1$, $B_1$, and $C_1$ 
 stand for the continuation of processes $\text{Vendor}$, $\text{Alice}$, $\text{Bob}$, and $\text{Carol}$ after the service 
-request/declaration. So, e.g., 
+request/accept. So we have, for instance, 
 $
 A_1 = \bout{y}{\exBook}\binp{y}{p}\bout{y}{h}\binp{y}{ok}\inact
 $.
-Notice also how session initialization instantiates variable ${z}$ in the thunk contained in Bob's implementation with endpoint $\epB$.
-We use configuration $M_1$ to illustrate some forward and backward reductions.
+%Notice also how session initialization instantiates variable ${z}$ in the thunk contained in Bob's implementation with endpoint $\epB$.
 
-From $M_1$ we could either undo the reduction (using Rule~\bkcolor{\textsc{(RInit)}})
+From $M_1$ we could either undo the previous reduction (using Rule~\bkcolor{\textsc{(RInit)}})
 or execute the communication from $\text{Alice}$ to $\text{Vendor}$ (using two rules:~\fwcolor{\textsc{(Out)}} and ~\fwcolor{\textsc{(In)}}). This latter option would be as follows:
 \begin{align*}
 M_1 & \fw  \news{s}(\,  \np{\key{{\loc_2}}{\pA}}{ \conf{\inact}{\binp{\epA}{p}\bout{\epA}{h}\binp{\epA}{ok}\inact}} 
@@ -508,8 +495,7 @@ M_1 & \fw  \news{s}(\,  \np{\key{{\loc_2}}{\pA}}{ \conf{\inact}{\binp{\epA}{p}\b
 where $N_2$ stands for the running processes and monitors for Vendor, Bob, and Carol, not involved in the reduction.
 We now have:
 \begin{align*}
-M_2 \fw & \news{s}(\,  \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\bout{\epS}{price(t)} \bout{\epS}{price(t)}\binp{\epS}{ok}\\ 
-& \qquad  \binp{\epS}{a} \bout{\epS}{date}\inact }} 
+M_2 \fw & \news{s}(\,  \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\bout{\epS}{price(t)} \bout{\epS}{price(t)}\binp{\epS}{ok}  \binp{\epS}{a} \bout{\epS}{date}\inact }} 
 \\
 & \Par 
 \hmoni{\ep{s}{\pS}}{\ltinp{A}{\mathsf{title}}{\past \ltout{\{A,B\}}{\mathsf{price}}{T_\pS}}}{x,t}{\store_3}  \Par N_3
@@ -517,21 +503,18 @@ M_2 \fw & \news{s}(\,  \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\bout{\epS}{price
 &  \Par \codah{s}{\valueq{\pA}{\pS}{\exBook}}{\emp}{}~)  = M_3
 \end{align*}
 where 
-$\store_3  = \upd{x}{d},\upd{t}{\exBook}$ is
-the resulting store,
+$\store_3  = \upd{x}{d},\upd{t}{\exBook}$,
 $T_\mathsf{\pS}  = \ltinp{B}{\mathsf{OK}}{\ltinp{B}{\mathsf{address}}{\ltout{B}{\mathsf{date}}{\lend}}}$,
 and $N_3$ stands for the participants not involved in the reduction.
 Observe that the cursors in monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$ have evolved, and that message from $\pA$ to $\pS$ has now been moved to the input queue.
 
-We illustrate  reversibility by showing how to return to $M_1$ starting from $M_3$.
-We need to apply three rules: \bkcolor{\textsc{(RollS)}}, \bkcolor{\textsc{(RIn)}}, and \bkcolor{\textsc{(ROut)}}.
-Reversibility is decoupled in the sense that there is no fixed order in which the latter two rules should be applied; below we give just a possible sequence.
+We illustrate  reversibility by showing how to return to $M_1$ from $M_3$.
+We need  three backward reduction rules: \bkcolor{\textsc{(RollS)}}, \bkcolor{\textsc{(RIn)}}, and \bkcolor{\textsc{(ROut)}}.
 First, Rule~\bkcolor{\textsc{(RollS)}} modifies the tags of monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$,
   leaving the rest unchanged:
 \begin{align*}
 M_3 & \bk  \news{s}(\,  
-\np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\bout{\epS}{price(t)}\bout{\epS}{price(t)}\binp{\epS}{ok} \\ 
-& \quad  \binp{\epS}{a} \bout{\epS}{date}\inact }} 
+\np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\bout{\epS}{price(t)}\bout{\epS}{price(t)}\binp{\epS}{ok}  \binp{\epS}{a} \bout{\epS}{date}\inact }} 
 \\
 & \Par 
  \monir{\ep{s}{\pS}}{\ltinp{A}{\mathsf{title}}{\past \ltout{\{A,B\}}{\mathsf{price}}{T_\mathsf{B}}}}{x,t}{\store_3} 
@@ -551,8 +534,7 @@ One particular reduction uses Rule~\bkcolor{\textsc{(RIn)}}
 to undo the input at \pS:
 \begin{align*}
 M_4 & \bk  \news{s}(\,  
-\np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\binp{\epS}{t}\bout{\epS}{price(t)}\bout{\epS}{price(t)} \\ 
-& \quad  \binp{\epS}{ok}\binp{\epS}{a} \bout{\epS}{date}\inact }} 
+\np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\binp{\epS}{t}\bout{\epS}{price(t)}\bout{\epS}{price(t)}   \binp{\epS}{ok}\binp{\epS}{a} \bout{\epS}{date}\inact }} 
 \\
 & \Par 
  \hmoni{\ep{s}{\pS}}{\past \ltinp{A}{\mathsf{title}}{\ltout{\{A,B\}}{\mathsf{price}}{T_\mathsf{B}}}}{x}{\upd{x}{d}} 
@@ -564,9 +546,7 @@ M_4 & \bk  \news{s}(\,
 \\
 & \Par N_4 \Par \codah{s}{\emp}{\valueq{\pA}{\pS}{\exBook}}{}~)  = M_5
 \end{align*}
-Just as an application of Rule~\bkcolor{\textsc{(RollS)}} need not be immediately followed by 
-an application of Rule~\bkcolor{\textsc{(RIn)}}, an application of Rule~\bkcolor{\textsc{(RIn)}} need not be immediately followed
-by an application of Rule~\bkcolor{\textsc{(ROut)}}. A particular reduction from $M_5$ undoes the output at \pA:
+The following (backward) reduction from $M_5$ undoes the output at \pA:
 \begin{align*}
 M_5 & \bk  \news{s}(\,  
 \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\binp{\epS}{t}\bout{\epS}{price(t)}\bout{\epS}{price(t)} \\ 
@@ -633,15 +613,14 @@ h_7 & =
 %Also, $120 - price(\exBook)$ is the amount \pB may contribute.
 
 If $M_7 \fw \fw M_8$ by using Rules~\fwcolor{\textsc{(Out)}} and ~\fwcolor{\textsc{(In)}}
-we would have a higher-order communication:
+we would have:
 \begin{align*}
 M_8 & = ~   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\inact}} 
 \\
 & \Par \hmoni{\ep{s}{\pB}}{\myctxr{\ctx{T}_7}{\ltout{C}{\thunkt}{\past\ltout{\pS}{\mathsf{address}}{\ltinp{\pS}{\mathsf{date}}{\lend}}}}}{z,p,h}{\store_7} 
 \\
 & \Par \np{\key{{\loc_4}}{\pC}}{ \conf{\inact}{(\appl{code}{\dummyn}) }} 
-\\
-& \Par 
+ \Par 
 \hmoni{\ep{s}{\pC}}{\myctxr{\ctx{T}_8}{ \ltinp{B}{\thunkt}{\past\lend}}}{w,h,code}{\store_9} 
 \\
 & 
@@ -671,17 +650,17 @@ M_8 & \fw ~   \news{s}\news{k}(\,
 \!\!\Par \codah{s}{h_7 \cons \valueq{\pB}{\pC}{\thunkp{\bout{\epB}{\text{`Lucca, 55100'}}\binp{\epB}{d}\inact}}}{\emp}{}~) 
 = M_9
 \end{align*}
-where $N_6$ is for the rest of the system. 
+where $N_6$ is the rest of the system. 
 Notice that this reduction has added a running function on a fresh 
 $k$, which is also used within the type stored in the monitor $\ep{s}{\pC}$.
 
 The reduction $M_8 \fw M_9$ completes the code mobility from $\pB$ to $\pC$: the now active thunk
 will execute $\pB$'s implementation from $\pC$'s location. Observe that Bob's identity \pB is ``hardwired'' in the sent thunk; 
 there is no way for \pC to execute the code by referring to a participant different  from \pB.
-This justifies the premise 
-$\p = \er \,\vee\, \p \in \names{\er, h_i}$ present in Rules~\fwcolor{\textsc{(Out)}} and \fwcolor{\textsc{(In)}} 
-\erase{\fwcolor{\textsc{(Sel)}} and ~\fwcolor{\textsc{(Bra)}}}(and in their backward counterparts):
-when executing previously received mobile code, the participant mentioned in the location (i.e., $\pC$)
+%This justifies the premise 
+%$\p = \er \,\vee\, \p \in \names{\er, h_i}$ present in Rules~\fwcolor{\textsc{(Out)}} and \fwcolor{\textsc{(In)}} 
+%\erase{\fwcolor{\textsc{(Sel)}} and ~\fwcolor{\textsc{(Bra)}}} (and in their backward counterparts):
+When executing previously received mobile code, the participant mentioned in the location (i.e., $\pC$)
 and that mentioned in the located process (i.e., $\pB$) may differ.
 Further forward reductions from $M_9$ will  modify the cursor in the type stored in monitor $\ep{s}{\pB}$
 based on the process located at $\key{{\loc_4}}{\pC}$.
