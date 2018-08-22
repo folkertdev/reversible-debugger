@@ -673,7 +673,7 @@ based on the process located at $\key{{\loc_4}}{\pC}$.
 Haskell}\label{implementing-the-ppdp17-calculus-in-haskell}
 
 The implementation uses an algebraic data type (also known as union type or sum type) to
-encode all the constructors of the grammar. We use the \texttt{Fix} type
+encode all the constructors of the process grammar. We use the \texttt{Fix} type
 (Appendix \ref{fix}) to factor out recursion from the grammar.
 \texttt{Fix} is the fixed point type:
 
@@ -785,7 +785,7 @@ integer and comparison operators.
 \end{Highlighting}
 \end{Shaded}
 
-We can now write the send/receive example from the Introduction as:
+We can now write processes like the one below. It first sends the value $42$ and then expects to receive a value that it will bind to identifier $y$.
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -836,7 +836,7 @@ given by
 
 We can now see why choice is useful: it allows us to branch on the
 session type level. For instance, one branch can terminate the protocol,
-and the other can start from the beginning.
+and the other can loop back to start the protocol again from the beginning.
 
 The final three constructors are required for supporting nested
 recursion and taken from \cite{van2017session}. A
