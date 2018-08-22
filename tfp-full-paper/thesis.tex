@@ -492,7 +492,7 @@ M_1 & \fw  \news{s}(\,  \np{\key{{\loc_2}}{\pA}}{ \conf{\inact}{\binp{\epA}{p}\b
 \\
 & \!\!\!\!\Par N_2 \Par \codah{s}{\emp}{\valueq{\pA}{\pS}{\exBook}}{}~)  = M_2
 \end{align*}
-where $N_2$ stands for the running processes and monitors for Vendor, Bob, and Carol, not involved in the reduction.
+where $N_2$ stands for the running processes and monitors for Vendor, Bob, and Carol, who not involved in the reduction.
 We now have:
 \begin{align*}
 M_2 \fw & \news{s}(\,  \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\bout{\epS}{price(t)} \bout{\epS}{price(t)}\binp{\epS}{ok}  \binp{\epS}{a} \bout{\epS}{date}\inact }} 
@@ -506,7 +506,7 @@ where
 $\store_3  = \upd{x}{d},\upd{t}{\exBook}$,
 $T_\mathsf{\pS}  = \ltinp{B}{\mathsf{OK}}{\ltinp{B}{\mathsf{address}}{\ltout{B}{\mathsf{date}}{\lend}}}$,
 and $N_3$ stands for the participants not involved in the reduction.
-Observe that the cursors in monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$ have evolved, and that message from $\pA$ to $\pS$ has now been moved to the input queue.
+Observe that the cursors in monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$ have evolved, and that the message from $\pA$ to $\pS$ has now been moved to the input queue.
 
 We illustrate  reversibility by showing how to return to $M_1$ from $M_3$.
 We need  three backward reduction rules: \bkcolor{\textsc{(RollS)}}, \bkcolor{\textsc{(RIn)}}, and \bkcolor{\textsc{(ROut)}}.
@@ -527,8 +527,7 @@ M_3 & \bk  \news{s}(\,
 & \Par N_4 \Par \codah{s}{\valueq{\pA}{\pS}{\exBook}}{\emp}{}~)  = M_4
 \end{align*}
 where
-$\myctxr{\ctx{T}_4}{\bullet}  =\ltout{\pS}{\mathsf{title}}{\bullet}$ and
-, as before, $N_4$ represents participants not involved in the reduction.
+$\myctxr{\ctx{T}_4}{\bullet}  =\ltout{\pS}{\mathsf{title}}{\bullet}$ and, as before, $N_4$ represents participants not involved in the reduction.
 $M_4$ has several possible forward and backward reductions. 
 One particular reduction uses Rule~\bkcolor{\textsc{(RIn)}}
 to undo the input at \pS:
