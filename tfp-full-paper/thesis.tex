@@ -157,21 +157,20 @@ This paper describes a Haskell implementation of
 a \emph{reversible semantics} for message-passing concurrent programs. 
 Our work is framed within a prolific line of research, 
 in the intersection of programming languages and concurrency theory,
-which aims at  
-establishing  semantic foundations for reversible computing in a 
+aimed at establishing  semantic foundations for reversible computing in a 
 concurrent setting (see, e.g., the survey~\cite{DBLP:journals/eatcs/Lanese14}).
 When considering the interplay of reversibility and message-passing concurrency, 
 a key observation  is that
  communication is governed by
-\emph{protocols} among possibly distributed partners, and that 
- those protocols may inform the implementation of a reversible semantics.
+\emph{protocols} among  (distributed) partners, and that 
+ those protocols may fruitfully inform the implementation of a reversible semantics.
 
 In a language with a reversible semantics, computation steps can be undone.
 Thus, a program can perform standard \emph{forward} steps, but also \emph{backward} steps.
 Reversing a sequential program is not hard: it suffices to have a \emph{memory} that records information about forward steps in case we wish to return to a prior state using a backward step. Reversing a concurrent program is much more difficult: since control may simultaneously reside in more than one point, memories should be carefully design so as to record information about the steps performed in each thread, but also about the \emph{causal dependencies} between steps from different threads.
 This motivates the definition of reversible semantics which are \emph{causally consistent}, i.e., that ensure that backward steps lead to states that could been have reached by performing forward steps only~\cite{DBLP:journals/eatcs/Lanese14}. Hence, a causally consistent  semantics never leads to states that are not reachable through forward steps. 
 
-Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (such as the $\pi$-calculus~\cite{}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{HYC08} that specify intended protocol executions. While the reversible semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
+Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (most notably, the $\pi$-calculus~\cite{MilnerR:calmp1}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{HYC08} that specify intended protocol executions. While the reversible semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
 
 In this paper, we describe a Haskell implementation of the reversible semantics proposed in~\cite{DBLP:conf/ppdp/MezzinaP17}. More precisely, we present a Haskell interpreter of message-passing programs written in the reversible process framework in~\cite{DBLP:conf/ppdp/MezzinaP17}. This allows us to assess in practice the benefits and features of the memories and mechanisms deployed in~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In this process, we have found the use of a functional programming language---and in particular, of Haskell---a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully implement the formal semantics and trust that our implementation is correct. In particular, algebraic data types (sums and products) are invaluable in expressing grammars and recursive data structures. 
 
@@ -196,21 +195,21 @@ Here we shall  informally describe the key elements of the model, guided by a ru
 Fig.~\ref{f:model} depicts two of the three salient ingredients of the model:
 \emph{configurations/processes} and the
 \emph{choreography}, which represent the communicating partners and their intended governing protocol, respectively. 
-There is a {configuration} for each protocol participant: it includes a \emph{located process} that specifies asynchronous communication behavior and is subject to a \emph{monitor} that enables forward/backward steps at run-time. This monitor is obtained via the choreography, which  declaratively describes a protocol among two or more participants. 
+There is a {configuration} for each protocol participant: it includes a \emph{located process} that specifies asynchronous communication behavior and is subject to a \emph{monitor} that enables forward/backward steps at run-time. This monitor is obtained via the choreography, which describes a protocol among two or more \emph{participants}. 
 Formally, the model considers choreographies defined in terms of \emph{global types} in the sense of multiparty session types~\cite{DBLP:conf/popl/HondaYC08}. 
-For this reason, we often use `choreographies' and `global types' as synonyms.
-A global type can be \emph{projected} onto each participant so as to obtain 
-its corresponding  \emph{local type}, i.e., a session type that abstracts a participant's contribution to the global protocol. These local types may then be used as the monitors of the located processes. 
+(We often use `choreographies' and `global types' as synonyms.)
+A global type can be \emph{projected} onto each participant to obtain 
+its corresponding  \emph{local type}: a type that abstracts a participant's contribution to the choreography. Since these local types specify the intended sequences of communication actions, they may be used as the monitors of the located processes. 
 
 The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the operational semantics for configurations. This semantics is defined in terms of two reduction relations, forward and backward, denoted $\fw$  and $\bk$, respectively. We shall not recall these relations here; rather, we will introduce their key underlying intuitions by means of an example.
 
 \paragraph{Syntax of Configurations and Processes.}
 The language of processes $P, Q, \ldots$ is a $\pi$-calculus with constructs for labeled (deterministic) choice, communication of abstractions, and function application.
-While labeled choice is typical of session $\pi$-calculi (cf.~\cite{DBLP:conf/esop/HondaVK98}), the latter constructs are typical of \emph{higher-order} process calculi, which blend together functional and concurrent programming~\cite{DBLP:journals/tcs/Sangiorgi01}. The complete process syntax, with their intuitive semantics, is given as follows:
+While labeled choice is typical of session $\pi$-calculi (cf.~\cite{DBLP:conf/esop/HondaVK98}), the latter constructs are typical of \emph{higher-order} process calculi, which combine features from functional and concurrent  languages~\cite{DBLP:journals/tcs/Sangiorgi01}. The complete process syntax, with their intuitive semantics, is  as follows:
 \begin{align*}
 P, Q ::= \, 
-        & \bout{u}{V}{P} \,\,\, \, \, &\text{send value $V$, then run $P$} \\
-\sbnfbar & \binp{u}{x}{P} \,\,\, \, \, & \text{receive a value and bind it to $x$, then run $P$} \\
+        & \bout{u}{V}{P} \,\,\, \, \, &\text{send value $V$ on name $u$, then run $P$} \\
+\sbnfbar & \binp{u}{x}{P} \,\,\, \, \, & \text{receive a value on name $u$, bind it to $x$, then run $P$} \\
 \sbnfbar &  \bsel{u}{\lbl_i. P_i}_{i\in I}\,\,\, \, \, & \text{select an $l_j$, broadcast this choice, then run $P_j$} \\
 \sbnfbar & \bbra{u}{\lbl_i:P_i}_{i \in I} \,\,\, \, \, & \text{receive an   $l_j$, then run  $P_j$} \\
 \sbnfbar   & P \Par Q  &\text{parallel composition of $P$ and $Q$} \\
@@ -219,7 +218,7 @@ P, Q ::= \,
 \sbnfbar  & \news{n}P \,\,\, &\text{name restriction: make $n$ local (or private) to $P$} \\
 \sbnfbar  & \inact \,\,\, &\text{terminated process}
 \end{align*}
-The higher-order character of our process language may be better understood by spelling out the syntax of values:
+The higher-order character of our process language may be better understood by spelling out the syntax of values $V, W, \ldots$:
 \begin{align*}
 u,w  \bnfis& n \sbnfbar x,y,z
 \qquad \quad
@@ -231,17 +230,16 @@ V,W \bnfis & {a,b} \sbnfbar  x,y,z \sbnfbar  v, v' \sbnfbar {\abs{x}{P}}
 \end{align*}
 \noindent 
 where  $a,b,c,\ldots$ and $s,s',\ldots$ range over shared and session names, respectively.
-Shared names are public names used to establish a session protocol; once established, the protocol runs along a session name, which is private to session participants.
-We shall use $\p, \q, \ldots$ to denote protocol participants, and 
-use session names indexed by participants (e.g., $s_{[\p]}$).
-First-order values $v,v',\ldots$ 
-include base values and constants. Variables are denoted  $x,y, \ldots$. 
-The syntax of values $V$ includes shared names, 
+Shared names are public names used to establish a protocol (see below); once established, the protocol runs along a session name, which is private to participants.
+We   use $\p, \q, \ldots$ to denote  participants, and 
+use session names indexed by participants;  we write, e.g., $s_{[\p]}$.
+We also use $v,v',\ldots$ to denote
+include  (first-order) base values and constants. Variables are denoted  $x,y, \ldots$. 
+Values $V$ include shared names, 
 first-order values, but also \emph{name abstractions} $\lambda x. P$, where $P$ is a process.
-Notice that values do not include (indexed) session names, for session communication (\emph{delegation}) is  representable using abstraction passing~\cite{KPY2016}.
+Notice that values need not include (indexed) session names, for session name communication (\emph{delegation}) is  representable using abstraction passing~\cite{KPY2016}.
 
-The syntax of \emph{configurations} builds upon that of processes; indeed, we may consider configurations as compositions of located processes:
-
+The syntax of \emph{configurations} $M, N, \ldots$ builds upon that of processes; indeed, we may consider configurations as compositions of located processes:
 \begin{align*}
 M,N		 \bnfis &
 \myloc{\loc}{\bout{a}{x}{P}}
@@ -254,13 +252,26 @@ M \Par N
 \sbnfbar 
 \inact 
 \\
-& \sbnfbar 
-\rtsyn{\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}} %% running process
+ \sbnfbar &
+{\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}} %% running process
 \sbnfbar 
-\rtsyn{\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}}  %% monitor
+{\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}}  %% monitor
 \end{align*}
+Above,  identifiers $\loc, \loc', \ldots$ denote a  \emph{location} or  \emph{site}. 
+The first two constructs enable protocol establishment:
+$\myloc{\loc}{\bout{a}{x}{P}}$ is the \emph{request} of a service identified with shared name $a$ implemented by
+$P$, whereas $\myloc{\loc}{\binp{a}{x}{P}}$ denotes service \emph{acceptance}. 
+Establishing an $n$-party protocol on service $a$ then requires the synchronization of one configuration requesting $a$, and $n-1$ configurations accepting $a$.
+Constructs for specifying the composition of configurations, name restriction, and the inactive configuration have expected readings.
 
-TBC
+The constructs in the second row appear only at run-time (i.e., they do not appear in ``source'' programs) and are key to enable the reversible semantics. We call $\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}$ a \emph{running process}:  $\loc$ hosts a process $P$ that implements participant $\p$, with $\stack C$ being a memory of  labeled choices enforced so far. Configuration $\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}$ is a \emph{monitor}
+where: 
+$s_{[\p]}$ is the indexed session being monitored;
+$H$ is a local type with ``history'', i.e., a type which records already performed actions; 
+$\mytilde{x}$ is a set of free variables;
+and  $\store$ is a store that records the value of such variables.
+Moreover, the \emph{tag} $\mytagg$ serves to determine whether 
+the running process associated to the monitor is currently involved in a backward step.
 
 \paragraph{Global and Local Types.}
 TBD
