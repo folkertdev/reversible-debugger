@@ -1198,7 +1198,131 @@ The message queue is global and thus also lives in the
 see whether they are functions and if so, to extract their bodies for
 application.
 
-\subsection{Running and Debugging Programs}\label{running-debugging}
+\subsection{Properties of Reversibility}\label{properties-of-reversibility}
+
+The Introduction mentions causal consistency as a key correctness criterion. 
+Causal consistency is proven for the formal semantics laid out in Section \ref{the-process-model}, 
+but does the translation into Haskell preserve this property? 
+
+In basic terms, causal consistency is the property that backward steps always lead to states that 
+could have been reached by moving forward only.
+
+The global type defines a partial order on all the communication steps.
+The relation of this partial order is causal dependency. Stepping
+backward is only allowed when all its causally dependent actions are
+undone. 
+
+In the semantics and the implementation, this causal dependency becomes a data dependency. 
+For instance, a send can only be undone when the queue is in a state that can only be reached by first undoing the corresponding receive.
+Being able to undo a send means that the corresponding receive has already been rolled back, so it is impossible to introduce causal inconsistencies. 
+
+Because of the encoding of causal dependencies as data dependencies, and the fact that these data dependencies are preserved in the implementation,  
+we claim that the Haskell implementation is faithfull enough that causal consistency is preserved.
+
+
+\section{Convenient Syntax with the Free Monad}\label{free-monad-dsl}
+
+The types we have defined for \texttt{Program}, \texttt{GlobalType} and
+\texttt{LocalType} form recursive tree structures. Because they are all
+new types, there is no easy way to traverse them. A common idiom is to
+factor out recursion using \texttt{Data.Fix} (see Appendix
+\ref{factoring-recursion}).
+
+While a \texttt{Fix}ed data type is easy to manipulate and traverse, it
+can be messy to write. The program below implements ``receive and bind
+the value to \texttt{result}, then send 42'':
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{program }\FunctionTok{=}  
+    \DataTypeTok{Fix} 
+\NormalTok{        ( }\DataTypeTok{Receive} 
+\NormalTok{            \{ owner }\FunctionTok{=} \StringTok{"Alice"}
+\NormalTok{            , variableName }\FunctionTok{=} \StringTok{"result"}
+\NormalTok{            , continuation }\FunctionTok{=} 
+                  \DataTypeTok{Fix} 
+\NormalTok{                    ( }\DataTypeTok{Send} 
+\NormalTok{                        \{ owner }\FunctionTok{=} \StringTok{"Alice"}
+\NormalTok{                        , value }\FunctionTok{=} \DataTypeTok{VInt} \DecValTok{42}
+\NormalTok{                        , continuation }\FunctionTok{=} \DataTypeTok{Fix} \DataTypeTok{NoOp} 
+\NormalTok{                        \}}
+\NormalTok{                    )}
+\NormalTok{              \}}
+\NormalTok{        )}
+\end{Highlighting}
+\end{Shaded}
+
+The syntax distracts from the goal of the program. \texttt{Program} and
+\texttt{GlobalType} are types that we will write a lot manually, so
+fixing this issue is important.
+
+Conveniently, Haskell has a long tradition of embedded domain-specific
+languages. In particular we can use a cousin of \texttt{Fix}, the
+\texttt{Free} monad (Appendix \ref{free-monad}) to get access to
+do-notation (Appendix \ref{do-notation}). Concretely, the do-notation
+makes it possible instead of the above write:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{program }\FunctionTok{=}\NormalTok{ compile }\StringTok{"Alice"} \FunctionTok{$} \KeywordTok{do}
+\NormalTok{    result }\OtherTok{<-}\NormalTok{ receive}
+\NormalTok{    send (}\DataTypeTok{VInt} \DecValTok{42}\NormalTok{)}
+\NormalTok{    terminate}
+\end{Highlighting}
+\end{Shaded}
+
+Behind the scenes, the do-notation produces a value of type
+\texttt{HighLevelProgram\ a} using some helpers like \texttt{send} and
+\texttt{terminate}.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{newtype} \DataTypeTok{HighLevelProgram}\NormalTok{ a }\FunctionTok{=} \DataTypeTok{HighLevelProgram} 
+\NormalTok{    (}\DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{) (}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{)) a)}
+    \KeywordTok{deriving} 
+\NormalTok{        ( }\DataTypeTok{Functor}\NormalTok{, }\DataTypeTok{Applicative}\NormalTok{, }\DataTypeTok{Monad}
+\NormalTok{        , }\DataTypeTok{MonadState}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{)}
+\NormalTok{        , }\DataTypeTok{MonadFree}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{)}
+\NormalTok{        )}
+
+\OtherTok{send ::} \DataTypeTok{Value} \OtherTok{->} \DataTypeTok{HighLevelProgram}\NormalTok{ ()}
+\NormalTok{send value }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    (participant, _) }\OtherTok{<-}\NormalTok{ State.get}
+\NormalTok{    liftF (}\DataTypeTok{Send}\NormalTok{ participant value ())  }
+
+\OtherTok{terminate ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
+\NormalTok{terminate }\FunctionTok{=}\NormalTok{ liftF }\DataTypeTok{NoOp}
+
+\CommentTok{-- similar for receive, select, etc.}
+\end{Highlighting}
+\end{Shaded}
+
+The above snippet introduces some new Haskell concepts that require some
+background. Pure languages can simulate mutable state using a type
+called \texttt{State} (Appendix \ref{state}). \texttt{State} is an
+instance of monad (Appendix \ref{monads}) which makes it easy to chain
+stateful computations. In this case our piece of state is a pair
+\texttt{(Participant,\ Int)}: the participant is the owner of the block,
+and the \texttt{Int} is a counter used to generate unique variable
+names. To combine \texttt{State} with \texttt{Free} (and to combine two
+monads in general) we need the \texttt{StateT} monad transformer
+(Appendix \ref{state}).
+
+In the \texttt{send} helper we use the unit type \texttt{()} as a
+placeholder or hole. A continuation will need to fill the hole
+eventually but it is not available yet. When a \texttt{HighLevelProgram}
+is converted into a \texttt{Program}, we want to be sure there are no
+remaining holes. In this particular case that means all branches must
+end in \texttt{terminate}. We use the fact that
+\texttt{terminate\ ::\ HighLevelProgram\ a} contains a free type
+variable \texttt{a} which can unify with \texttt{Void}, the type with no
+values. Thus \texttt{Free\ f\ Void} can contain no \texttt{Pure} because
+the \texttt{Pure} constructor needs a value of type \texttt{Void}, which
+don't exist. For more information see Appendix
+\ref{well-formedness-free}.
+
+
+\section{Running and Debugging Programs}\label{running-debugging}
 
 Finally, we want to be able to run our programs. The implementation
 offers mechanisms to step through a program interactively, and run it to
@@ -1345,127 +1469,6 @@ send a \texttt{Share} before \texttt{V} does. \texttt{B} expects the
 share from \texttt{V} first, but the share from \texttt{A} is the first
 in the queue. Therefore, no progress can be made.
 
-\subsection{Properties of Reversibility}\label{properties-of-reversibility}
-
-The Introduction mentions causal consistency as a key correctness criterion. 
-Causal consistency is proven for the formal semantics laid out in Section \ref{the-process-model}, 
-but does the translation into Haskell preserve this property? 
-
-In basic terms, causal consistency is the property that backward steps always lead to states that 
-could have been reached by moving forward only.
-
-The global type defines a partial order on all the communication steps.
-The relation of this partial order is causal dependency. Stepping
-backward is only allowed when all its causally dependent actions are
-undone. 
-
-In the semantics and the implementation, this causal dependency becomes a data dependency. 
-For instance, a send can only be undone when the queue is in a state that can only be reached by first undoing the corresponding receive.
-Being able to undo a send means that the corresponding receive has already been rolled back, so it is impossible to introduce causal inconsistencies. 
-
-Because of the encoding of causal dependencies as data dependencies, and the fact that these data dependencies are preserved in the implementation,  
-we claim that the Haskell implementation is faithfull enough that causal consistency is preserved.
-
-\section{Convenient Syntax with the Free Monad}\label{free-monad-dsl}
-
-The types we have defined for \texttt{Program}, \texttt{GlobalType} and
-\texttt{LocalType} form recursive tree structures. Because they are all
-new types, there is no easy way to traverse them. A common idiom is to
-factor out recursion using \texttt{Data.Fix} (see Appendix
-\ref{factoring-recursion}).
-
-While a \texttt{Fix}ed data type is easy to manipulate and traverse, it
-can be messy to write. The program below implements ``receive and bind
-the value to \texttt{result}, then send 42'':
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{program }\FunctionTok{=}  
-    \DataTypeTok{Fix} 
-\NormalTok{        ( }\DataTypeTok{Receive} 
-\NormalTok{            \{ owner }\FunctionTok{=} \StringTok{"Alice"}
-\NormalTok{            , variableName }\FunctionTok{=} \StringTok{"result"}
-\NormalTok{            , continuation }\FunctionTok{=} 
-                  \DataTypeTok{Fix} 
-\NormalTok{                    ( }\DataTypeTok{Send} 
-\NormalTok{                        \{ owner }\FunctionTok{=} \StringTok{"Alice"}
-\NormalTok{                        , value }\FunctionTok{=} \DataTypeTok{VInt} \DecValTok{42}
-\NormalTok{                        , continuation }\FunctionTok{=} \DataTypeTok{Fix} \DataTypeTok{NoOp} 
-\NormalTok{                        \}}
-\NormalTok{                    )}
-\NormalTok{              \}}
-\NormalTok{        )}
-\end{Highlighting}
-\end{Shaded}
-
-The syntax distracts from the goal of the program. \texttt{Program} and
-\texttt{GlobalType} are types that we will write a lot manually, so
-fixing this issue is important.
-
-Conveniently, Haskell has a long tradition of embedded domain-specific
-languages. In particular we can use a cousin of \texttt{Fix}, the
-\texttt{Free} monad (Appendix \ref{free-monad}) to get access to
-do-notation (Appendix \ref{do-notation}). Concretely, the do-notation
-makes it possible instead of the above write:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{program }\FunctionTok{=}\NormalTok{ compile }\StringTok{"Alice"} \FunctionTok{$} \KeywordTok{do}
-\NormalTok{    result }\OtherTok{<-}\NormalTok{ receive}
-\NormalTok{    send (}\DataTypeTok{VInt} \DecValTok{42}\NormalTok{)}
-\NormalTok{    terminate}
-\end{Highlighting}
-\end{Shaded}
-
-Behind the scenes, the do-notation produces a value of type
-\texttt{HighLevelProgram\ a} using some helpers like \texttt{send} and
-\texttt{terminate}.
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\KeywordTok{newtype} \DataTypeTok{HighLevelProgram}\NormalTok{ a }\FunctionTok{=} \DataTypeTok{HighLevelProgram} 
-\NormalTok{    (}\DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{) (}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{)) a)}
-    \KeywordTok{deriving} 
-\NormalTok{        ( }\DataTypeTok{Functor}\NormalTok{, }\DataTypeTok{Applicative}\NormalTok{, }\DataTypeTok{Monad}
-\NormalTok{        , }\DataTypeTok{MonadState}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{)}
-\NormalTok{        , }\DataTypeTok{MonadFree}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{)}
-\NormalTok{        )}
-
-\OtherTok{send ::} \DataTypeTok{Value} \OtherTok{->} \DataTypeTok{HighLevelProgram}\NormalTok{ ()}
-\NormalTok{send value }\FunctionTok{=} \KeywordTok{do}
-\NormalTok{    (participant, _) }\OtherTok{<-}\NormalTok{ State.get}
-\NormalTok{    liftF (}\DataTypeTok{Send}\NormalTok{ participant value ())  }
-
-\OtherTok{terminate ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
-\NormalTok{terminate }\FunctionTok{=}\NormalTok{ liftF }\DataTypeTok{NoOp}
-
-\CommentTok{-- similar for receive, select, etc.}
-\end{Highlighting}
-\end{Shaded}
-
-The above snippet introduces some new Haskell concepts that require some
-background. Pure languages can simulate mutable state using a type
-called \texttt{State} (Appendix \ref{state}). \texttt{State} is an
-instance of monad (Appendix \ref{monads}) which makes it easy to chain
-stateful computations. In this case our piece of state is a pair
-\texttt{(Participant,\ Int)}: the participant is the owner of the block,
-and the \texttt{Int} is a counter used to generate unique variable
-names. To combine \texttt{State} with \texttt{Free} (and to combine two
-monads in general) we need the \texttt{StateT} monad transformer
-(Appendix \ref{state}).
-
-In the \texttt{send} helper we use the unit type \texttt{()} as a
-placeholder or hole. A continuation will need to fill the hole
-eventually but it is not available yet. When a \texttt{HighLevelProgram}
-is converted into a \texttt{Program}, we want to be sure there are no
-remaining holes. In this particular case that means all branches must
-end in \texttt{terminate}. We use the fact that
-\texttt{terminate\ ::\ HighLevelProgram\ a} contains a free type
-variable \texttt{a} which can unify with \texttt{Void}, the type with no
-values. Thus \texttt{Free\ f\ Void} can contain no \texttt{Pure} because
-the \texttt{Pure} constructor needs a value of type \texttt{Void}, which
-don't exist. For more information see Appendix
-\ref{well-formedness-free}.
 
 \section{Discussion}\label{discussion}
 
