@@ -1329,9 +1329,9 @@ offers mechanisms to step through a program interactively, and run it to
 completion.
 
 We can step through the program interactively in the Haskell REPL
-environment (Appendix \ref{installing-and-running}). Assuming the
-\texttt{ThreeBuyer} example is loaded, we can print the initial state of
-our program:
+environment (Appendix \ref{installing-and-running}). 
+When the \texttt{ThreeBuyer} example is loaded, the program is in a state corresponding to $M_1$ from Section \ref{the-process-model}.
+We can print the initial state of our program:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -1365,7 +1365,7 @@ first initialize the program state:
 \end{Shaded}
 
 Then we can use \texttt{stepForward} and \texttt{stepBackward} to
-evaluate the program:
+evaluate the program: we advance Alice at $l_1$ to reach state $M_2$ and then the vendor at $l_4$ to reach state $M_3$
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -1377,7 +1377,7 @@ evaluate the program:
 \end{Shaded}
 
 When the user tries an invalid step, an error is displayed. for instance
-after \(l_1\) and \(l_2\) have been moved forward once like in the
+after \(l_1\) and \(l_4\) have been moved forward once like in the
 snippet above, \(l_1\) cannot move forward (it needs to receive but
 there is nothing in the queue) and not backward (\(l_4\), the receiver,
 must undo its action first).
