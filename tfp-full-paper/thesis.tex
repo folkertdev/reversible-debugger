@@ -177,6 +177,7 @@ In this paper, we describe a Haskell implementation of the reversible semantics 
 The rest of the paper is structured as follows...
 
 \section{The Process Model}
+\label{the-process-model}
 \textbf{\emph{Here we introduce the PPDP calculus, multiparty session types, and the operational semantics by example. We also copy-paste the three-buyer example, which we use as running example.}}
 
 \subsection{New Material}
@@ -673,7 +674,7 @@ based on the process located at $\key{{\loc_4}}{\pC}$.
 Haskell}\label{implementing-the-ppdp17-calculus-in-haskell}
 
 The implementation uses an algebraic data type (also known as union type or sum type) to
-encode all the constructors of the process grammar. We use the \texttt{Fix} type
+encode all the constructors of $P$, the process syntax. We use the \texttt{Fix} type
 (Appendix \ref{fix}) to factor out recursion from the grammar.
 \texttt{Fix} is the fixed point type:
 
@@ -731,7 +732,7 @@ better way of writing \texttt{Fix}ed values in Section
 \ref{free-monad-dsl}.
 
 The full definition of \texttt{Program} is given below. As mentioned we
-omit the process-level recursion.
+omit the process-level recursion, but otherwise it is a direct translation of the formal syntax given in Section \ref{the-process-model}.
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -806,8 +807,9 @@ to designing a better syntax for defining programs in Section
 \ref{free-monad-dsl}.
 
 \subsection{Global Types}
-The full definition of global types in the Haskell implementation is
-given by
+
+Much like the process syntax, the Haskell implementation of global types closely mimics the formal definition.
+Its implementation is given by: 
 
 \begin{Shaded}
 \begin{Highlighting}[]
