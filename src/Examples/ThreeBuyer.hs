@@ -101,7 +101,7 @@ carol = do
 
 vendor :: H.HighLevelProgram a
 vendor = do 
-    let price title = VInt 42
+    let price _ = VInt 42
         date = VString "2018-03-14"
 
     t <- H.receive 

@@ -670,7 +670,7 @@ based on the process located at $\key{{\loc_4}}{\pC}$.
 \section{IMPLEMENTATION}
 \textbf{\emph{In this section we show how we implement the processes, types, and semantics in the PPDP paper}}
 
-\subsection{Implementing the PPDP'17 calculus in
+\subsection{Implementing the process calculus in
 Haskell}\label{implementing-the-ppdp17-calculus-in-haskell}
 
 The implementation uses an algebraic data type (also known as union type or sum type) to
@@ -917,73 +917,99 @@ is that we can move back to previous program states, reversing forward
 steps.
 
 To be able to move backward, we need to store some information when we move forward.
-The PPDP'17 paper tells us that, broadly, we need to track information about two things: the type and the
-process.
+As described in~\cite{DBLP:conf/ppdp/MezzinaP17}, we need to track information about two things: the type and the process.
 
 For the type we define a new data type called \texttt{TypeContext}. It
 contains the actions that have been performed and for some of them it
 stores a bit of extra information like the \texttt{owner}.
 
-On the process level there are four things that we need to track:
+On the process level, there are four things that we need to track:
 
 \begin{enumerate}
 \def\labelenumi{\arabic{enumi}.}
 \item
-  Used variable names in receives
+  Used variable names in receives \\
+  
+  Recall the process of the vendor in the ThreeBuyer example:
+  \begin{align*}
+  \text{Vendor} & =  \bout{d}{x:\tproj{G}{\pS}}\binp{x}{t}\bout{x}{price(t)}\bout{x}{price(t)} \binp{x}{ok}\binp{x}{a} \bout{x}{date}\inact
+  \end{align*}
 
-  The rest of the program depends on the name that is assigned to a
-  received value, like \texttt{decision} in the example below.\\
-  When reverting, we need to reinstate the name that the rest of the
-  program expects.
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{decision }\OtherTok{<-}\NormalTok{ H.receive    }
-\NormalTok{H.send decision          }
-\end{Highlighting}
-\end{Shaded}
-
-  When we advance the snippet above, \texttt{decision} is internally
-  renamed to \texttt{var1} and this binding is added to the store.
+  Using the syntax introduced in Section \ref{free-monad-dsl} the vendor
+  process can be implemented as:
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\NormalTok{H.send var1        }
+\OtherTok{vendor ::} \DataTypeTok{H.HighLevelProgram}\NormalTok{ a}
+\NormalTok{vendor }\FunctionTok{=} \KeywordTok{do} 
+\NormalTok{    t }\OtherTok{<-}\NormalTok{ H.receive }
+\NormalTok{    H.send (price t) }
+\NormalTok{    H.send (price t) }
+    \FunctionTok{...}
 \end{Highlighting}
 \end{Shaded}
 
-  Now we want to move back. We can't simply create a new name: if we
-  then move forward again, \texttt{var1} will not be defined.
+  The rest of the program depends on the assigned name. So for instance
+  when we evaluate the \texttt{t\ \textless{}-\ H.receive} line
+  (moving to state \(M_3\)), and then revert it, we must
+  reconstruct a receive that assigns to \texttt{t}, because the
+  following lines depend on the name \texttt{t}. \\
 
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{var2 }\OtherTok{<-}\NormalTok{ H.receive       }
-\NormalTok{H.send var1             }
-\end{Highlighting}
-\end{Shaded}
+\item Function calls and their arguments \\
+    
+  Consider the transition from state \(M_7\) to \(M_8\)from Section \ref{the-process-model}. Once the thunk
+  is evaluated, producing state \(M_8\), we lose all evidence that the
+  code that the evaluation produced was the result of a function
+  application. \\
 
-  Instead, the receive needs to store the name of the value its result
-  is bound to, in this case \texttt{var1}:
+  Without knowledge of the function application, reversing \(M_8\) will
+  not result in \(M_7\), so we need to keep track of function
+  applications. The function and its argument are stored in a map
+  indexed by a unique identifier \(k\). This identifier \(k\) is also
+  stored in the local type with history to later associate the type with
+  a specific function and argument. \\
 
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{var1 }\OtherTok{<-}\NormalTok{ H.receive}
-\NormalTok{H.send var1}
-\end{Highlighting}
-\end{Shaded}
-
-  But we also store the original name (given by the programmer) and
-  actually restore that. The original name can helpful in debugging
-  programs, to know what value is actually used:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{decision }\OtherTok{<-}\NormalTok{ H.receive}
-\NormalTok{H.send decision}
-\end{Highlighting}
-\end{Shaded}
+  One might think that a stack would be a simpler solution, but a stack
+  can give invalid behavior. Say that a participant is running in two
+  locations, and the last-performed action at both locations is a
+  function application. Now we want to undo both applications, but the
+  order in which to undo them is undefined: we need both orders to work.
+  Only using a stack could mix up the applications. When the application
+  keeps track of exactly which function and argument it used the end
+  result is always the same. \\
 \item
-  Unused branches
+  Messages on the channel  \\
+  
+  We consider again the implementation of the first 3 steps of the protocol:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{alice ::} \DataTypeTok{H.HighLevelProgram}\NormalTok{ a}
+\NormalTok{alice }\FunctionTok{=} \KeywordTok{do} 
+\NormalTok{    H.send (}\DataTypeTok{VString} \StringTok{"Logicomix"}\NormalTok{ )}
+    \FunctionTok{...}
+
+\OtherTok{vendor ::} \DataTypeTok{H.HighLevelProgram}\NormalTok{ a}
+\NormalTok{vendor }\FunctionTok{=} \KeywordTok{do} 
+\NormalTok{    t }\OtherTok{<-}\NormalTok{ H.receive }
+    \FunctionTok{...}
+\end{Highlighting}
+\end{Shaded}
+
+  When the message is sent by Alice, she forgets the value that has been
+  sent. It has to be stored to succesfully undo the sending action.
+  Likewise when the starting from state \(M_3\) and undoing the receive,
+  the value must be placed back into the queue. \\
+
+  The implementation follows closely follows the formal semantics. 
+  The semantics describe how a value moves from the sender into the
+  queue, and when it is received the queue stores the value on the queue
+  history stack. When the receive is rolled, the queue pops the value
+  from its stack and puts it at the front of the queue again. Rolling
+  the send will remove the value from the queue and puts it back into
+  the sender's program. \\
+\item
+  Unused branches \\
 
   When a choice is made and then reverted, we want all our options to be
   available again. Currently, another label cannot actually be selected
@@ -1005,53 +1031,31 @@ On the process level there are four things that we need to track:
   which choice was made, and the order of the options is important. We
   use a \texttt{Zipper} to store the elements in order and use the
   central \texttt{a} to store the choice that was made.
-\item
-  Function applications
-
-  When applying a function we lose information about the applied
-  function and the argument. Therefore we store them in a map and
-  associate them with a unique identifier. This identifier is given to
-  the \texttt{Application} constructor so when stepping backward the
-  function and the argument can be recovered.
-
-  You might think that a stack would be a simpler solution, but a stack
-  can give invalid behavior. Say that a participant is running in two
-  locations, and the last-performed action at both locations is a
-  function application. Now we want to undo both applications, but the
-  order in which to undo them is undefined: we need both orders to work.
-  When the application keeps track of exactly which function and
-  argument it used the end result is always the same. Only using a stack
-  could mix up the applications.
-\item
-  Messages on the channel
-
-  When a value is sent, the sender loses track of what has been sent.
-  Therefore, reverting a send/receive pair must move the value from the
-  receiver via the queue back to the sender. Fig.
-  \ref{fig:reverse-send-receive} below illustrates this process:
-
-  \begin{figure}[h!]
-  \begin{align*}
-  \includegraphics[scale=0.60]{img/queue-history-stack.pdf}
-  \end{align*}
-  \caption{Reversal of send and receive}
-  \label{fig:reverse-send-receive}
-  \end{figure}
-
-  \begin{enumerate}
-  \def\labelenumii{\arabic{enumii}.}
-  \tightlist
-  \item
-    \textbf{receive}: the value 42 is popped from the queue but pushed
-    onto the history stack.
-  \item
-    \textbf{roll receive}: Now when the receive is rolled, the value is
-    moved back from the history stack onto the queue.
-  \item
-    \textbf{roll send}: When the send is rolled the value is moved from
-    the head of the queue into the sender's process.
-  \end{enumerate}
 \end{enumerate}
+  % Fig.  \ref{fig:reverse-send-receive} below illustrates this process:
+
+%  \begin{figure}[h!]
+%  \begin{align*}
+%  \includegraphics[scale=0.60]{img/queue-history-stack.pdf}
+%  \end{align*}
+%  \caption{Reversal of send and receive}
+%  \label{fig:reverse-send-receive}
+%  \end{figure}
+
+%   \begin{enumerate}
+%   \def\labelenumii{\arabic{enumii}.}
+%   \tightlist
+%   \item
+%     \textbf{receive}: the value 42 is popped from the queue but pushed
+%     onto the history stack.
+%   \item
+%     \textbf{roll receive}: Now when the receive is rolled, the value is
+%     moved back from the history stack onto the queue.
+%   \item
+%     \textbf{roll send}: When the send is rolled the value is moved from
+%     the head of the queue into the sender's process.
+%   \end{enumerate}
+% \end{enumerate}
 
 \subsection{Abstraction Passing is Protocol
 Delegation}\label{abstraction-passing}
@@ -1116,7 +1120,7 @@ types, variable bindings, etc.), and can throw errors of type
 \emph{See also Appendices \ref{state} on \texttt{StateT} and
 \ref{except} on \texttt{Except}}
 
-The semantics in the PPDP'17 paper guides how we store the execution
+The semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} guides how we store the execution
 state. Some data is bound to its location (for instance the process that
 is running) and other data is bound to its participant (for instance the
 local type).
@@ -1377,7 +1381,7 @@ evaluate the program: we advance Alice at $l_1$ to reach state $M_2$ and then th
 \end{Shaded}
 
 When the user tries an invalid step, an error is displayed. for instance
-after \(l_1\) and \(l_4\) have been moved forward once like in the
+in state $M_3$, where \(l_1\) and \(l_4\) have been moved forward once like in the
 snippet above, \(l_1\) cannot move forward (it needs to receive but
 there is nothing in the queue) and not backward (\(l_4\), the receiver,
 must undo its action first).
