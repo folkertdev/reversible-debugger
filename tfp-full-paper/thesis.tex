@@ -125,7 +125,7 @@ A reversible semantics enables to undo computation steps.
 Reversing  
 message-passing, concurrent programs is a
 challenging and delicate task; one typically aims at
-\emph{causally-consistent} reversible semantics.
+\emph{causally consistent} reversible semantics.
 Prior work has addressed this
 challenge in the context of a process model of multiparty protocols
 (or \emph{choreographies}).
@@ -166,19 +166,19 @@ a key observation  is that
 
 In a language with a reversible semantics, computation steps can be undone.
 Thus, a program can perform standard \emph{forward} steps, but also \emph{backward} steps.
-Reversing a sequential program is not hard: it suffices to have a \emph{memory} that records information about forward steps in case we wish to return to a prior state using a backward step. Reversing a concurrent program is much more difficult: since control may simultaneously reside in more than one point, memories should be carefully design so as to record information about the steps performed in each thread, but also about the \emph{causal dependencies} between steps from different threads.
+Reversing a sequential program is not hard: it suffices to have a \emph{memory} that records information about forward steps in case we wish to return to a prior state using a backward step. Reversing a concurrent program is much more difficult: since control may simultaneously reside in more than one point, memories should be carefully designed so as to record information about the steps performed in each thread, but also about the \emph{causal dependencies} between steps from different threads.
 This motivates the definition of reversible semantics which are \emph{causally consistent}, i.e., that ensure that backward steps lead to states that could been have reached by performing forward steps only~\cite{DBLP:journals/eatcs/Lanese14}. Hence, a causally consistent  semantics never leads to states that are not reachable through forward steps. 
 
 Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (most notably, the $\pi$-calculus~\cite{MilnerR:calmp1}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{DBLP:conf/popl/HondaYC08} that specify intended protocol executions. While the reversible semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
 
-In this paper, we describe a Haskell implementation of the reversible semantics proposed in~\cite{DBLP:conf/ppdp/MezzinaP17}. As such, our implementation defines a Haskell interpreter of message-passing programs written in the reversible process framework in~\cite{DBLP:conf/ppdp/MezzinaP17}. This allows us to assess in practice the benefits and features of the memories and mechanisms deployed in~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In developing our implementation, we have found the use of a functional programming language (Haskell in particular) a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully implement the formal semantics and trust that our implementation is correct. In particular, algebraic data types (sums and products) are invaluable in expressing the grammars and recursive data structures underlying the model in~\cite{DBLP:conf/ppdp/MezzinaP17}.
+In this paper, we describe a Haskell implementation of the reversible semantics proposed in~\cite{DBLP:conf/ppdp/MezzinaP17}. As such, our implementation defines a Haskell interpreter of message-passing programs written in the reversible process framework in~\cite{DBLP:conf/ppdp/MezzinaP17}. This allows us to assess in practice the benefits  of the mechanisms deployed in~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In developing our implementation, we have found the use of a functional programming language (Haskell in particular) a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully capture the formal semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} and to trust that our implementation is correct and preserves causal consistency. In particular, algebraic data types (sums and products) are invaluable in expressing the grammars and recursive data structures underlying the model in~\cite{DBLP:conf/ppdp/MezzinaP17}.
 
 \paragraph{Organization.} %The rest of the paper is structured as follows.
 Section~\ref{the-process-model} recalls the key notions from~\cite{DBLP:conf/ppdp/MezzinaP17}, useful to appreciate our Haskell implementation, which we detail 
 in Section~\ref{implementing-the-ppdp17-calculus-in-haskell}.
 Section~\ref{running-debugging} explains how to run programs forwards and backwards using our implementation.
 Section~\ref{discussion} collects concluding remarks. 
-For reviewer's convenience, Appendices~\ref{free-monad-dsl}--\ref{scheduling-code} describe further details about the implementation, including installation instructions.
+For reviewer's convenience, Appendices~\ref{free-monad-dsl} -- \ref{scheduling-code} describe further details about the implementation, including installation instructions.
 
 \section{The Process Model}
 \label{the-process-model}
@@ -538,7 +538,7 @@ M_3 & \bk  \news{s}(\,
 & \Par N_4 \Par \codah{s}{\valueq{\pA}{\pS}{\exBook}}{\emp}{}~)  = M_4
 \end{align*}
 where 
-$\myctxr{\ctx{T}_4}{\bullet}  =\ltout{\pS}{\mathsf{title}}{\bullet}$ is a the \emph{type context} (with hole $\bullet$) and, as before, $N_4$ represents participants not involved in the reduction.
+$\myctxr{\ctx{T}_4}{\bullet}  =\ltout{\pS}{\mathsf{title}}{\bullet}$ is a  \emph{type context} (with hole $\bullet$) and, as before, $N_4$ represents participants not involved in the reduction.
 $M_4$ has several possible forward and backward reductions. 
 One particular reduction uses Rule~\bkcolor{\textsc{(RIn)}}
 to undo the input at \pS:
@@ -570,7 +570,8 @@ M_5 & \bk  \news{s}(\,
 & \!\!\!\!\Par 
 \hmoni{\ep{s}{\pA}}{\!\!\past \ltout{\pS}{\mathsf{title}}{\ltinp{\pS}{\mathsf{price}}{\ltout{B}{\mathsf{share}}{\ltinp{B}{\mathsf{OK}}{\lend}}}}}{y}{\upd{y}{d}} 
 \\
-& \!\!\!\! \Par N_4 \Par \codah{s}{\emp}{\emp}{}~)  = M_6
+& \!\!\!\! 
+\Par N_4 \Par \codah{s}{\emp}{\emp}{}~)  = M_6
 \end{align*}
 Clearly, $M_6 = M_1$.
 Summing up, the synchronization realized by the (forward) reduction sequence
@@ -683,9 +684,11 @@ based on the process   at $\key{{\loc_4}}{\pC}$.
 
 
 \subsection{Implementing Processes}
-The implementation uses an algebraic data type (also known as union type or sum type) to
+The implementation uses an algebraic data type %(also known as union type or sum type) 
+to
 encode all the process constructors in the syntax of $P$ given above. We use the \texttt{Fix} type
-(Appendix \ref{fix}) to factor out recursion from the grammar.
+%(Appendix \ref{fix}) 
+to factor out recursion from the grammar.
 \texttt{Fix} is the fixed point type:
 
 \begin{Shaded}
@@ -804,16 +807,17 @@ We can now write processes like the one below. It first sends the value $42$ and
 \end{Highlighting}
 \end{Shaded}
 
+\noindent
 While the above is easily manipulatable with pattern matching and
 functions from the \texttt{Fix} module, it is difficult to write clear
 examples in this style: longer expressions need ever more parentheses
-and in general there is too much syntactical clutter. We will get back
-to designing a better syntax for defining programs in Appendix~\ref{free-monad-dsl}.
+and in general there is too much syntactical clutter. We will describe how 
+to design a better syntax for writing programs in Appendix~\ref{free-monad-dsl}.
 
 \paragraph{Delegation via Abstraction Passing.}\label{abstraction-passing}
 
-A delegation is when a participant can delegate (a part of)
-their protocol to be fulfilled (i.e., implemented) by another participant. 
+Delegation occurs when a participant can send (part of)
+its protocol to be fulfilled (i.e., implemented) by another participant. 
 An example of
 where this idea is useful is a load balancing server: from the client's
 perspective, the server handles the request, but actually the load
@@ -873,8 +877,7 @@ Its implementation is given by:
 
 %We can now see why choice is useful: it allows us to branch on the session type level. For instance, one branch can terminate the protocol, and the other can loop back to start the protocol again from the beginning.
 
-\noindent The final three constructors (\texttt{RecursionPoint}, \texttt{RecursionVariable}
-, and \\ \texttt{WeakenRecursion}) are required for supporting nested
+\noindent The final three constructors (\texttt{RecursionPoint}, \texttt{RecursionVariable}, and \\ \texttt{WeakenRecursion}) are required for supporting nested
 recursion and taken from~\cite{van2017session}. A
 \texttt{RecursionPoint} is a point in the protocol that we can later
 jump back to. A \texttt{RecursionVariable} triggers jumping to a
@@ -1526,7 +1529,7 @@ fixing this issue is important.
 
 Conveniently, Haskell has a long tradition of embedded domain-specific
 languages. In particular we can use a cousin of \texttt{Fix}, the
-\texttt{Free} monad (Appendix \ref{free-monad}) to get access to
+\texttt{Free} monad (Appendix~\ref{free-monad}) to get access to
 do-notation (Appendix \ref{do-notation}). Concretely, the do-notation
 makes it possible instead of the above write:
 
@@ -1539,6 +1542,7 @@ makes it possible instead of the above write:
 \end{Highlighting}
 \end{Shaded}
 
+\noindent
 Behind the scenes, the do-notation produces a value of type
 \texttt{HighLevelProgram\ a} using some helpers like \texttt{send} and
 \texttt{terminate}.
@@ -1586,8 +1590,7 @@ end in \texttt{terminate}. We use the fact that
 variable \texttt{a} which can unify with \texttt{Void}, the type with no
 values. Thus \texttt{Free\ f\ Void} can contain no \texttt{Pure} because
 the \texttt{Pure} constructor needs a value of type \texttt{Void}, which
-don't exist. For more information see Appendix
-\ref{well-formedness-free}.
+don't exist. For more information, see Appendix~\ref{well-formedness-free}.
 
 
 \subsection{Installing and Running}\label{installing-and-running}
@@ -1629,12 +1632,12 @@ transparency) and enables compiler optimizations.
 
 But we use computers to solve problems, and we want to be able to
 observe the solution to our problems. Pure programs cannot produce
-observable results: The computer becomes very hot but we cannot see our
+observable results: the computer becomes very hot but we cannot see our
 solutions.
 
 So we perform a trick: we say that constructing our program is
 completely pure, but evaluating may produce side-effects like printing
-to the console or writing to a file. To separate this possily effectful
+to the console or writing to a file. To separate this possibly effectful
 code from pure code we use the type system: side-effects are wrapped in
 the \texttt{IO} type.
 
@@ -1649,7 +1652,7 @@ the \texttt{IO} type.
 \end{Shaded}
 
 A consequence of having no observable effects is that the compiler can
-reorder our code for faster execution (for instance by minimizing cache
+reorder our code for faster execution (e.g., by minimizing cache
 misses). But this will wreak havoc when performing IO: we want our IO
 actions to absolutely be ordered.
 
@@ -1661,10 +1664,10 @@ established a data-dependency between the first and the remaining
 actions that enforces the order.
 
 The piping is done by the \texttt{\textgreater{}\textgreater{}=}
-operator. In the Haskell literature this function is refered to as
+operator. In the Haskell literature this function is referred to as
 \texttt{bind}, but I think the elm name \texttt{andThen} is more
 intuitive (at least for \texttt{IO}). A program that first reads a line
-and then prints it again can be written as
+and then prints it again can be written as:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -1741,7 +1744,7 @@ and
 The \texttt{Monad\ m\ =\textgreater{}} part of the signature constrains
 the function to only work on types that have a \texttt{Monad} instance.
 
-I hope the above already gives some intuition about monad's main
+The above should already give some intuition about monad's main
 operator \texttt{\textgreater{}\textgreater{}=}: it forces order of
 evaluation. A second property is that \texttt{Monad} can merge contexts
 with
@@ -1802,7 +1805,7 @@ Much material on the web about monads is about establishing the general
 idea, but really the exact meaning of
 \texttt{\textgreater{}\textgreater{}=} can be very different for every
 instance. Next we will look at some of the types used in the code for
-this thesis.
+this project.
 
 \subsection{Except}\label{except}
 
@@ -1853,7 +1856,7 @@ operations that can fail, stopping when an error occurs.
 \end{Highlighting}
 \end{Shaded}
 
-It is used to give the illusion of mutible state, while remaining
+It is used to give the illusion of mutable state, while remaining
 completely pure. Intuitively, we can compose functions of this kind.
 
 \begin{Shaded}
@@ -1924,78 +1927,78 @@ Fix requires the data type to have a natural leaf: a constructor that
 does not contain an \texttt{a}. \texttt{Free} on the other hand lets us
 choose some other type for the leaves.
 
-\subsection{Fix}\label{fix}
-
-The \texttt{Fix} data type is the fixed point type.
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\KeywordTok{data} \DataTypeTok{Fix}\NormalTok{ f }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (f (}\DataTypeTok{Fix}\NormalTok{ f))}
-\end{Highlighting}
-\end{Shaded}
-
-It allows us to express a type of the shape
-\texttt{f\ (f\ (f\ (f\ (..))))} concisely. For the values of this type
-to be finite, the \texttt{f} must have a constructor that does not
-recurse to be a leaf. Take for instance this simple expression language
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\KeywordTok{data} \DataTypeTok{Expr}
-    \FunctionTok{=} \DataTypeTok{Literal} \DataTypeTok{Int}
-    \FunctionTok{|} \DataTypeTok{Add} \DataTypeTok{Expr} \DataTypeTok{Expr} 
-\end{Highlighting}
-\end{Shaded}
-
-\texttt{Literal} is the only constructor that can occur as a leaf, and
-\texttt{Add} is the only node. Using \texttt{Fix} we can equivalently
-write
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\KeywordTok{data} \DataTypeTok{ExprF}\NormalTok{ next}
-    \FunctionTok{=} \DataTypeTok{Literal} \DataTypeTok{Int}
-    \FunctionTok{|} \DataTypeTok{Add}\NormalTok{ next next }
-\end{Highlighting}
-\end{Shaded}
-
-Defining values of type \texttt{Fix\ ExprF} requires wrapping of
-constructors with \texttt{Fix}. We will describe a better way of writing
-\texttt{Fix}ed values in Appendix~\ref{free-monad-dsl}.
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\OtherTok{simple ::} \DataTypeTok{Fix} \DataTypeTok{ExprF}
-\NormalTok{simple }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{42}\NormalTok{)}
-
-\OtherTok{complex ::} \DataTypeTok{Fix} \DataTypeTok{ExprF}
-\NormalTok{complex }\FunctionTok{=} 
-    \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Add}\NormalTok{ (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{40}\NormalTok{)) (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{2}\NormalTok{)))}
-\end{Highlighting}
-\end{Shaded}
-
-By decoupling the recursion from the content, we can write functions
-that deal with only one level of the tree and apply them to the full
-tree. For instance evaluation of the above expression can be written as
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\OtherTok{evaluate ::} \DataTypeTok{Fix} \DataTypeTok{ExprF} \OtherTok{->} \DataTypeTok{Int} 
-\NormalTok{evaluate }\FunctionTok{=} 
-\NormalTok{    Fix.cata }\FunctionTok{$}\NormalTok{ \textbackslash{}expr }\OtherTok{->} 
-        \KeywordTok{case}\NormalTok{ expr }\KeywordTok{of} 
-            \DataTypeTok{Literal}\NormalTok{ v }\OtherTok{->} 
-\NormalTok{                v}
-
-            \DataTypeTok{Add}\NormalTok{ a b }\OtherTok{->} 
-\NormalTok{                a }\FunctionTok{+}\NormalTok{ b}
-\end{Highlighting}
-\end{Shaded}
-
-The \texttt{cata} function - a catamorphism also known as a fold or
-reduce - applies evaluate from the bottom up. In the code we write, we
-only need to make local decisions and don't have to write the plumbing
-to get the recursion right.
+%\subsection{Fix}\label{fix}
+%
+%The \texttt{Fix} data type is the fixed point type.
+%
+%\begin{Shaded}
+%\begin{Highlighting}[]
+%\KeywordTok{data} \DataTypeTok{Fix}\NormalTok{ f }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (f (}\DataTypeTok{Fix}\NormalTok{ f))}
+%\end{Highlighting}
+%\end{Shaded}
+%
+%It allows us to express a type of the shape
+%\texttt{f\ (f\ (f\ (f\ (..))))} concisely. For the values of this type
+%to be finite, the \texttt{f} must have a constructor that does not
+%recurse to be a leaf. Take for instance this simple expression language
+%
+%\begin{Shaded}
+%\begin{Highlighting}[]
+%\KeywordTok{data} \DataTypeTok{Expr}
+%    \FunctionTok{=} \DataTypeTok{Literal} \DataTypeTok{Int}
+%    \FunctionTok{|} \DataTypeTok{Add} \DataTypeTok{Expr} \DataTypeTok{Expr} 
+%\end{Highlighting}
+%\end{Shaded}
+%
+%\texttt{Literal} is the only constructor that can occur as a leaf, and
+%\texttt{Add} is the only node. Using \texttt{Fix} we can equivalently
+%write
+%
+%\begin{Shaded}
+%\begin{Highlighting}[]
+%\KeywordTok{data} \DataTypeTok{ExprF}\NormalTok{ next}
+%    \FunctionTok{=} \DataTypeTok{Literal} \DataTypeTok{Int}
+%    \FunctionTok{|} \DataTypeTok{Add}\NormalTok{ next next }
+%\end{Highlighting}
+%\end{Shaded}
+%
+%Defining values of type \texttt{Fix\ ExprF} requires wrapping of
+%constructors with \texttt{Fix}. We will describe a better way of writing
+%\texttt{Fix}ed values in Appendix~\ref{free-monad-dsl}.
+%
+%\begin{Shaded}
+%\begin{Highlighting}[]
+%\OtherTok{simple ::} \DataTypeTok{Fix} \DataTypeTok{ExprF}
+%\NormalTok{simple }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{42}\NormalTok{)}
+%
+%\OtherTok{complex ::} \DataTypeTok{Fix} \DataTypeTok{ExprF}
+%\NormalTok{complex }\FunctionTok{=} 
+%    \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Add}\NormalTok{ (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{40}\NormalTok{)) (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{2}\NormalTok{)))}
+%\end{Highlighting}
+%\end{Shaded}
+%
+%By decoupling the recursion from the content, we can write functions
+%that deal with only one level of the tree and apply them to the full
+%tree. For instance evaluation of the above expression can be written as
+%
+%\begin{Shaded}
+%\begin{Highlighting}[]
+%\OtherTok{evaluate ::} \DataTypeTok{Fix} \DataTypeTok{ExprF} \OtherTok{->} \DataTypeTok{Int} 
+%\NormalTok{evaluate }\FunctionTok{=} 
+%\NormalTok{    Fix.cata }\FunctionTok{$}\NormalTok{ \textbackslash{}expr }\OtherTok{->} 
+%        \KeywordTok{case}\NormalTok{ expr }\KeywordTok{of} 
+%            \DataTypeTok{Literal}\NormalTok{ v }\OtherTok{->} 
+%\NormalTok{                v}
+%
+%            \DataTypeTok{Add}\NormalTok{ a b }\OtherTok{->} 
+%\NormalTok{                a }\FunctionTok{+}\NormalTok{ b}
+%\end{Highlighting}
+%\end{Shaded}
+%
+%The \texttt{cata} function - a catamorphism also known as a fold or
+%reduce - applies evaluate from the bottom up. In the code we write, we
+%only need to make local decisions and don't have to write the plumbing
+%to get the recursion right.
 
 \subsection{Monad.Free}\label{free-monad}
 
@@ -2071,8 +2074,8 @@ That means that \texttt{terminate} will unify with anything:
 
 There are now two ways forward:
 
-\textbf{Solution 1: Rank2Types and Universal Quantification}
-
+\begin{itemize}
+\item \textbf{Solution 1: Rank2Types and Universal Quantification} \\
 Now if we enforce that our whole program unifies with anything, that
 implies that all \texttt{Pure}s are gone from the structure. Normally,
 type signatures are valid if there is at least one valid unification for
@@ -2092,8 +2095,7 @@ to use \texttt{forall}.
 \end{Highlighting}
 \end{Shaded}
 
-\textbf{Solution 2: Data.Void}
-
+\item \textbf{Solution 2: Data.Void} \\
 The second solution is to use \texttt{Data.Void}. \texttt{Void} is the
 data type with zero values, which means there is no valid way of
 creating a value of type \texttt{Void}. Thus a \texttt{Free\ f\ Void}
@@ -2109,11 +2111,11 @@ cannot have any \texttt{Pure}s, because they need a value of type
 \end{Highlighting}
 \end{Shaded}
 
-\textbf{Tradeoffs}
-
+\item \textbf{Tradeoffs} \\
 In the codebase we went with solution 2 because it produces clearer
 error messages and does not introduce extra language extensions to the
 project.
+\end{itemize}
 
 \subsection{Scheduling code}\label{scheduling-code}
 
