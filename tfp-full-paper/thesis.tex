@@ -178,10 +178,8 @@ The rest of the paper is structured as follows...
 
 \section{The Process Model}
 \label{the-process-model}
-\textbf{\emph{Here we introduce the PPDP calculus, multiparty session types, and the operational semantics by example. We also copy-paste the three-buyer example, which we use as running example.}}
 
-\subsection{New Material}
-\begin{figure}
+\begin{figure}[!t]
 \begin{center}
     \includegraphics[width=8.7cm]{./img/figmodel.pdf}
 \end{center}
@@ -668,13 +666,12 @@ based on the process located at $\key{{\loc_4}}{\pC}$.
 
 
 \section{IMPLEMENTATION}
-\textbf{\emph{In this section we show how we implement the processes, types, and semantics in the PPDP paper}}
+%\textbf{\emph{In this section we show how we implement the processes, types, and semantics in the PPDP paper}}
 
-\subsection{Implementing the process calculus in
-Haskell}\label{implementing-the-ppdp17-calculus-in-haskell}
+\subsection{Implementing Processes in Haskell}\label{implementing-the-ppdp17-calculus-in-haskell}
 
 The implementation uses an algebraic data type (also known as union type or sum type) to
-encode all the constructors of $P$, the process syntax. We use the \texttt{Fix} type
+encode all the process constructors in the syntax of $P$ given above. We use the \texttt{Fix} type
 (Appendix \ref{fix}) to factor out recursion from the grammar.
 \texttt{Fix} is the fixed point type:
 
@@ -687,9 +684,11 @@ encode all the constructors of $P$, the process syntax. We use the \texttt{Fix} 
 \texttt{Fix} allows us to concisely express an infinite nesting of a
 type (of the shape \texttt{f\ (f\ (f\ (f\ (..))))}). Such a type will
 look like a tree. For the values of this type to be finite, the
-\texttt{f} must have a leaf constructor. Take for instance this simple
-expression language
+\texttt{f} must have a leaf constructor. 
 
+\begin{example}
+As an  illustration of \texttt{Fix}, take the following
+expression language:
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{data} \DataTypeTok{Expr}
@@ -697,11 +696,11 @@ expression language
     \FunctionTok{|} \DataTypeTok{Add} \DataTypeTok{Expr} \DataTypeTok{Expr} 
 \end{Highlighting}
 \end{Shaded}
-
+\noindent
+where 
 \texttt{Literal} is the only constructor that can occur as a leaf, and
 \texttt{Add} is the only node. Using \texttt{Fix} we can equivalently
-write
-
+write:
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{data} \DataTypeTok{ExprF}\NormalTok{ next}
@@ -709,12 +708,12 @@ write
     \FunctionTok{|} \DataTypeTok{Add}\NormalTok{ next next }
 \end{Highlighting}
 \end{Shaded}
-
-In the above snippet, \texttt{next} is a placeholder or hole for an
+\noindent Above, \texttt{next} is a placeholder or hole for an
 arbitrarily deep nesting of \texttt{ExprF}s. The main usage of
 \texttt{Fix} is that it gives traversals and folds of our syntax tree
-for free because these are generically defined on \texttt{Fix}.
-
+for free, for these are generically defined on \texttt{Fix}.
+The following snippet shows that defining values of type \texttt{Fix\ ExprF}
+requires wrapping of constructors with \texttt{Fix}:
 \begin{Shaded}
 \begin{Highlighting}[]
 \OtherTok{simple ::} \DataTypeTok{Fix} \DataTypeTok{ExprF}
@@ -725,14 +724,12 @@ for free because these are generically defined on \texttt{Fix}.
     \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Add}\NormalTok{ (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{40}\NormalTok{)) (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{2}\NormalTok{)))}
 \end{Highlighting}
 \end{Shaded}
-
-The above snippet shows that defining values of type \texttt{Fix\ ExprF}
-requires wrapping of constructors with \texttt{Fix}. We will describe a
-better way of writing \texttt{Fix}ed values in Section
+We will describe a better way of writing \texttt{Fix}ed values in Section
 \ref{free-monad-dsl}.
+\end{example}
 
-The full definition of \texttt{Program} is given below. As mentioned we
-omit the process-level recursion, but otherwise it is a direct translation of the formal syntax given in Section \ref{the-process-model}.
+We implement processes using \texttt{Program}, which is defined next.
+Apart from the process-level recursion, it is a direct translation of the process syntax given in Section~\ref{the-process-model}.
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -766,10 +763,11 @@ omit the process-level recursion, but otherwise it is a direct translation of th
 \end{Highlighting}
 \end{Shaded}
 
-We also need values in our language. To write more interesting examples
+As already discussed, processes exchange values. 
+To write more interesting examples,
 we extend the types of values that can be used from names, booleans and
-functions to also include references, integers, strings, and basic
-integer and comparison operators.
+functions to   include also references, integers, strings, and basic
+integer and comparison operators:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -800,8 +798,8 @@ We can now write processes like the one below. It first sends the value $42$ and
 \end{Shaded}
 
 While the above is easily manipulatable with pattern matching and
-functions from the \texttt{Fix} module, it is very hard to write clear
-examples in this style. Longer expressions need ever more parentheses
+functions from the \texttt{Fix} module, it is difficult to write clear
+examples in this style: longer expressions need ever more parentheses
 and in general there is too much syntactical clutter. We will get back
 to designing a better syntax for defining programs in Section
 \ref{free-monad-dsl}.
@@ -836,26 +834,25 @@ Its implementation is given by:
 \end{Highlighting}
 \end{Shaded}
 
-We can now see why choice is useful: it allows us to branch on the
-session type level. For instance, one branch can terminate the protocol,
-and the other can loop back to start the protocol again from the beginning.
+%We can now see why choice is useful: it allows us to branch on the session type level. For instance, one branch can terminate the protocol, and the other can loop back to start the protocol again from the beginning.
 
-The final three constructors are required for supporting nested
-recursion and taken from \cite{van2017session}. A
+\noindent The final three constructors (\texttt{RecursionPoint}, \texttt{RecursionVariable}, and \texttt{Weaken}) are required for supporting nested
+recursion and taken from~\cite{van2017session}. A
 \texttt{RecursionPoint} is a point in the protocol that we can later
 jump back to. A \texttt{RecursionVariable} triggers jumping to a
-previously encountered \texttt{RecursionPoint}. By default it will jump
-to the closest and most-recently encountered \texttt{RecursionPoint},
+previously encountered \texttt{RecursionPoint}. By default, it will jump
+to the closest and most recently encountered \texttt{RecursionPoint},
 but \texttt{WeakenRecursion} makes it jump one \texttt{RecursionPoint}
-higher, encountering 2 weakens will jump 2 levels higher etc.
+higher; encountering two weakens will jump two levels higher, etc.
 
 Using \texttt{Monad.Free} (Appendix \ref{free-monad}), we can write
 examples with a more idiomatic Haskell syntax.
 
-The snippet below shows the use of nested recursion. There is an outer
+\begin{example}[Nested Recursion]
+The snippet below illustrates nested recursion. There is an outer
 loop that will perform a piece of protocol or end, and an inner loop
 that sends messages from \texttt{A} to \texttt{B}. When the inner loop
-is done, control flow returns to the outer loop.
+is done, control flow returns to the outer loop:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -882,9 +879,10 @@ is done, control flow returns to the outer loop.
 \NormalTok{        ]}
 \end{Highlighting}
 \end{Shaded}
+\end{example}
 
-Similarly, the three buyer example can be written as:
-
+\noindent
+Similarly, the three-buyer example can be written as:
 \begin{Shaded}
 \begin{Highlighting}[]
 \CommentTok{-- a data type representing the participants}
@@ -911,33 +909,27 @@ Similarly, the three buyer example can be written as:
 \end{Shaded}
 
 \subsection{A Reversible Semantics}\label{a-reversible-semantics}
-
-The third component of the system a reversible semantics. The idea here
-is that we can move back to previous program states, reversing forward
+Having shown how to implement processes and global types, we now move to explain how to implement the  reversible operational semantics. The goal is to define structures so that we can move back to previous program states, reversing forward
 steps.
 
-To be able to move backward, we need to store some information when we move forward.
-As described in~\cite{DBLP:conf/ppdp/MezzinaP17}, we need to track information about two things: the type and the process.
+To enable backward steps, we need to store some information when we move forward, just as enabled by the configurations in the formal language.
+As described in~\cite{DBLP:conf/ppdp/MezzinaP17}, we need to track information about the local type and the process.
 
-For the type we define a new data type called \texttt{TypeContext}. It
-contains the actions that have been performed and for some of them it
-stores a bit of extra information like the \texttt{owner}.
-
-On the process level, there are four things that we need to track:
+For the local type, we define a new data type called \texttt{TypeContext}. It
+contains the actions that have been performed; for some of them, it also
+stores extra information like the \texttt{owner}.
+For the process, there are four things that we need to track:
 
 \begin{enumerate}
 \def\labelenumi{\arabic{enumi}.}
-\item
-  Used variable names in receives \\
-  
-  Recall the process of the vendor in the ThreeBuyer example:
+\item \emph{Used variable names in receives}.
+    Recall the process implementation for  the vendor in the three-buyer example:
   \begin{align*}
   \text{Vendor} & =  \bout{d}{x:\tproj{G}{\pS}}\binp{x}{t}\bout{x}{price(t)}\bout{x}{price(t)} \binp{x}{ok}\binp{x}{a} \bout{x}{date}\inact
   \end{align*}
 
-  Using the syntax introduced in Section \ref{free-monad-dsl} the vendor
-  process can be implemented as:
-
+  Using the syntax introduced in Section~\ref{free-monad-dsl}, we can implement this
+  process as:
 \begin{Shaded}
 \begin{Highlighting}[]
 \OtherTok{vendor ::} \DataTypeTok{H.HighLevelProgram}\NormalTok{ a}
@@ -948,26 +940,23 @@ On the process level, there are four things that we need to track:
     \FunctionTok{...}
 \end{Highlighting}
 \end{Shaded}
-
-  The rest of the program depends on the assigned name. So for instance
+  The rest of the program depends on the assigned name. So, e.g.,
   when we evaluate the \texttt{t\ \textless{}-\ H.receive} line
-  (moving to state \(M_3\)), and then revert it, we must
+  (moving to configuration \(M_3\)), and then revert it, we must
   reconstruct a receive that assigns to \texttt{t}, because the
   following lines depend on the name \texttt{t}. \\
 
-\item Function calls and their arguments \\
-    
-  Consider the transition from state \(M_7\) to \(M_8\)from Section \ref{the-process-model}. Once the thunk
-  is evaluated, producing state \(M_8\), we lose all evidence that the
+\item \emph{Function calls and their arguments}.
+      Consider the transition from configuration $M_7$ to $M_8$, as discussed in Section~\ref{the-process-model}. Once the thunk
+  is evaluated, producing configuration \(M_8\), we lose all evidence that the
   code that the evaluation produced was the result of a function
-  application. \\
-
-  Without knowledge of the function application, reversing \(M_8\) will
-  not result in \(M_7\), so we need to keep track of function
+  application. 
+  Without knowledge of the function application, reversing $M_8$ will
+  not result in $M_7$. Indeed, we need to keep track of function
   applications. The function and its argument are stored in a map
-  indexed by a unique identifier \(k\). This identifier \(k\) is also
+  indexed by a unique identifier $k$. The identifier $k$ itself is also
   stored in the local type with history to later associate the type with
-  a specific function and argument. \\
+  a specific function and argument.
 
   One might think that a stack would be a simpler solution, but a stack
   can give invalid behavior. Say that a participant is running in two
@@ -976,11 +965,10 @@ On the process level, there are four things that we need to track:
   order in which to undo them is undefined: we need both orders to work.
   Only using a stack could mix up the applications. When the application
   keeps track of exactly which function and argument it used the end
-  result is always the same. \\
-\item
-  Messages on the channel  \\
+  result is always the same.  \\
   
-  We consider again the implementation of the first 3 steps of the protocol:
+\item \emph{Messages on the channel}.
+    We consider again the implementation of the first three steps of the protocol:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -998,24 +986,24 @@ On the process level, there are four things that we need to track:
 
   When the message is sent by Alice, she forgets the value that has been
   sent. It has to be stored to succesfully undo the sending action.
-  Likewise when the starting from state \(M_3\) and undoing the receive,
-  the value must be placed back into the queue. \\
+  Likewise, when starting from configuration $M_3$ and undoing the receive,
+  the value must be placed back into the queue. 
 
-  The implementation follows closely follows the formal semantics. 
+  Our implementation follows closely follows the formal semantics in~\cite{DBLP:conf/ppdp/MezzinaP17}. 
   The semantics describe how a value moves from the sender into the
   queue, and when it is received the queue stores the value on the queue
   history stack. When the receive is rolled, the queue pops the value
   from its stack and puts it at the front of the queue again. Rolling
   the send will remove the value from the queue and puts it back into
   the sender's program. \\
-\item
-  Unused branches \\
-
-  When a choice is made and then reverted, we want all our options to be
+\item \emph{Unused branches}.
+  When a labeled choice is made and then reverted, we want all our options to be
   available again. Currently, another label cannot actually be selected
   after reverting: the selected label depends only on the values of
   variables in the program. Future work may make it possible to also use
   the failure information to influence the choice made.
+  
+  The following code shows how the choices are stored:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -1027,7 +1015,7 @@ On the process level, there are four things that we need to track:
 \end{Highlighting}
 \end{Shaded}
 
-  The code above shows how the choices are stored. We need to remember
+  We need to remember
   which choice was made, and the order of the options is important. We
   use a \texttt{Zipper} to store the elements in order and use the
   central \texttt{a} to store the choice that was made.
