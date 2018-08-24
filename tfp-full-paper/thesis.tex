@@ -124,7 +124,7 @@ Jorge A. P\'{e}rez%\orcidID{0000-0002-1452-6180}}
 A reversible semantics enables to undo computation steps. 
 Reversing  
 message-passing, concurrent programs is a
-challenging and delicate task; one typically aims at 
+challenging and delicate task; one typically aims at
 \emph{causally-consistent} reversible semantics.
 Prior work has addressed this
 challenge in the context of a process model of multiparty protocols
@@ -812,7 +812,7 @@ to designing a better syntax for defining programs in Appendix~\ref{free-monad-d
 
 \paragraph{Delegation via Abstraction Passing.}\label{abstraction-passing}
 
-As delegation is when a participant can delegate (a part of)
+A delegation is when a participant can delegate (a part of)
 their protocol to be fulfilled (i.e., implemented) by another participant. 
 An example of
 where this idea is useful is a load balancing server: from the client's
@@ -835,7 +835,7 @@ Recall the definition of \texttt{ProgramF}:
 The \texttt{ProgramF} constructors that move the local type forward
 (send/receive, select/offer) have an \texttt{owner} field that stores
 whose local type they should be checked against and modify. This field is
-also present in \texttt{TypeContext}, the data type we define for representing local types (see below). 
+also present in \texttt{TypeContext}, the data type we define for representing local types in Section \ref{a-reversible-semantics}. 
 
 Because we allow references to values in the implementation, all
 references in a function have to be dereferenced before it can be safely
@@ -866,14 +866,15 @@ Its implementation is given by:
     \FunctionTok{|} \DataTypeTok{End}
     \FunctionTok{|} \DataTypeTok{RecursionPoint}\NormalTok{ next}
     \FunctionTok{|} \DataTypeTok{RecursionVariable}
-    \FunctionTok{|} \DataTypeTok{Weaken}\NormalTok{ next}
+    \FunctionTok{|} \DataTypeTok{WeakenRecursion}\NormalTok{ next}
     \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Functor}\NormalTok{)}
 \end{Highlighting}
 \end{Shaded}
 
 %We can now see why choice is useful: it allows us to branch on the session type level. For instance, one branch can terminate the protocol, and the other can loop back to start the protocol again from the beginning.
 
-\noindent The final three constructors (\texttt{RecursionPoint}, \texttt{RecursionVariable}, and \texttt{Weaken}) are required for supporting nested
+\noindent The final three constructors (\texttt{RecursionPoint}, \texttt{RecursionVariable}
+, and \\ \texttt{WeakenRecursion}) are required for supporting nested
 recursion and taken from~\cite{van2017session}. A
 \texttt{RecursionPoint} is a point in the protocol that we can later
 jump back to. A \texttt{RecursionVariable} triggers jumping to a
@@ -1199,12 +1200,11 @@ undone.
 
 In the semantics and the implementation, this causal dependency becomes a data dependency. 
 For instance, a send can only be undone when the queue is in a state that can only be reached by first undoing the corresponding receive.
-Being able to undo a send means that the corresponding receive has already been rolled back, so it is impossible to introduce causal inconsistencies. 
+Only in this state is the appropriate data, of the appropriate type, available.
+Being able to undo a send thus means that the corresponding receive has already been rolled back, so it is impossible to introduce causal inconsistencies. 
 
 Because of the encoding of causal dependencies as data dependencies, and the fact that these data dependencies are preserved in the implementation,  
 we claim that the Haskell implementation is faithful enough to the formal semantics, and therefore that the causal consistency property is preserved.
-
-
 
 
 \section{Running and Debugging Programs}\label{running-debugging}
