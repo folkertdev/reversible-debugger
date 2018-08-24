@@ -128,16 +128,15 @@ challenging and delicate task; one typically aims at
 \emph{causally-consistent} reversible semantics.
 Prior work has addressed this
 challenge in the context of a process model of multiparty protocols
-(choreographies) following a so-called \emph{monitors-as-memories}
-approach. In this paper, we describe our work on implementing
-this reversible operational semantics in Haskell. 
-We provide an encoding based on
-the formal definition of prior work's three core concepts: a process
-calculus, multiparty session types and a reversible semantics.
-Additionally, we provide an implementation of the forward and backward
-transition functions, which make it possible to run and typecheck
-programs, and finally reflect on uses of the implementation of these
-semantics. 
+(or \emph{choreographies}).
+% following a so-called \emph{monitors-as-memories} approach. 
+In this paper, we describe a Haskell implementation of 
+this reversible operational semantics. 
+We exploit algebraic data types to faithfully represent
+three core ingredients: a process
+calculus, multiparty session types, and forward and backward reduction semantics.
+%The latter make it possible to run and typecheckprograms, and 
+Our implementation bears witness to the convenience of pure functional programming for implementing reversible languages.
 %\pagebreak
 \end{abstract}
 
@@ -170,11 +169,16 @@ Thus, a program can perform standard \emph{forward} steps, but also \emph{backwa
 Reversing a sequential program is not hard: it suffices to have a \emph{memory} that records information about forward steps in case we wish to return to a prior state using a backward step. Reversing a concurrent program is much more difficult: since control may simultaneously reside in more than one point, memories should be carefully design so as to record information about the steps performed in each thread, but also about the \emph{causal dependencies} between steps from different threads.
 This motivates the definition of reversible semantics which are \emph{causally consistent}, i.e., that ensure that backward steps lead to states that could been have reached by performing forward steps only~\cite{DBLP:journals/eatcs/Lanese14}. Hence, a causally consistent  semantics never leads to states that are not reachable through forward steps. 
 
-Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (most notably, the $\pi$-calculus~\cite{MilnerR:calmp1}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{HYC08} that specify intended protocol executions. While the reversible semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
+Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (most notably, the $\pi$-calculus~\cite{MilnerR:calmp1}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{DBLP:conf/popl/HondaYC08} that specify intended protocol executions. While the reversible semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
 
-In this paper, we describe a Haskell implementation of the reversible semantics proposed in~\cite{DBLP:conf/ppdp/MezzinaP17}. More precisely, we present a Haskell interpreter of message-passing programs written in the reversible process framework in~\cite{DBLP:conf/ppdp/MezzinaP17}. This allows us to assess in practice the benefits and features of the memories and mechanisms deployed in~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In this process, we have found the use of a functional programming language---and in particular, of Haskell---a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully implement the formal semantics and trust that our implementation is correct. In particular, algebraic data types (sums and products) are invaluable in expressing grammars and recursive data structures. 
+In this paper, we describe a Haskell implementation of the reversible semantics proposed in~\cite{DBLP:conf/ppdp/MezzinaP17}. As such, our implementation defines a Haskell interpreter of message-passing programs written in the reversible process framework in~\cite{DBLP:conf/ppdp/MezzinaP17}. This allows us to assess in practice the benefits and features of the memories and mechanisms deployed in~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In developing our implementation, we have found the use of a functional programming language (Haskell in particular) a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully implement the formal semantics and trust that our implementation is correct. In particular, algebraic data types (sums and products) are invaluable in expressing the grammars and recursive data structures underlying the model in~\cite{DBLP:conf/ppdp/MezzinaP17}.
 
-The rest of the paper is structured as follows...
+\paragraph{Organization.} %The rest of the paper is structured as follows.
+Section~\ref{the-process-model} recalls the key notions from~\cite{DBLP:conf/ppdp/MezzinaP17}, useful to appreciate our Haskell implementation, which we detail 
+in Section~\ref{implementing-the-ppdp17-calculus-in-haskell}.
+Section~\ref{running-debugging} explains how to run programs forwards and backwards using our implementation.
+Section~\ref{discussion} collects concluding remarks. 
+For reviewer's convenience, Appendices~\ref{free-monad-dsl}--\ref{scheduling-code} describe further details about the implementation, including installation instructions.
 
 \section{The Process Model}
 \label{the-process-model}
@@ -183,8 +187,9 @@ The rest of the paper is structured as follows...
 \begin{center}
     \includegraphics[width=8.7cm]{./img/figmodel.pdf}
 \end{center}
-\vspace{-4mm}
+\vspace{-8mm}
 \caption{The process model of multiparty, reversible communications developed in~\cite{DBLP:conf/ppdp/MezzinaP17}.}\label{f:model}
+\vspace{-5mm}
 \end{figure}
 
 Our aim is to develop a Haskell implementation of the process model presented in~\cite{DBLP:conf/ppdp/MezzinaP17}, and depicted in Fig.~\ref{f:model}. 
@@ -255,6 +260,11 @@ M \Par N
 {\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}} %% running process
 \sbnfbar 
 {\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}}  %% monitor
+ \sbnfbar 
+\codah{s}{h_i}{h_o}%{\restrict{\mytilde{\gpart{r}}}}
+ % queue
+\sbnfbar 
+ {\mem{k}{(\appl{V}{u})}{\loc}} % function
 \end{align*}
 Above,  identifiers $\loc, \loc', \ldots$ denote a  \emph{location} or  \emph{site}. 
 The first two constructs enable protocol establishment:
@@ -263,17 +273,22 @@ $P$, whereas $\myloc{\loc}{\binp{a}{x}{P}}$ denotes service \emph{acceptance}.
 Establishing an $n$-party protocol on service $a$ then requires the synchronization of one configuration requesting $a$, and $n-1$ configurations accepting $a$.
 Constructs for specifying the composition of configurations, name restriction, and the inactive configuration have expected readings.
 
-The constructs in the second row appear only at run-time (i.e., they do not appear in ``source'' programs) and are key to enable the reversible semantics. We call $\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}$ a \emph{running process}:  $\loc$ hosts a process $P$ that implements participant $\p$, with $\stack C$ being a memory of  labeled choices enforced so far. Configuration $\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}$ is a \emph{monitor}
+The constructs in the second row appear only at run-time 
+%(i.e., they do not appear in ``source'' programs) 
+and are key to enable the reversible semantics. 
+We call $\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}$ a \emph{running process}:  $\loc$ hosts a process $P$ that implements participant $\p$, with $\stack C$ being a memory of  labeled choices enforced so far. Configuration $\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}$ is a \emph{monitor}
 where: 
 $s_{[\p]}$ is the indexed session being monitored;
 $H$ is a  local type \emph{with history} (see below);
 $\mytilde{x}$ is a set of free variables;
 and  $\store$ is a store that records the value of such variables.
-Moreover, the \emph{tag} $\mytagg$ serves to determine whether 
+The \emph{tag} $\mytagg$ serves to determine whether 
 the running process associated to the monitor is currently involved in a backward step ($\mytagg = \rmark$) or not ($\mytagg = \normark$).
+We write $\codah{s}{h_i}{h_o}$ to denote a \emph{message queue} with input part $h_i$ and output part $h_o$.
+Finally, the \emph{running function} $\mem{k}{(\appl{V}{u})}{\loc}$ serves to  reverse  applications.
 
 \paragraph{Global and Local Types.}
-As already mentioned, choreographies represent multiparty protocols expressed as global types $G, G', \ldots$. Global types can be \emph{projected} onto local types  ($T, T', \ldots$), one per participant. Their syntax follows~\cite{HYC08}:
+As already mentioned, choreographies represent multiparty protocols expressed as global types $G, G', \ldots$. Global types can be \emph{projected} onto local types  ($T, T', \ldots$), one per participant. Their syntax follows~\cite{DBLP:conf/popl/HondaYC08}:
 \begin{align*}
 			U, U'  \bnfis & \bool \sbnfbar \nat \sbnfbar \cdots %\bnfbar T 
 			\sbnfbar \shot{T} \\
@@ -322,7 +337,7 @@ Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respect
 When this occurs, all participants have to jump back to the beginning,
 so every choice must be communicated to all participants.
 
-To deal with this issue, the choice made in~\cite{DBLP:conf/ppdp/MezzinaP17} (as in many other papers) is to disallow different branches using different participants. In practice, 
+To address this, the choice made in~\cite{DBLP:conf/ppdp/MezzinaP17} (as in many other works) is to disallow different branches using different participants. In practice, 
 this means that all branches must perform the same communication to satisfy the global type, even if the communication is not needed in every branch (some branches may have dummy communications). As we will see, in our Haskell implementation we use a different method where every
 choice causes a broadcast of that choice to the other participants. 
 
@@ -359,7 +374,7 @@ choice causes a broadcast of that choice to the other participants.
 \tproj{\gend}{\gpart{r}} = \lend
 \end{align*}
 }
-\vspace{-4mm}
+\vspace{-6mm}
 \caption{Projection of a global type $G$ onto a participant $\gpart{r}$~\cite{DBLP:conf/ppdp/MezzinaP17}.\label{f:proj}}
 \end{figure}
 
@@ -378,7 +393,7 @@ To delegate his remaining interactions with Alice and Vendor to Carol, Bob sends
 the code she must execute.
 \item Carol continues the rest of the protocol with Vendor and Alice as if she were Bob. 
 She sends Bob's address (contained in the  code she received) to Vendor.
-\item Vendor answers to Alice and Carol (who represents Bob) with the delivery date.
+\item Vendor answers to Alice and Carol (representing Bob) with the delivery date.
 \end{enumerate}
 This protocol may be formalized as the following global type $G$:
 \begin{align*}
@@ -421,8 +436,7 @@ We now give processes for each participant:
 \text{Alice} & =  \binp{d}{y:\tproj{G}{\pA}}\bout{y}{\exBook}\binp{y}{p}\bout{y}{h}\binp{y}{ok}\inact  
 \\
 \text{Bob} & =  \binp{d}{z:\tproj{G}{\pB}}\binp{z}{p}\binp{z}{h}\bout{z}{ok}\bout{z}{ok}\bout{z}{h}
-  \\
-  & \qquad \qquad \bbout{z}{\thunkp{\bout{z}{\text{`Lucca, 55100'}}\binp{z}{d}\inact}}\inact
+ \bbout{z}{\thunkp{\bout{z}{\text{`9747 AG'}}\binp{z}{d}\inact}}\inact
   \\
 \text{Carol} & =  \binp{d}{w:\tproj{G}{\pC}}\binp{w}{h}\binp{w}{code}(\appl{code}{\dummyn})
 %&Q_B = \bout{y}{share}\bout{y}{T}\bout{y}{R}\inact  \\
@@ -480,7 +494,6 @@ $
 A_1 = \bout{y}{\exBook}\binp{y}{p}\bout{y}{h}\binp{y}{ok}\inact
 $.
 %Notice also how session initialization instantiates variable ${z}$ in the thunk contained in Bob's implementation with endpoint $\epB$.
-
 From $M_1$ we could either undo the previous reduction (using Rule~\bkcolor{\textsc{(RInit)}})
 or execute the communication from $\text{Alice}$ to $\text{Vendor}$ (using two rules:~\fwcolor{\textsc{(Out)}} and ~\fwcolor{\textsc{(In)}}). This latter option would be as follows:
 \begin{align*}
@@ -508,7 +521,7 @@ and $N_3$ stands for the participants not involved in the reduction.
 Observe that the cursors in monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$ have evolved, and that the message from $\pA$ to $\pS$ has now been moved to the input queue.
 
 We illustrate  reversibility by showing how to return to $M_1$ from $M_3$.
-We need  three backward reduction rules: \bkcolor{\textsc{(RollS)}}, \bkcolor{\textsc{(RIn)}}, and \bkcolor{\textsc{(ROut)}}.
+We need  three backward  rules: \bkcolor{\textsc{(RollS)}}, \bkcolor{\textsc{(RIn)}}, and \bkcolor{\textsc{(ROut)}}.
 First, Rule~\bkcolor{\textsc{(RollS)}} modifies the tags of monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$,
   leaving the rest unchanged:
 \begin{align*}
@@ -517,16 +530,15 @@ M_3 & \bk  \news{s}(\,
 \\
 & \Par 
  \monir{\ep{s}{\pS}}{\ltinp{A}{\mathsf{title}}{\past \ltout{\{A,B\}}{\mathsf{price}}{T_\mathsf{B}}}}{x,t}{\store_3} 
-\\
-& \Par \np{\key{{\loc_2}}{\pA}}{ \conf{\inact}{\binp{\epA}{p}\bout{\epA}{h}\binp{\epA}{ok}\inact}} 
+ \Par \np{\key{{\loc_2}}{\pA}}{ \conf{\inact}{\binp{\epA}{p}\bout{\epA}{h}\binp{\epA}{ok}\inact}} 
 \\
 & \Par 
 \monir{\ep{s}{\pA}}{\myctxr{\ctx{T}_4}{\past \ltinp{\pS}{\mathsf{price}}{\ltout{B}{\mathsf{share}}{\ltinp{B}{\mathsf{OK}}{\lend}}}}}{y}{\upd{y}{d}} 
 \\
 & \Par N_4 \Par \codah{s}{\valueq{\pA}{\pS}{\exBook}}{\emp}{}~)  = M_4
 \end{align*}
-where
-$\myctxr{\ctx{T}_4}{\bullet}  =\ltout{\pS}{\mathsf{title}}{\bullet}$ and, as before, $N_4$ represents participants not involved in the reduction.
+where 
+$\myctxr{\ctx{T}_4}{\bullet}  =\ltout{\pS}{\mathsf{title}}{\bullet}$ is a the \emph{type context} (with hole $\bullet$) and, as before, $N_4$ represents participants not involved in the reduction.
 $M_4$ has several possible forward and backward reductions. 
 One particular reduction uses Rule~\bkcolor{\textsc{(RIn)}}
 to undo the input at \pS:
@@ -569,7 +581,7 @@ To illustrate abstraction passing, let us assume that
 $M_3$ above follows a sequence of forward reductions
 until the configuration:
 \begin{align*}
-M_7 = ~ &   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\bbout{\epB}{\thunkp{\bout{\epB}{\text{`Lucca, 55100'}}\binp{\epB}{d}\inact}}\inact}} 
+M_7 = ~ &   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\bbout{\epB}{\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}}\inact}} 
 \\
 & \!\!\!\! \Par \hmoni{\ep{s}{\pB}}{\myctxr{\ctx{T}_7}{\past \ltout{C}{\thunkt}{\ltout{\pS}{\mathsf{address}}{\ltinp{\pS}{\mathsf{date}}{\lend}}}}}{z,p,h}{\store_7} 
 \\
@@ -622,10 +634,10 @@ M_8 & = ~   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\inact}}
 \hmoni{\ep{s}{\pC}}{\myctxr{\ctx{T}_8}{ \ltinp{B}{\thunkt}{\past\lend}}}{w,h,code}{\store_9} 
 \\
 & 
-\Par N_5 \Par \codah{s}{h_7 \cons \valueq{\pB}{\pC}{\thunkp{\bout{\epB}{\text{`Lucca, 55100'}}\binp{\epB}{d}\inact}}}{\emp}{}~) 
+\Par N_5 \Par \codah{s}{h_7 \cons \valueq{\pB}{\pC}{\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}}}{\emp}{}~) 
 \end{align*}
 where
-$\store_9 = \store_8 \upd{code}{\thunkp{\bout{\epB}{\text{`Lucca, 55100'}}\binp{\epB}{d}\inact}}$.
+$\store_9 = \store_8 \upd{code}{\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}}$.
 We now may apply Rule~\fwcolor{\textsc{(Beta)}} to obtain the actual code sent from \pB to \pC:
 \begin{align*}
 M_8 & \fw ~   \news{s}\news{k}(\,  
@@ -634,7 +646,7 @@ M_8 & \fw ~   \news{s}\news{k}(\,
 %& \Par \hmoni{s_\pB}{\myctxr{\ctx{T}_7}{\ltout{C}{\thunkt}{\past\ltout{S}{\mathsf{address}}{\ltinp{S}{\mathsf{date}}{\lend}}}}}{z,p,s}{\store_7} 
 %\\
 %& \Par 
-\np{\key{{\loc_4}}{\pC}}{\conf{\inact}{\bout{\epB}{\text{`Lucca, 55100'}}\binp{\epB}{d}\inact}} 
+\np{\key{{\loc_4}}{\pC}}{\conf{\inact}{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}} 
 \!\!  \Par N_6 
 \\
 & \!\!\Par \hmoni{\ep{s}{\pB}}{\myctxr{\ctx{T}_7}{\ltout{C}{\thunkt}{\past\ltout{\pS}{\mathsf{address}}{\ltinp{\pS}{\mathsf{date}}{\lend}}}}}{z,p,h}{\store_7} 
@@ -645,31 +657,32 @@ M_8 & \fw ~   \news{s}\news{k}(\,
 \hmoni{\ep{s}{\pC}}{\myctxr{\ctx{T}_8}{ \ltinp{B}{\thunkt}{k.\past\lend}}}{w,h,code}{\store_9} 
 \\
 & 
-\!\!\Par \codah{s}{h_7 \cons \valueq{\pB}{\pC}{\thunkp{\bout{\epB}{\text{`Lucca, 55100'}}\binp{\epB}{d}\inact}}}{\emp}{}~) 
+\!\!\Par \codah{s}{h_7 \cons \valueq{\pB}{\pC}{\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}}}{\emp}{}~) 
 = M_9
 \end{align*}
 where $N_6$ is the rest of the system. 
 Notice that this reduction has added a running function on a fresh 
-$k$, which is also used within the type stored in the monitor $\ep{s}{\pC}$.
+$k$, which is also used  in the type stored in the monitor $\ep{s}{\pC}$.
 
 The reduction $M_8 \fw M_9$ completes the code mobility from $\pB$ to $\pC$: the now active thunk
-will execute $\pB$'s implementation from $\pC$'s location. Observe that Bob's identity \pB is ``hardwired'' in the sent thunk; 
+will execute $\pB$'s protocol from $\pC$'s location. Observe that Bob's identity \pB is ``hardwired'' in the sent thunk; 
 there is no way for \pC to execute the code by referring to a participant different  from \pB.
 %This justifies the premise 
 %$\p = \er \,\vee\, \p \in \names{\er, h_i}$ present in Rules~\fwcolor{\textsc{(Out)}} and \fwcolor{\textsc{(In)}} 
 %\erase{\fwcolor{\textsc{(Sel)}} and ~\fwcolor{\textsc{(Bra)}}} (and in their backward counterparts):
 When executing previously received mobile code, the participant mentioned in the location (i.e., $\pC$)
 and that mentioned in the located process (i.e., $\pB$) may differ.
-Further forward reductions from $M_9$ will  modify the cursor in the type stored in monitor $\ep{s}{\pB}$
-based on the process located at $\key{{\loc_4}}{\pC}$.
+Further  reductions from $M_9$ will  modify the cursor in the type stored in   $\ep{s}{\pB}$
+based on the process   at $\key{{\loc_4}}{\pC}$.
 
 
 
-\section{IMPLEMENTATION}
+\section{Our Haskell Implementation}
 %\textbf{\emph{In this section we show how we implement the processes, types, and semantics in the PPDP paper}}
+\label{implementing-the-ppdp17-calculus-in-haskell}
 
-\subsection{Implementing Processes in Haskell}\label{implementing-the-ppdp17-calculus-in-haskell}
 
+\subsection{Implementing Processes}
 The implementation uses an algebraic data type (also known as union type or sum type) to
 encode all the process constructors in the syntax of $P$ given above. We use the \texttt{Fix} type
 (Appendix \ref{fix}) to factor out recursion from the grammar.
@@ -720,12 +733,10 @@ requires wrapping of constructors with \texttt{Fix}:
 \NormalTok{simple }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{42}\NormalTok{)}
 
 \OtherTok{complex ::} \DataTypeTok{Fix} \DataTypeTok{ExprF}
-\NormalTok{complex }\FunctionTok{=} 
-    \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Add}\NormalTok{ (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{40}\NormalTok{)) (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{2}\NormalTok{)))}
+\NormalTok{complex }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Add}\NormalTok{ (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{40}\NormalTok{)) (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{2}\NormalTok{)))}
 \end{Highlighting}
 \end{Shaded}
-We will describe a better way of writing \texttt{Fix}ed values in Section
-\ref{free-monad-dsl}.
+We will describe a better way of writing \texttt{Fix}ed values in Appendix~\ref{free-monad-dsl}.
 \end{example}
 
 We implement processes using \texttt{Program}, which is defined next.
@@ -735,7 +746,6 @@ Apart from the process-level recursion, it is a direct translation of the proces
 \begin{Highlighting}[]
 \KeywordTok{type} \DataTypeTok{Participant} \FunctionTok{=} \DataTypeTok{String}
 \KeywordTok{type} \DataTypeTok{Identifier} \FunctionTok{=} \DataTypeTok{String}
-
 \KeywordTok{type} \DataTypeTok{Program}\NormalTok{ value }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{ProgramF}\NormalTok{ value) }
 
 \KeywordTok{data} \DataTypeTok{ProgramF}\NormalTok{ value next }
@@ -750,12 +760,10 @@ Apart from the process-level recursion, it is a direct translation of the proces
 \NormalTok{        ,}\OtherTok{ variableName ::} \DataTypeTok{Identifier}
 \NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ next  }
 \NormalTok{        \}}
-
-    \CommentTok{-- choice primitives}
+ \CommentTok{-- choice primitives}
     \FunctionTok{|} \DataTypeTok{Offer} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, next))}
     \FunctionTok{|} \DataTypeTok{Select} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, value, next))}
-
-    \CommentTok{-- other constructors }
+ \CommentTok{-- other constructors }
     \FunctionTok{|} \DataTypeTok{Parallel}\NormalTok{ next next }
     \FunctionTok{|} \DataTypeTok{Application} \DataTypeTok{Identifier}\NormalTok{ value}
     \FunctionTok{|} \DataTypeTok{NoOp}
@@ -788,8 +796,7 @@ We can now write processes like the one below. It first sends the value $42$ and
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\NormalTok{example }\FunctionTok{=} 
-    \DataTypeTok{Fix} 
+\NormalTok{example }\FunctionTok{=} \DataTypeTok{Fix} 
 \NormalTok{        ( }\DataTypeTok{Parallel} 
 \NormalTok{            (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Send} \StringTok{"me"}\NormalTok{ (}\DataTypeTok{VInt} \DecValTok{42}\NormalTok{) (}\DataTypeTok{Fix} \DataTypeTok{NoOp}\NormalTok{)))}
 \NormalTok{            (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Receive} \StringTok{"you"} \StringTok{"y"}\NormalTok{ (}\DataTypeTok{Fix} \DataTypeTok{NoOp}\NormalTok{)))}
@@ -801,8 +808,38 @@ While the above is easily manipulatable with pattern matching and
 functions from the \texttt{Fix} module, it is difficult to write clear
 examples in this style: longer expressions need ever more parentheses
 and in general there is too much syntactical clutter. We will get back
-to designing a better syntax for defining programs in Section
-\ref{free-monad-dsl}.
+to designing a better syntax for defining programs in Appendix~\ref{free-monad-dsl}.
+
+\paragraph{Delegation via Abstraction Passing.}\label{abstraction-passing}
+
+As delegation is when a participant can delegate (a part of)
+their protocol to be fulfilled (i.e., implemented) by another participant. 
+An example of
+where this idea is useful is a load balancing server: from the client's
+perspective, the server handles the request, but actually the load
+balancer delegates incoming requests to workers. The client does not
+need to be aware of this implementation detail.
+Recall the definition of \texttt{ProgramF}:
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{ProgramF}\NormalTok{ value next }
+    \CommentTok{-- communication primitives}
+    \FunctionTok{=} \DataTypeTok{Send} 
+\NormalTok{        \{}\OtherTok{ owner ::} \DataTypeTok{Participant}
+\NormalTok{        ,}\OtherTok{ value ::}\NormalTok{ value}
+\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ next }
+\NormalTok{        \}}
+    \FunctionTok{|} \FunctionTok{...} 
+\end{Highlighting}
+\end{Shaded}
+The \texttt{ProgramF} constructors that move the local type forward
+(send/receive, select/offer) have an \texttt{owner} field that stores
+whose local type they should be checked against and modify. This field is
+also present in \texttt{TypeContext}, the data type we define for representing local types (see below). 
+
+Because we allow references to values in the implementation, all
+references in a function have to be dereferenced before it can be safely
+sent over a channel.
 
 \subsection{Global Types}
 
@@ -868,7 +905,6 @@ is done, control flow returns to the outer loop:
                         \CommentTok{-- jumps to recursion point 2}
 \NormalTok{                        G.recursionVariable}
 \NormalTok{                      )}
-            
 \NormalTok{                    , (}\StringTok{"endInnerLoop"}\NormalTok{, }\KeywordTok{do} 
                         \CommentTok{-- jumps to recursion point 1}
 \NormalTok{                        G.weakenRecursion G.recursionVariable}
@@ -888,11 +924,9 @@ Similarly, the three-buyer example can be written as:
 \CommentTok{-- a data type representing the participants}
 \KeywordTok{data} \DataTypeTok{MyParticipants} \FunctionTok{=} \DataTypeTok{A} \FunctionTok{|} \DataTypeTok{B} \FunctionTok{|} \DataTypeTok{C} \FunctionTok{|} \DataTypeTok{V} 
     \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Eq}\NormalTok{, }\DataTypeTok{Ord}\NormalTok{, }\DataTypeTok{Enum}\NormalTok{, }\DataTypeTok{Bounded}\NormalTok{)}
-
 \CommentTok{-- a data type representing the used types }
 \KeywordTok{data} \DataTypeTok{MyType} \FunctionTok{=} \DataTypeTok{Title} \FunctionTok{|} \DataTypeTok{Price} \FunctionTok{|} \DataTypeTok{Share} \FunctionTok{|} \DataTypeTok{Ok} \FunctionTok{|} \DataTypeTok{Thunk} \FunctionTok{|} \DataTypeTok{Address} \FunctionTok{|} \DataTypeTok{Date}
     \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Eq}\NormalTok{, }\DataTypeTok{Ord}\NormalTok{)}
-
 \CommentTok{-- a description of the protocol}
 \OtherTok{globalType ::} \DataTypeTok{GlobalType.GlobalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
 \NormalTok{globalType }\FunctionTok{=} \KeywordTok{do} 
@@ -915,12 +949,12 @@ steps.
 To enable backward steps, we need to store some information when we move forward, just as enabled by the configurations in the formal language.
 As described in~\cite{DBLP:conf/ppdp/MezzinaP17}, we need to track information about the local type and the process.
 
-For the local type, we define a new data type called \texttt{TypeContext}. It
+For the local type, we define a data type called \texttt{TypeContext}. It
 contains the actions that have been performed; for some of them, it also
 stores extra information like the \texttt{owner}.
 For the process, there are four things that we need to track:
 
-\begin{enumerate}
+\begin{enumerate}[1.]
 \def\labelenumi{\arabic{enumi}.}
 \item \emph{Used variable names in receives}.
     Recall the process implementation for  the vendor in the three-buyer example:
@@ -928,7 +962,7 @@ For the process, there are four things that we need to track:
   \text{Vendor} & =  \bout{d}{x:\tproj{G}{\pS}}\binp{x}{t}\bout{x}{price(t)}\bout{x}{price(t)} \binp{x}{ok}\binp{x}{a} \bout{x}{date}\inact
   \end{align*}
 
-  Using the syntax introduced in Section~\ref{free-monad-dsl}, we can implement this
+  Using the syntax presented in Appendix~\ref{free-monad-dsl}, we can write this
   process as:
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -944,7 +978,7 @@ For the process, there are four things that we need to track:
   when we evaluate the \texttt{t\ \textless{}-\ H.receive} line
   (moving to configuration \(M_3\)), and then revert it, we must
   reconstruct a receive that assigns to \texttt{t}, because the
-  following lines depend on the name \texttt{t}. \\
+  following lines depend on the name \texttt{t}. 
 
 \item \emph{Function calls and their arguments}.
       Consider the transition from configuration $M_7$ to $M_8$, as discussed in Section~\ref{the-process-model}. Once the thunk
@@ -965,7 +999,7 @@ For the process, there are four things that we need to track:
   order in which to undo them is undefined: we need both orders to work.
   Only using a stack could mix up the applications. When the application
   keeps track of exactly which function and argument it used the end
-  result is always the same.  \\
+  result is always the same.  
   
 \item \emph{Messages on the channel}.
     We consider again the implementation of the first three steps of the protocol:
@@ -976,7 +1010,6 @@ For the process, there are four things that we need to track:
 \NormalTok{alice }\FunctionTok{=} \KeywordTok{do} 
 \NormalTok{    H.send (}\DataTypeTok{VString} \StringTok{"Logicomix"}\NormalTok{ )}
     \FunctionTok{...}
-
 \OtherTok{vendor ::} \DataTypeTok{H.HighLevelProgram}\NormalTok{ a}
 \NormalTok{vendor }\FunctionTok{=} \KeywordTok{do} 
 \NormalTok{    t }\OtherTok{<-}\NormalTok{ H.receive }
@@ -995,7 +1028,7 @@ For the process, there are four things that we need to track:
   history stack. When the receive is rolled, the queue pops the value
   from its stack and puts it at the front of the queue again. Rolling
   the send will remove the value from the queue and puts it back into
-  the sender's program. \\
+  the sender's program. 
 \item \emph{Unused branches}.
   When a labeled choice is made and then reverted, we want all our options to be
   available again. Currently, another label cannot actually be selected
@@ -1045,46 +1078,12 @@ For the process, there are four things that we need to track:
 %   \end{enumerate}
 % \end{enumerate}
 
-\subsection{Abstraction Passing is Protocol
-Delegation}\label{abstraction-passing}
 
-Protocol delegation is where a participant can delegate (a part of)
-their protocol to be fulfilled by another participant. An example of
-where this idea is useful is a load balancing server: from the client's
-perspective, the server handles the request, but actually the load
-balancer delegates incoming requests to workers. The client does not
-need to be aware of this implementation detail.
-
-Recall the definition of \texttt{ProgramF}:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\KeywordTok{data} \DataTypeTok{ProgramF}\NormalTok{ value next }
-    \CommentTok{-- communication primitives}
-    \FunctionTok{=} \DataTypeTok{Send} 
-\NormalTok{        \{}\OtherTok{ owner ::} \DataTypeTok{Participant}
-\NormalTok{        ,}\OtherTok{ value ::}\NormalTok{ value}
-\NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ next }
-\NormalTok{        \}}
-    \FunctionTok{|} \FunctionTok{...} 
-\end{Highlighting}
-\end{Shaded}
-
-The \texttt{ProgramF} constructors that move the local type forward
-(send/receive, select/offer) have an \texttt{owner} field that stores
-whose local type they should be checked agains and modfiy. This field is
-also present in the \texttt{TypeContext}.
-
-Because we allow references to values in the implementation, all
-references in a function have to be dereferenced before it can be safely
-sent over a channel.
 
 
 \subsection{Putting it all together}\label{combining}
-
-With all the definitions encoded, we can now define forward and backward
-evaluation of our system. Our aim is to implement the reduction operators \fw and \bk, with the types:
-
+With all the definitions in pace, we can now define the forward and backward
+evaluation of our system. Our aim is to implement the reduction relations \fw and \bk with the types:
 \begin{Shaded}
 \begin{Highlighting}[]
 \OtherTok{forward  ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Session}\NormalTok{ ()}
@@ -1092,8 +1091,8 @@ evaluation of our system. Our aim is to implement the reduction operators \fw an
 \end{Highlighting}
 \end{Shaded}
 
-These functions take a \texttt{Location}, our way of modeling different
-threads or machines, and tries to move the process at that location
+These functions take a \texttt{Location} (our way of modeling different
+threads or machines) and try to move the process at that location
 forward or backward. The \texttt{Session} type contains the
 \texttt{ExecutionState}, the state of the session (all programs, local
 types, variable bindings, etc.), and can throw errors of type
@@ -1104,15 +1103,13 @@ types, variable bindings, etc.), and can throw errors of type
 \KeywordTok{type} \DataTypeTok{Session}\NormalTok{ a }\FunctionTok{=} \DataTypeTok{StateT} \DataTypeTok{ExecutionState}\NormalTok{ (}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
 \end{Highlighting}
 \end{Shaded}
-
-\emph{See also Appendices \ref{state} on \texttt{StateT} and
-\ref{except} on \texttt{Except}}
+({See also Appendices \ref{state} on \texttt{StateT} and
+\ref{except} on \texttt{Except}.)
 
 The semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} guides how we store the execution
-state. Some data is bound to its location (for instance the process that
-is running) and other data is bound to its participant (for instance the
+state. Some data is bound to its location (e.g., the process that
+is running) and other data is bound to its participant (e.g., the
 local type).
-
 The information about a participant grouped in a type called
 \texttt{Monitor}:
 
@@ -1141,12 +1138,12 @@ The information about a participant grouped in a type called
 \begin{itemize}
 \item
   \texttt{\_localType} contains \texttt{TypeContext} and
-  \texttt{LocalType} stored as a tuple. This tuple gives a curser into
+  \texttt{LocalType} stored as a tuple. This tuple gives a cursor into
   the local type, where everything to the left is the past and
   everything to the right is the future.
 \item
-  The next two fields are for keeping track of recursion in the local
-  type. the \texttt{\_recursiveVariableNumber} is an index into the
+  The next two fields keep track of recursion in the local
+  type. We use the \texttt{\_recursiveVariableNumber} is an index into the
   \texttt{\_recursionPoints} list: when a \texttt{RecursionVariable} is
   encountered we look at that index to find the new future local type.
 \item
@@ -1158,13 +1155,13 @@ The information about a participant grouped in a type called
   function applications we use a \texttt{Map} indexd by unique
   identifiers that stores function and argument.
 \item
-  Finally \texttt{\_store} is a variable store with the currently
-  defined bindings. Variable shadowing - where two processes of the same
-  participant define the same variable name - is not an issue, because
+   \texttt{\_store} is a variable store with the currently
+  defined bindings. Variable shadowing (when two processes of the same
+  participant define the same variable name) is not an issue: 
   variables are assigned a guaranteed unique name.
 \end{itemize}
 
-We can now define \texttt{ExecutionState}. It contains some counters for
+\noindent We can now define \texttt{ExecutionState}: it contains some counters for
 generating unique variable names, a monitor for every participant and a
 program for every location. Additionally, every location has a default
 participant and a stack for unchosen branches:
@@ -1190,17 +1187,13 @@ The message queue is global and thus also lives in the
 see whether they are functions and if so, to extract their bodies for
 application.
 
-\subsection{Properties of Reversibility}\label{properties-of-reversibility}
+\subsection{Causal Consistency?}\label{properties-of-reversibility}
+As mentioned in the Introduction, causal consistency is a key correctness criterion for a reversible semantics. This property has been proved in~\cite{DBLP:conf/ppdp/MezzinaP17} for the formal model laid out in Section \ref{the-process-model}. One may then wonder, does our Haskell implementation preserve this property? 
 
-The Introduction mentions causal consistency as a key correctness criterion. 
-Causal consistency is proven for the formal semantics laid out in Section \ref{the-process-model}, 
-but does the translation into Haskell preserve this property? 
-
-In basic terms, causal consistency is the property that backward steps always lead to states that 
+Intuitively, causal consistency is the property that backward steps always lead to states that 
 could have been reached by moving forward only.
-
 The global type defines a partial order on all the communication steps.
-The relation of this partial order is causal dependency. Stepping
+The relation of this partial order is a causal dependency. Stepping
 backward is only allowed when all its causally dependent actions are
 undone. 
 
@@ -1209,10 +1202,293 @@ For instance, a send can only be undone when the queue is in a state that can on
 Being able to undo a send means that the corresponding receive has already been rolled back, so it is impossible to introduce causal inconsistencies. 
 
 Because of the encoding of causal dependencies as data dependencies, and the fact that these data dependencies are preserved in the implementation,  
-we claim that the Haskell implementation is faithfull enough that causal consistency is preserved.
+we claim that the Haskell implementation is faithful enough to the formal semantics, and therefore that the causal consistency property is preserved.
 
 
-\section{Convenient Syntax with the Free Monad}\label{free-monad-dsl}
+
+
+\section{Running and Debugging Programs}\label{running-debugging}
+
+Finally, we want to be able to run our programs. Our implementation
+offers mechanisms to step through a program interactively, and run it to
+completion.
+
+We can step through the program interactively in the Haskell REPL
+environment (Appendix \ref{installing-and-running}). 
+When the \texttt{ThreeBuyer} example is loaded, the program is in a state corresponding to configuration $M_1$ from Section \ref{the-process-model}.
+We can print the initial state of our program:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{>}\NormalTok{ initialProgram}
+\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Send}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
+\end{Highlighting}
+\end{Shaded}
+
+Next we introduce the \texttt{stepForward} and \texttt{stepBackward}
+functions. They use mutability, normally frowned upon in Haskell, to
+avoid having to manually keep track of the updated program state like in
+the snippet below:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{state1 }\FunctionTok{=}\NormalTok{ stepForwardInconvenient }\StringTok{"l1"}\NormalTok{ state0}
+\NormalTok{state2 }\FunctionTok{=}\NormalTok{ stepForwardInconvenient }\StringTok{"l1"}\NormalTok{ state1}
+\NormalTok{state3 }\FunctionTok{=}\NormalTok{ stepForwardInconvenient }\StringTok{"l1"}\NormalTok{ state2}
+\end{Highlighting}
+\end{Shaded}
+
+Manual state passing is error-prone and inconvenient. We provide helpers
+ to work around this issue (internally, those helpers use \texttt{IORef}). We must
+first initialize the program state:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{>} \KeywordTok{import }\DataTypeTok{Interpreter}
+\FunctionTok{>}\NormalTok{ state }\OtherTok{<-}\NormalTok{ initializeProgram initialProgram}
+\end{Highlighting}
+\end{Shaded}
+
+\noindent We can then use \texttt{stepForward} and \texttt{stepBackward} to
+evaluate the program: we advance Alice at $l_1$ to reach   $M_2$ and then the vendor at $l_4$ to reach  $M_3$:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{>}\NormalTok{ stepForward }\StringTok{"l1"}\NormalTok{ state}
+\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Receive}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
+\FunctionTok{>}\NormalTok{ stepForward }\StringTok{"l4"}\NormalTok{ state }
+\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Receive}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
+\end{Highlighting}
+\end{Shaded}
+
+When the user tries an invalid step, an error is displayed. For instance,
+in state $M_3$, where \(l_1\) and \(l_4\) have been moved forward once (like in the
+snippet above), \(l_1\) cannot move forward (it needs to receive but
+there is nothing in the queue) and not backward (\(l_4\), the receiver,
+must undo its action first).
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{>}\NormalTok{ stepForward }\StringTok{"l1"}\NormalTok{ state}
+\FunctionTok{***} \DataTypeTok{Exception}\FunctionTok{:} \DataTypeTok{QueueError} \StringTok{"Receive"} \DataTypeTok{EmptyQueue}
+\DataTypeTok{CallStack}\NormalTok{ (from }\DataTypeTok{HasCallStack}\NormalTok{)}\FunctionTok{:}
+\NormalTok{  error, called at }\FunctionTok{...} 
+\FunctionTok{>}\NormalTok{ stepBackward }\StringTok{"l1"}\NormalTok{ state}
+\FunctionTok{***} \DataTypeTok{Exception}\FunctionTok{:} \DataTypeTok{QueueError} \StringTok{"BackwardSend"} \DataTypeTok{EmptyQueue}\NormalTok{ state}
+\DataTypeTok{CallStack}\NormalTok{ (from }\DataTypeTok{HasCallStack}\NormalTok{)}\FunctionTok{:}
+\NormalTok{  error, called at }\FunctionTok{...} 
+\end{Highlighting}
+\end{Shaded}
+
+Errors are defined as:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{Error} 
+    \FunctionTok{=} \DataTypeTok{UndefinedParticipant} \DataTypeTok{Participant}
+    \FunctionTok{|} \DataTypeTok{UndefinedVariable} \DataTypeTok{Participant} \DataTypeTok{Identifier}
+    \FunctionTok{|} \DataTypeTok{SynchronizationError} \DataTypeTok{String}
+    \FunctionTok{|} \DataTypeTok{LabelError} \DataTypeTok{String}
+    \FunctionTok{|} \DataTypeTok{QueueError} \DataTypeTok{String} \DataTypeTok{Queue.QueueError}
+    \FunctionTok{|} \DataTypeTok{ChoiceError} \DataTypeTok{ChoiceError}
+    \FunctionTok{|} \DataTypeTok{Terminated}
+\end{Highlighting}
+\end{Shaded}
+
+To fully evaluate a program, we use a round-robin scheduler that calls
+\texttt{forward} on the locations in order. A forward step can produce
+an error. There are two error cases that we can recover from:
+
+\begin{itemize}
+\item
+  \textbf{blocked on receive}, either
+  \texttt{QueueError\ \_\ InvalidQueueItem} or
+  \texttt{QueueError\ \_\ EmptyQueue}: the process wants to perform a
+  receive, but the expected item is not at the top of the queue yet. In
+  this case we proceed evaluating the other locations so they
+  can send the value that the falty location expects. Above, `\texttt{\_}'
+    means that we ignore the \texttt{String} field
+   used to provide better error messages. Because no error
+  message is generated, that field is not needed.
+\item
+  \textbf{location terminates} with \texttt{Terminated}: the execution
+  has reached a \texttt{NoOp}. In this case we do not want to schedule
+  this location any more.
+\end{itemize}
+
+\noindent Otherwise we continue until there are no active (non-terminated)
+locations left. For code please see Appendix \ref{scheduling-code}.
+
+Running until completion (or error) is also available in the REPL:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{>}\NormalTok{ untilError initialProgram}
+\DataTypeTok{Right}\NormalTok{ locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix} \DataTypeTok{NoOp}\NormalTok{)), }\FunctionTok{...} 
+\end{Highlighting}
+\end{Shaded}
+
+Note that this scheduler can still get into deadlocks, for instance
+consider these two equivalent global types:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{globalType1 }\FunctionTok{=} \KeywordTok{do} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
+\NormalTok{globalType2 }\FunctionTok{=} \KeywordTok{do} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price} 
+\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
+\end{Highlighting}
+\end{Shaded}
+
+The second and third transaction are swapped. The communication they describe
+is the same, but in practice they are very different. The first example will
+run to completion, whereas the second can deadlock because \texttt{A} can
+send a \texttt{Share} before \texttt{V} does. \texttt{B} expects the
+share from \texttt{V} first, but the share from \texttt{A} is the first
+in the queue. Therefore, no progress can be made.
+
+
+\section{Discussion and Concluding Remarks}\label{discussion}
+
+\paragraph{Benefits of pure functional
+programming.}\label{benefits-of-pure-functional-programming}
+
+It has consistently been the case that sticking closer to the formal
+model gives better code. The abilities that Haskell gives for directly
+specifying formal statements are invaluable. A key invaluable
+feature is algebraic data types (ADTs, also known as tagged unions or
+sum types). Compare the formal definition and the Haskell data type for global
+types.
+\begin{align*}
+    G, G'  \bnfis & \gtcom{p}{q}{U}{G} %\bnfbar 
+    \sbnfbar
+    \gtcho{p}{q}{\lbl_i}{G_i} %\\
+    \sbnfbar %& 
+    \mu X. G \sbnfbar X \sbnfbar \gend 
+\end{align*}
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{GlobalTypeF}\NormalTok{ u next }\FunctionTok{=} 
+    \DataTypeTok{Transaction}\NormalTok{ \{}\FunctionTok{..}\NormalTok{\} }\FunctionTok{|} \DataTypeTok{Choice}\NormalTok{ \{}\FunctionTok{..}\NormalTok{\}  }\FunctionTok{|} \DataTypeTok{R}\NormalTok{ next }\FunctionTok{|} \DataTypeTok{V} \FunctionTok{|} \DataTypeTok{End} \FunctionTok{|} \DataTypeTok{Wk}\NormalTok{ next}
+\end{Highlighting}
+\end{Shaded}
+
+The definitions correspond directly. Moreover, we know that these are
+all the ways to construct a value of type \texttt{GlobalTypeF} and can
+exhaustively match on all the cases. Functional languages have had these
+features for a very long time. 
+%In recent years they have also made their way into non-functional languages (Rust, Swift, Kotlin).
+Secondly, purity and immutability are very useful in implementing and
+testing the reversible semantics. The type system can actually guarantee
+that we have not forgotten to revert anything.
+
+In a pure language, given functions
+\texttt{f\ ::\ a\ -\textgreater{}\ b} and
+\texttt{g\ ::\ b\ -\textgreater{}\ a} to prove that \(f\) and \(g\) are
+inverses it is enough to prove 
+%(or to test for the domain you'reinterested in) 
+that
+%\begin{verbatim}
+%f . g = identity && g . f = identity
+%\end{verbatim}
+$\mathtt{f} \cdot \mathtt{g}$ and  $\mathtt{g} \cdot \mathtt{f}$ both compose to the identity.
+In an impure language, even if these equalities are observed we
+cannot be sure that there were no side-effects. Because we do not need
+to consider a context (the outside world) here, checking that
+reversibility works is as simple as comparing initial and final states
+for all backward reduction rules.
+
+
+%\paragraph{Future Work.}\label{concurrent-debuggers}
+%
+%As mentioned we initially also set out to investigate how useful PPDP
+%semantics are for debugging concurrent programs. As it stands, there are
+%two missing features
+%
+%\begin{enumerate}
+%\def\labelenumi{\arabic{enumi}.}
+%\item
+%  Modifying concurrent control flow
+%
+%  That is, a way to specify which thread will (try to) take a step
+%  forward next. The problem with concurrency is not so much technical:
+%  the primitives are available. What is needed is some way to step
+%  through a program one instruction at a time. The real challenge is
+%  providing a convenient mechanism for doing so.
+%\item
+%  Convenient user interface
+%
+%  CaReDeb provides a command line interface. While CaReDeb is
+%  interesting from a technical point of view, its interface is not
+%  convenient. Additionally, the overhead of bringing the problem into
+%  CaReDeb's language is large: more time is probably spent translating
+%  than actually debugging.
+%
+%  We think that a good graphical interface is possible, but besides
+%  technical features a good user experience also needs user feedback.
+%  This means that we need to look for users and concrete use cases. It
+%  would help if there were some concrete set of problems that could be
+%  extracted from code, compiled into a format/language that our debugger
+%  understands and then visually debugged. Performance can then be
+%  evaluated based on how well the debugger solves real-world problems.
+%\end{enumerate}
+
+
+\paragraph{Concluding Remarks.}\label{conclusion}
+
+We have given a functional implementation of the reversible semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} using the Haskell
+programming language. By embedding the reversible semantics we can now run and
+verify our example programs automatically and inspect them
+interactively.
+
+We have seen that the formal programming model in~\cite{DBLP:conf/ppdp/MezzinaP17} paper can be split into three core components: (i)~a process calculus, (ii)~multiparty
+session types (global and local types), and (iii)~forward and backward reduction semantics. The three components can be cleanly represented as recursive Haskell data types. We are confident that other features developed in~\cite{DBLP:conf/ppdp/MezzinaP17} (in particular, an alternative semantics for decoupled rollbacks)
+can easily be integrated in the development described here.
+Relatedly, the implementation process has shown that sticking to the
+formal model leads to better code; there is less space for bugs
+to creep in. Furthermore, Haskell's mathematical nature means that the
+implementation inspired by the formal specification is easy (and often
+idiomatic) to express.
+Finally, we have discussed how Haskell allows for the definition of flexible embedded
+domain-specific languages, and makes it easy to transform between
+different representations of our programs (using among others \texttt{Monad.Free}).
+
+
+
+
+
+
+
+
+\paragraph{\textbf{Acknowledgments.}} 
+This research has been partially supported by 
+%the Undergratudate School of Science and the Bernoulli Institute of the University of Groningen. We also acknowledge support from the 
+COST Action IC1405 ``Reversible computation -- Extending horizons of computing''.
+
+%The work in this thesis has been presented at the TFP'18 conference in
+%Gothenburg, Sweden. Attending the conference was made possible by
+%financial support from the , for which we are extremely grateful
+
+\bibliographystyle{abbrv}
+%\bibliography{biblio}
+\bibliography{session,biblio}
+
+%\pagebreak
+\newpage
+\appendix
+
+\section{Appendix}\label{appendix}
+
+%Background information on Haskell syntax and concepts used in the thesis.
+
+
+\subsection{Convenient Syntax with the Free Monad}\label{free-monad-dsl}
 
 The types we have defined for \texttt{Program}, \texttt{GlobalType} and
 \texttt{LocalType} form recursive tree structures. Because they are all
@@ -1313,291 +1589,6 @@ the \texttt{Pure} constructor needs a value of type \texttt{Void}, which
 don't exist. For more information see Appendix
 \ref{well-formedness-free}.
 
-
-\section{Running and Debugging Programs}\label{running-debugging}
-
-Finally, we want to be able to run our programs. The implementation
-offers mechanisms to step through a program interactively, and run it to
-completion.
-
-We can step through the program interactively in the Haskell REPL
-environment (Appendix \ref{installing-and-running}). 
-When the \texttt{ThreeBuyer} example is loaded, the program is in a state corresponding to $M_1$ from Section \ref{the-process-model}.
-We can print the initial state of our program:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\FunctionTok{>}\NormalTok{ initialProgram}
-\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Send}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
-\end{Highlighting}
-\end{Shaded}
-
-Next we introduce the \texttt{stepForward} and \texttt{stepBackward}
-functions. They use mutability, normally frowned upon in Haskell, to
-avoid having to manually keep track of the updated program state like in
-the snippet below:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{state1 }\FunctionTok{=}\NormalTok{ stepForwardInconvenient }\StringTok{"l1"}\NormalTok{ state0}
-\NormalTok{state2 }\FunctionTok{=}\NormalTok{ stepForwardInconvenient }\StringTok{"l1"}\NormalTok{ state1}
-\NormalTok{state3 }\FunctionTok{=}\NormalTok{ stepForwardInconvenient }\StringTok{"l1"}\NormalTok{ state2}
-\end{Highlighting}
-\end{Shaded}
-
-Manual state passing is error-prone and inconvenient. We provide helpers
-(that internally use \texttt{IORef}) to work around this issue. We must
-first initialize the program state:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\FunctionTok{>} \KeywordTok{import }\DataTypeTok{Interpreter}
-\FunctionTok{>}\NormalTok{ state }\OtherTok{<-}\NormalTok{ initializeProgram initialProgram}
-\end{Highlighting}
-\end{Shaded}
-
-Then we can use \texttt{stepForward} and \texttt{stepBackward} to
-evaluate the program: we advance Alice at $l_1$ to reach state $M_2$ and then the vendor at $l_4$ to reach state $M_3$
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\FunctionTok{>}\NormalTok{ stepForward }\StringTok{"l1"}\NormalTok{ state}
-\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Receive}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
-\FunctionTok{>}\NormalTok{ stepForward }\StringTok{"l4"}\NormalTok{ state }
-\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Receive}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
-\end{Highlighting}
-\end{Shaded}
-
-When the user tries an invalid step, an error is displayed. for instance
-in state $M_3$, where \(l_1\) and \(l_4\) have been moved forward once like in the
-snippet above, \(l_1\) cannot move forward (it needs to receive but
-there is nothing in the queue) and not backward (\(l_4\), the receiver,
-must undo its action first).
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\FunctionTok{>}\NormalTok{ stepForward }\StringTok{"l1"}\NormalTok{ state}
-\FunctionTok{***} \DataTypeTok{Exception}\FunctionTok{:} \DataTypeTok{QueueError} \StringTok{"Receive"} \DataTypeTok{EmptyQueue}
-\DataTypeTok{CallStack}\NormalTok{ (from }\DataTypeTok{HasCallStack}\NormalTok{)}\FunctionTok{:}
-\NormalTok{  error, called at }\FunctionTok{...} 
-\FunctionTok{>}\NormalTok{ stepBackward }\StringTok{"l1"}\NormalTok{ state}
-\FunctionTok{***} \DataTypeTok{Exception}\FunctionTok{:} \DataTypeTok{QueueError} \StringTok{"BackwardSend"} \DataTypeTok{EmptyQueue}\NormalTok{ state}
-\DataTypeTok{CallStack}\NormalTok{ (from }\DataTypeTok{HasCallStack}\NormalTok{)}\FunctionTok{:}
-\NormalTok{  error, called at }\FunctionTok{...} 
-\end{Highlighting}
-\end{Shaded}
-
-Errors are defined as:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\KeywordTok{data} \DataTypeTok{Error} 
-    \FunctionTok{=} \DataTypeTok{UndefinedParticipant} \DataTypeTok{Participant}
-    \FunctionTok{|} \DataTypeTok{UndefinedVariable} \DataTypeTok{Participant} \DataTypeTok{Identifier}
-    \FunctionTok{|} \DataTypeTok{SynchronizationError} \DataTypeTok{String}
-    \FunctionTok{|} \DataTypeTok{LabelError} \DataTypeTok{String}
-    \FunctionTok{|} \DataTypeTok{QueueError} \DataTypeTok{String} \DataTypeTok{Queue.QueueError}
-    \FunctionTok{|} \DataTypeTok{ChoiceError} \DataTypeTok{ChoiceError}
-    \FunctionTok{|} \DataTypeTok{Terminated}
-\end{Highlighting}
-\end{Shaded}
-
-To fully evaluate a program, we use a round-robin scheduler that calls
-\texttt{forward} on the locations in order. A forward step can produce
-an error. There are two error cases that we can recover from:
-
-\begin{itemize}
-\item
-  \textbf{blocked on receive}, either
-  \texttt{QueueError\ \_\ InvalidQueueItem} or
-  \texttt{QueueError\ \_\ EmptyQueue}: the process wants to perform a
-  receive, but the expected item is not at the top of the queue yet. In
-  this case we want to proceed evaluating the other locations so they
-  can send the value that the erroring location expects. The \texttt{\_}
-  in the patterns above means that we ignore the \texttt{String} field
-  that is used to provide better error messages. Because no error
-  message is generated, that field is not needed.
-\item
-  \textbf{location terminates} with \texttt{Terminated}: the execution
-  has reached a \texttt{NoOp}. In this case we do not want to schedule
-  this location any more.
-\end{itemize}
-
-Otherwise we continue until there are no active (non-terminated)
-locations left. For code see Appendix \ref{scheduling-code}.
-
-Running until completion (or error) is also available in the REPL:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\FunctionTok{>}\NormalTok{ untilError initialProgram}
-\DataTypeTok{Right}\NormalTok{ locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix} \DataTypeTok{NoOp}\NormalTok{)), }\FunctionTok{...} 
-\end{Highlighting}
-\end{Shaded}
-
-Note that this scheduler can still get into deadlocks, for instance
-consider these two equivalent global types:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{globalType1 }\FunctionTok{=} \KeywordTok{do} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
-
-\NormalTok{globalType2 }\FunctionTok{=} \KeywordTok{do} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
-\end{Highlighting}
-\end{Shaded}
-
-The second and third transaction are swapped. The communication they describe
-is the same, but in practice they are very different. The first example will
-run to completion, the second can deadlock because \texttt{A} can
-send a \texttt{Share} before \texttt{V} does. \texttt{B} expects the
-share from \texttt{V} first, but the share from \texttt{A} is the first
-in the queue. Therefore, no progress can be made.
-
-
-\section{Discussion}\label{discussion}
-
-\subsection{Benefits of pure functional
-programming}\label{benefits-of-pure-functional-programming}
-
-It has consistently been the case that sticking closer to the formal
-model gives better code. The abilities that Haskell gives for directly
-specifying formal statements is invaluable. The primary invaluable
-feature is algebraic data types (ADTs) also known as tagged unions or
-sum types.
-
-Compare the formal definition and the Haskell data type for global
-types.
-
-\begin{align*}
-    G, G'  \bnfis & \gtcom{p}{q}{U}{G} %\bnfbar 
-    \sbnfbar
-    \gtcho{p}{q}{\lbl_i}{G_i} %\\
-    \sbnfbar %& 
-    \mu X. G \sbnfbar X \sbnfbar \gend \\
-\end{align*}
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\KeywordTok{data} \DataTypeTok{GlobalTypeF}\NormalTok{ u next }\FunctionTok{=} 
-    \DataTypeTok{Transaction}\NormalTok{ \{}\FunctionTok{..}\NormalTok{\} }\FunctionTok{|} \DataTypeTok{Choice}\NormalTok{ \{}\FunctionTok{..}\NormalTok{\}  }\FunctionTok{|} \DataTypeTok{R}\NormalTok{ next }\FunctionTok{|} \DataTypeTok{V} \FunctionTok{|} \DataTypeTok{End} \FunctionTok{|} \DataTypeTok{Wk}\NormalTok{ next}
-\end{Highlighting}
-\end{Shaded}
-
-The definitions correspond directly. Moreover, we know that these are
-all the ways to construct a value of type \texttt{GlobalTypeF} and can
-exhaustively match on all the cases. Functional languages have had these
-features for a very long time. In recent years they have also made their
-way into non-functional languages (Rust, Swift, Kotlin).
-
-Secondly, purity and immutability are very valuable in implementing and
-testing the reversible semantics. The type system can actually guarantee
-that we have not forgotten to revert anything.
-
-In a pure language, given functions
-\texttt{f\ ::\ a\ -\textgreater{}\ b} and
-\texttt{g\ ::\ b\ -\textgreater{}\ a} to prove that \(f\) and \(g\) are
-inverses it is enough to prove (or to test for the domain you're
-interested in) that
-
-\begin{verbatim}
-f . g = identity && g . f = identity
-\end{verbatim}
-
-In an impure language, even if the above equalities are observed we
-cannot be sure that there were no side-effects. Because we do not need
-to consider a context (the outside world) here, checking that
-reversibility works is as simple as comparing initial and final states
-for all backward transition rules.
-
-\subsection{Concurrent Debuggers}\label{concurrent-debuggers}
-
-As mentioned we initially also set out to investigate how useful PPDP
-semantics are for debugging concurrent programs. As it stands, there are
-two missing features
-
-\begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
-\item
-  Modifying concurrent control flow
-
-  That is, a way to specify which thread will (try to) take a step
-  forward next. The problem with concurrency is not so much technical:
-  the primitives are available. What is needed is some way to step
-  through a program one instruction at a time. The real challenge is
-  providing a convenient mechanism for doing so.
-\item
-  Convenient user interface
-
-  CaReDeb provides a command line interface. While CaReDeb is
-  interesting from a technical point of view, its interface is not
-  convenient. Additionally, the overhead of bringing the problem into
-  CaReDeb's language is large: more time is probably spent translating
-  than actually debugging.
-
-  We think that a good graphical interface is possible, but besides
-  technical features a good user experience also needs user feedback.
-  This means that we need to look for users and concrete use cases. It
-  would help if there were some concrete set of problems that could be
-  extracted from code, compiled into a format/language that our debugger
-  understands and then visually debugged. Performance can then be
-  evaluated based on how well the debugger solves real-world problems.
-\end{enumerate}
-
-\section{Conclusion}\label{conclusion}
-
-We have given an encoding of the PPDP'17 semantics in the Haskell
-programming language. By embedding the semantics we can now run and
-verify our example programs automatically and inspect them
-interactively.
-
-We have seen that the formal programming model in the PPDP'17 paper can
-be split into three core components: a process calculus, multiparty
-session types and reversibility. Additonally, all three of these are
-representable as recursive Haskell data types. All other features of
-PPDP'17 (the authors note decoupled rollbacks and abstraction passing,
-including delegation) can easily be integrated when these three types
-are established.
-
-Relatedly, the implementation proces has shown that sticking to the
-formal implementation leads to better code. There is less space for bugs
-to creep in. Furthermore, Haskell's mathematical nature means that the
-implementation inspired by the formal specification is easy (and often
-idiomatic) to express.
-
-We have seen that Haskell allows for the definition of flexible embedded
-domain-specific languages, and makes it easy to transform between
-different representations of our programs using among others
-\texttt{Monad.Free}.
-
-Finally, we have discussed how this implementation can be used for
-concurrent debugging.\\
-With more focus on the user experience, a solid concurrent debugging can
-be built on the foundations presented here.
-
-The work in this thesis has been presented at the TFP'18 conference in
-Gothenburg, Sweden. Attending the conference was made possible by
-financial support from the undergratudate school of science and the
-Bernoulli Institute, for which we are extremely grateful.
-
-\bibliographystyle{abbrv}
-%\bibliography{biblio}
-\bibliography{session,biblio}
-
-\pagebreak
-\appendix
-
-\section{Appendix}\label{appendix}
-
-Background information on Haskell syntax and concepts used in the
-thesis.
 
 \subsection{Installing and Running}\label{installing-and-running}
 
@@ -1970,7 +1961,7 @@ write
 
 Defining values of type \texttt{Fix\ ExprF} requires wrapping of
 constructors with \texttt{Fix}. We will describe a better way of writing
-\texttt{Fix}ed values in Section \ref{free-monad-dsl}
+\texttt{Fix}ed values in Appendix~\ref{free-monad-dsl}.
 
 \begin{Shaded}
 \begin{Highlighting}[]
