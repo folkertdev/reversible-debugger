@@ -8,7 +8,7 @@
 
 \usepackage{xcolor}
 \newcommand{\erase}[1]{\textcolor{orange}{#1}}
-
+\newcommand{\modi}[1]{\textcolor{blue}{#1}}
 
 \usepackage{fixltx2e} % provides \textsubscript
 % use upquote if available, for straight quotes in verbatim environments
@@ -167,11 +167,11 @@ a key observation  is that
 In a language with a reversible semantics, computation steps can be undone.
 Thus, a program can perform standard \emph{forward} steps, but also \emph{backward} steps.
 Reversing a sequential program is not hard: it suffices to have a \emph{memory} that records information about forward steps in case we wish to return to a prior state using a backward step. Reversing a concurrent program is much more difficult: since control may simultaneously reside in more than one point, memories should be carefully designed so as to record information about the steps performed in each thread, but also about the \emph{causal dependencies} between steps from different threads.
-This motivates the definition of reversible semantics which are \emph{causally consistent}, i.e., that ensure that backward steps lead to states that could been have reached by performing forward steps only~\cite{DBLP:journals/eatcs/Lanese14}. Hence, a causally consistent  semantics never leads to states that are not reachable through forward steps. 
+This motivates the definition of reversible semantics which are \emph{causally consistent}, i.e., that ensure that backward steps lead to states that could  have been reached by performing forward steps only~\cite{DBLP:journals/eatcs/Lanese14}. Hence, a causally consistent  semantics never leads to states that are not reachable through forward steps. 
 
-Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (most notably, the $\pi$-calculus~\cite{MilnerR:calmp1}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez in~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{DBLP:conf/popl/HondaYC08} that specify intended protocol executions. While the reversible semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
+Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (most notably, the $\pi$-calculus~\cite{MilnerR:calmp1}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{DBLP:conf/popl/HondaYC08} that specify intended protocol executions. While their reversible semantics   is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
 
-In this paper, we describe a Haskell implementation of the reversible semantics proposed in~\cite{DBLP:conf/ppdp/MezzinaP17}. As such, our implementation defines a Haskell interpreter of message-passing programs written in the reversible process framework in~\cite{DBLP:conf/ppdp/MezzinaP17}. This allows us to assess in practice the benefits  of the mechanisms deployed in~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In developing our implementation, we have found the use of a functional programming language (Haskell in particular) a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully capture the formal semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} and to trust that our implementation is correct and preserves causal consistency. In particular, algebraic data types (sums and products) are invaluable in expressing the grammars and recursive data structures underlying the model in~\cite{DBLP:conf/ppdp/MezzinaP17}.
+In this paper, we describe a Haskell implementation of the reversible semantics proposed by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}. As such, our implementation defines a Haskell interpreter of message-passing programs written in their reversible process framework. This allows us to assess in practice the benefits  of the mechanisms deployed by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In developing our implementation, we have found the use of a functional programming language (Haskell in particular) a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully capture the formal semantics given by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} and to trust that our implementation is correct and preserves causal consistency. In particular, algebraic data types (sums and products) are invaluable in expressing the grammars and recursive data structures underlying their model.
 
 \paragraph{Organization.} %The rest of the paper is structured as follows.
 Section~\ref{the-process-model} recalls the key notions from~\cite{DBLP:conf/ppdp/MezzinaP17}, useful to appreciate our Haskell implementation, which we detail 
@@ -189,7 +189,7 @@ Section~\ref{discussion} collects concluding remarks.
     \includegraphics[width=8.7cm]{./img/figmodel.pdf}
 \end{center}
 \vspace{-8mm}
-\caption{The process model of multiparty, reversible communications developed in~\cite{DBLP:conf/ppdp/MezzinaP17}.}\label{f:model}
+\caption{The model of multiparty, reversible communications by   Mezzina and P\'erez~\cite{DBLP:conf/ppdp/MezzinaP17}.}\label{f:model}
 \vspace{-5mm}
 \end{figure}
 
@@ -328,8 +328,8 @@ conversely, type $\ltsel{\p}{\lbl_i}{T_i}{i}{I}$
 says that \p may select one of such alternatives.
 Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respectively. 
  
- A novelty in~\cite{DBLP:conf/ppdp/MezzinaP17} are \emph{local types with history}  $H, H', \ldots$. Intuitively, a type $H$ is a local type equipped with a
- cursor (denoted $\past$) that serves to distinguish  the (local) protocol actions  that have been already executed (the past of the protocol) from those that are yet to be performed (the future of the protocol).
+ A novelty in the work of Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} are \emph{local types with history}  $H, H', \ldots$. Intuitively, a type $H$ is a local type equipped with a
+ cursor (denoted~$\past$) that serves to distinguish  the (local) protocol actions  that have been already executed (the past of the protocol) from those that are yet to be performed (the future of the protocol).
  
  \paragraph{Projection.}
  Given these intuitions, the projection of a global type $G$ onto a protocol participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is mostly straightforward, except for choice. 
@@ -338,9 +338,9 @@ Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respect
 When this occurs, all participants have to jump back to the beginning,
 so every choice must be communicated to all participants.
 
-To address this, the choice made in~\cite{DBLP:conf/ppdp/MezzinaP17} (as in many other works) is to disallow different branches using different participants. In practice, 
-this means that all branches must perform the same communication to satisfy the global type, even if the communication is not needed in every branch (some branches may have dummy communications). As we will see, in our Haskell implementation we use a different method where every
-choice causes a broadcast of that choice to the other participants. 
+To address this, the choice made by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} (as in many other works) is to disallow different branches using different participants. In practice, 
+this means that all branches must perform the same communication to satisfy the global type, even if the communication is not needed in every branch (some branches may have dummy communications). \modi{As we will see, in our Haskell implementation we use a different method where every
+choice causes a broadcast of that choice to the other participants}. 
 
 \begin{figure}[!t]
 {
@@ -380,8 +380,8 @@ choice causes a broadcast of that choice to the other participants.
 \end{figure}
 
 \paragraph{Example: Three-Buyer Protocol.}
-We illustrate the 
-forward and backward reduction semantics, denoted \fw and \bk, by example: we recall the running example introduced in~\cite{DBLP:conf/ppdp/MezzinaP17}, namely
+We illustrate by example the 
+forward and backward reduction semantics, denoted \fw and \bk: we recall the running example by Mezzina and P\'{e}rez'~\cite{DBLP:conf/ppdp/MezzinaP17}, namely
   a reversible variant of the \emph{Three-Buyer protocol}  (cf, e.g.,~\cite{CDYP2015})
 with abstraction passing. 
 The protocol 
@@ -457,7 +457,7 @@ M = \myloc{\loc_1}{\text{Vendor}}
 \myloc{\loc_4}{\text{Carol}} 
 $$
 %\end{document}
-We now use $M$ to informally discuss forward and backward reduction rules for \fw and \bk; their formal definition is in~\cite{DBLP:conf/ppdp/MezzinaP17}.
+We now use $M$ to informally discuss forward and backward reduction rules for \fw and \bk; \modi{their formal definition is in~\cite{DBLP:conf/ppdp/MezzinaP17}}.
 From $M$, the session starts with an application of 
 Rule \fwcolor{\textsc{(Init)}}, which initializes the protocol by creating the necessary run-time structures (running processes and monitors):
 %To simplify readability, below
@@ -809,7 +809,7 @@ We can now write processes like the one below. It first sends the value $42$ and
 \end{Shaded}
 
 \noindent
-While the above is easily manipulatable with pattern matching and
+While the above is easily manipulable with pattern matching and
 functions from the \texttt{Fix} module, it is difficult to write clear
 examples in this style: longer expressions need ever more parentheses
 and in general there is too much syntactical clutter. We will describe how 
@@ -843,7 +843,7 @@ whose local type they should be checked against and modify. This field is
 also present in \texttt{TypeContext}, the data type we define for representing local types in Section \ref{a-reversible-semantics}. 
 
 Because we allow references to values in the implementation, all
-references in a function have to be dereferenced before it can be safely
+references in a function have to be dereferenced before they can be safely
 sent over a channel.
 
 \subsection{Global Types}
@@ -952,7 +952,7 @@ Having shown how to implement processes and global types, we now move to explain
 steps.
 
 To enable backward steps, we need to store some information when we move forward, just as enabled by the configurations in the formal language.
-As described in~\cite{DBLP:conf/ppdp/MezzinaP17}, we need to track information about the local type and the process.
+As described by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, we need to track information about the local type and the process.
 
 For the local type, we define a data type called \texttt{TypeContext}. It
 contains the actions that have been performed; for some of them, it also
@@ -988,7 +988,7 @@ For the process, there are four things that we need to track:
 \item \emph{Function calls and their arguments}.
       Consider the transition from configuration $M_7$ to $M_8$, as discussed in Section~\ref{the-process-model}. Once the thunk
   is evaluated, producing configuration \(M_8\), we lose all evidence that the
-  code that the evaluation produced was the result of a function
+  code produced by the evaluation  was the result of a function
   application. 
   Without knowledge of the function application, reversing $M_8$ will
   not result in $M_7$. Indeed, we need to keep track of function
@@ -1027,7 +1027,7 @@ For the process, there are four things that we need to track:
   Likewise, when starting from configuration $M_3$ and undoing the receive,
   the value must be placed back into the queue. 
 
-  Our implementation follows closely follows the formal semantics in~\cite{DBLP:conf/ppdp/MezzinaP17}. 
+  Our implementation follows closely follows the formal semantics by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}. 
   The semantics describe how a value moves from the sender into the
   queue, and when it is received the queue stores the value on the queue
   history stack. When the receive is rolled, the queue pops the value
@@ -1108,10 +1108,9 @@ types, variable bindings, etc.), and can throw errors of type
 \KeywordTok{type} \DataTypeTok{Session}\NormalTok{ a }\FunctionTok{=} \DataTypeTok{StateT} \DataTypeTok{ExecutionState}\NormalTok{ (}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
 \end{Highlighting}
 \end{Shaded}
-({See also Appendices \ref{state} on \texttt{StateT} and
-\ref{except} on \texttt{Except}.)
+%({See also Appendices \ref{state} on \texttt{StateT} and \ref{except} on \texttt{Except}.)
 
-The semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} guides how we store the execution
+The semantics by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} guides how we store the execution
 state. Some data is bound to its location (e.g., the process that
 is running) and other data is bound to its participant (e.g., the
 local type).
@@ -1193,7 +1192,7 @@ see whether they are functions and if so, to extract their bodies for
 application.
 
 \subsection{Causal Consistency?}\label{properties-of-reversibility}
-As mentioned in the Introduction, causal consistency is a key correctness criterion for a reversible semantics. This property has been proved in~\cite{DBLP:conf/ppdp/MezzinaP17} for the formal model laid out in Section \ref{the-process-model}. One may then wonder, does our Haskell implementation preserve this property? 
+As mentioned in the Introduction, causal consistency is a key correctness criterion for a reversible semantics. This property has been proved Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} for the formal model laid out in Section \ref{the-process-model}. One may then wonder, does our Haskell implementation preserve this property? 
 
 Intuitively, causal consistency is the property that backward steps always lead to states that 
 could have been reached by moving forward only.
@@ -1310,7 +1309,7 @@ an error. There are two error cases that we can recover from:
   \texttt{QueueError\ \_\ EmptyQueue}: the process wants to perform a
   receive, but the expected item is not at the top of the queue yet. In
   this case we proceed evaluating the other locations so they
-  can send the value that the falty location expects. Above, `\texttt{\_}'
+  can send the value that the faulty location expects. Above, `\texttt{\_}'
     means that we ignore the \texttt{String} field
    used to provide better error messages. Because no error
   message is generated, that field is not needed.
@@ -1389,8 +1388,8 @@ exhaustively match on all the cases. Functional languages have had these
 features for a very long time. 
 %In recent years they have also made their way into non-functional languages (Rust, Swift, Kotlin).
 Secondly, purity and immutability are very useful in implementing and
-testing the reversible semantics. The type system can actually guarantee
-that we have not forgotten to revert anything.
+testing the reversible semantics. \modi{The type system can actually guarantee
+that we have not forgotten to revert anything.}
 
 In a pure language, given functions
 \texttt{f\ ::\ a\ -\textgreater{}\ b} and
@@ -1446,13 +1445,13 @@ for all backward reduction rules.
 
 \paragraph{Concluding Remarks.}\label{conclusion}
 
-We have given a functional implementation of the reversible semantics in~\cite{DBLP:conf/ppdp/MezzinaP17} using the Haskell
+We have given a functional implementation of the reversible semantics by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} using the Haskell
 programming language. By embedding the reversible semantics we can now run and
 verify our example programs automatically and inspect them
 interactively.
 
-We have seen that the formal programming model in~\cite{DBLP:conf/ppdp/MezzinaP17} paper can be split into three core components: (i)~a process calculus, (ii)~multiparty
-session types (global and local types), and (iii)~forward and backward reduction semantics. The three components can be cleanly represented as recursive Haskell data types. We are confident that other features developed in~\cite{DBLP:conf/ppdp/MezzinaP17} (in particular, an alternative semantics for decoupled rollbacks)
+We have seen that the formal programming model by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} paper can be split into three core components: (i)~a process calculus, (ii)~multiparty
+session types (global and local types), and (iii)~forward and backward reduction semantics. The three components can be cleanly represented as recursive Haskell data types. We are confident that other features developed in Mezzina and P\'{e}rez's work~\cite{DBLP:conf/ppdp/MezzinaP17} (in particular, an alternative semantics for decoupled rollbacks)
 can easily be integrated in the development described here.
 Relatedly, the implementation process has shown that sticking to the
 formal model leads to better code; there is less space for bugs
