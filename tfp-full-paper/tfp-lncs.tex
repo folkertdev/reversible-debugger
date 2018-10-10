@@ -683,68 +683,128 @@ based on the process   at $\key{{\loc_4}}{\pC}$.
 %\textbf{\emph{In this section we show how we implement the processes, types, and semantics in the PPDP paper}}
 \label{implementing-the-ppdp17-calculus-in-haskell}
 
+The Process calculus, Global and Local types and the information for reversal are all syntax trees. The first two are 
+written by the programmer, and we that to be convenient. For that reason they are implemented as domain-specific languages (DSLs) in Haskell. 
+
+\subsection{DSLs with the Free monad}
+
+Free monads are a mechanism to conveniently construct domain-specific
+languages. Because Haskell provides special syntax for working with
+monads (do-notation), Free monads are a common technique.
+
+The core idea is that we define a set of instructions. \texttt{Free}
+constructs a tree out of these instructions, which can then be
+interpreted and evaluated. The \texttt{Monad} instance for \texttt{Free}
+makes it possible to use do-notation.
+
+Free is defined as
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{Free}\NormalTok{ f a   }
+    \FunctionTok{=} \DataTypeTok{Pure}\NormalTok{ a    }
+    \FunctionTok{|} \DataTypeTok{Free}\NormalTok{ (f (}\DataTypeTok{Free}\NormalTok{ f a))   }
+\end{Highlighting}
+\end{Shaded}
+
+A practical example is a stack-based calculator:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{Operation}\NormalTok{ next  }
+    \FunctionTok{=} \DataTypeTok{Push} \DataTypeTok{Int}\NormalTok{ next}
+    \FunctionTok{|} \DataTypeTok{Pop}\NormalTok{ (}\DataTypeTok{Maybe} \DataTypeTok{Int} \OtherTok{->}\NormalTok{ next) }
+    \FunctionTok{|} \DataTypeTok{End}
+    \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Functor}\NormalTok{)  }
+
+\KeywordTok{type} \DataTypeTok{Program}\NormalTok{ next }\FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{Operation}\NormalTok{ next}
+\KeywordTok{type} \DataTypeTok{TerminatingProgram} \FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{Operation} \DataTypeTok{Void}
+\end{Highlighting}
+\end{Shaded}
+
+Now when we take the free monad of the \texttt{Operation} functor, this
+
+generates a list (degenerate tree) of instructions. In a lazy language,
+this list is not guaranteed to be finite. If the list is not finite,
+evaluating it will cause a stack overflow. We use the \texttt{Void} type
+to ensure the tree is finite with an \texttt{End} at the very bottom. An
+alternative approach is to use existential quantification, but that
+requires enabeling a language extension.
+
+The \texttt{Void} type is the type with zero values. A value of the type
+\texttt{Free\ Operation\ Void} by definition cannot end in the shape
+\texttt{Pure\ \_}, because it requires a value of type \texttt{Void}
+(which don't exist). It also cannot end in \texttt{Push\ \_\ \_} or
+\texttt{Pop\ \_} because these values contain or produce a \texttt{next}
+argument (and \texttt{next} cannot be of type \texttt{Void}). Therefore a value of type \texttt{Free\ Operation\ Void} must end in \texttt{End}.
+, and thus values of type \texttt{Free\ Operation\ Void} are finite and can be safely interpreted.
+
+We define some wrappers around the constructors for convenience,
+and use them to write programs with do-notation.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{push ::} \DataTypeTok{Int} \OtherTok{->} \DataTypeTok{Program}\NormalTok{ ()}
+\NormalTok{push v }\FunctionTok{=}\NormalTok{ liftF (}\DataTypeTok{Push}\NormalTok{ v ())   }
+
+\OtherTok{pop ::} \DataTypeTok{Program}\NormalTok{ (}\DataTypeTok{Maybe} \DataTypeTok{Int}\NormalTok{) }
+\NormalTok{pop }\FunctionTok{=}\NormalTok{ liftF (}\DataTypeTok{Pop}\NormalTok{ id)}
+
+\OtherTok{terminate ::} \DataTypeTok{TerminatingProgram}  
+\NormalTok{terminate }\FunctionTok{=}\NormalTok{ liftF }\DataTypeTok{End}
+
+\OtherTok{program ::} \DataTypeTok{TerminatingProgram}  
+\NormalTok{program }\FunctionTok{=} \KeywordTok{do}    
+\NormalTok{    push }\DecValTok{5}  
+\NormalTok{    push }\DecValTok{4}  
+    \DataTypeTok{Just}\NormalTok{ a }\OtherTok{<-}\NormalTok{ pop    }
+    \DataTypeTok{Just}\NormalTok{ b }\OtherTok{<-}\NormalTok{ pop    }
+\NormalTok{    push (a }\FunctionTok{+}\NormalTok{ b)    }
+\NormalTok{    terminate}
+\end{Highlighting}
+\end{Shaded}
+
+Finally, we expose a function to evaluate the structure we've built (but
+only if it is finite). Typically, a \texttt{Free} monad is transformed
+into some other monad, which in turn is evaluated. Here we interpred
+first to \texttt{State}, and then evaluate that.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{interpret ::} \DataTypeTok{TerminatingProgram} \OtherTok{->} \DataTypeTok{State}\NormalTok{ [}\DataTypeTok{Int}\NormalTok{] () }
+\NormalTok{interpret instruction }\FunctionTok{=} 
+    \KeywordTok{case}\NormalTok{ instruction }\KeywordTok{of}
+        \DataTypeTok{Pure}\NormalTok{ _ }\OtherTok{->} 
+            \CommentTok{-- cannot occur}
+\NormalTok{            return () }
+
+        \DataTypeTok{Free} \DataTypeTok{End} \OtherTok{->} 
+\NormalTok{            return () }
+
+        \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Push}\NormalTok{ a next) }\OtherTok{->} \KeywordTok{do} 
+\NormalTok{            State.modify (\textbackslash{}state }\OtherTok{->}\NormalTok{ a }\FunctionTok{:}\NormalTok{ state)}
+\NormalTok{            interpret next}
+
+        \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Pop}\NormalTok{ toNext) }\OtherTok{->} \KeywordTok{do}
+\NormalTok{            state }\OtherTok{<-}\NormalTok{ State.get}
+            \KeywordTok{case}\NormalTok{ state }\KeywordTok{of} 
+\NormalTok{                x}\FunctionTok{:}\NormalTok{xs }\OtherTok{->} \KeywordTok{do}
+\NormalTok{                    State.put xs}
+\NormalTok{                    interpret (toNext (}\DataTypeTok{Just}\NormalTok{ x))}
+
+\NormalTok{                [] }\OtherTok{->} 
+\NormalTok{                    interpret (toNext }\DataTypeTok{Nothing}\NormalTok{)}
+
+\OtherTok{evaluate ::} \DataTypeTok{TerminatingProgram} \OtherTok{->}\NormalTok{ [}\DataTypeTok{Int}\NormalTok{] }
+\NormalTok{evaluate }\FunctionTok{=}\NormalTok{ flip execState [] }\FunctionTok{.}\NormalTok{ interpret }
+\end{Highlighting}
+\end{Shaded}
+
 
 \subsection{Implementing Processes}
 The implementation uses an algebraic data type %(also known as union type or sum type) 
-to
-encode all the process constructors in the syntax of $P$ given above. We use the \texttt{Fix} type
-%(Appendix \ref{fix}) 
-to factor out recursion from the grammar.
-\texttt{Fix} is the fixed point type:
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\KeywordTok{data} \DataTypeTok{Fix}\NormalTok{ f }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (f (}\DataTypeTok{Fix}\NormalTok{ f))}
-\end{Highlighting}
-\end{Shaded}
-
-\texttt{Fix} allows us to concisely express an infinite nesting of a
-type (of the shape \texttt{f\ (f\ (f\ (f\ (..))))}). Such a type will
-look like a tree. For the values of this type to be finite, the
-\texttt{f} must have a leaf constructor. 
-
-\begin{example}
-As an  illustration of \texttt{Fix}, take the following
-expression language:
-\begin{Shaded}
-\begin{Highlighting}[]
-\KeywordTok{data} \DataTypeTok{Expr}
-    \FunctionTok{=} \DataTypeTok{Literal} \DataTypeTok{Int}
-    \FunctionTok{|} \DataTypeTok{Add} \DataTypeTok{Expr} \DataTypeTok{Expr} 
-\end{Highlighting}
-\end{Shaded}
-\noindent
-where 
-\texttt{Literal} is the only constructor that can occur as a leaf, and
-\texttt{Add} is the only node. Using \texttt{Fix} we can equivalently
-write:
-\begin{Shaded}
-\begin{Highlighting}[]
-\KeywordTok{data} \DataTypeTok{ExprF}\NormalTok{ next}
-    \FunctionTok{=} \DataTypeTok{Literal} \DataTypeTok{Int}
-    \FunctionTok{|} \DataTypeTok{Add}\NormalTok{ next next }
-\end{Highlighting}
-\end{Shaded}
-\noindent Above, \texttt{next} is a placeholder or hole for an
-arbitrarily deep nesting of \texttt{ExprF}s. The main usage of
-\texttt{Fix} is that it gives traversals and folds of our syntax tree
-for free, for these are generically defined on \texttt{Fix}.
-The following snippet shows that defining values of type \texttt{Fix\ ExprF}
-requires wrapping of constructors with \texttt{Fix}:
-\begin{Shaded}
-\begin{Highlighting}[]
-\OtherTok{simple ::} \DataTypeTok{Fix} \DataTypeTok{ExprF}
-\NormalTok{simple }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{42}\NormalTok{)}
-
-\OtherTok{complex ::} \DataTypeTok{Fix} \DataTypeTok{ExprF}
-\NormalTok{complex }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Add}\NormalTok{ (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{40}\NormalTok{)) (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Literal} \DecValTok{2}\NormalTok{)))}
-\end{Highlighting}
-\end{Shaded}
-We will describe a better way of writing \texttt{Fix}ed values in Appendix~\ref{free-monad-dsl}.
-\end{example}
-
-We implement processes using \texttt{Program}, which is defined next.
-Apart from the process-level recursion, it is a direct translation of the process syntax given in Section~\ref{the-process-model}.
+to encode all the process constructors in the syntax of $P$ given above. 
+Apart from the process-level recursion, \texttt{Program} is a direct translation of the process syntax given in Section~\ref{the-process-model}.
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -796,24 +856,7 @@ integer and comparison operators:
 \end{Highlighting}
 \end{Shaded}
 
-We can now write processes like the one below. It first sends the value $42$ and then expects to receive a value that it will bind to identifier $y$.
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{example }\FunctionTok{=} \DataTypeTok{Fix} 
-\NormalTok{        ( }\DataTypeTok{Parallel} 
-\NormalTok{            (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Send} \StringTok{"me"}\NormalTok{ (}\DataTypeTok{VInt} \DecValTok{42}\NormalTok{) (}\DataTypeTok{Fix} \DataTypeTok{NoOp}\NormalTok{)))}
-\NormalTok{            (}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Receive} \StringTok{"you"} \StringTok{"y"}\NormalTok{ (}\DataTypeTok{Fix} \DataTypeTok{NoOp}\NormalTok{)))}
-\NormalTok{        )}
-\end{Highlighting}
-\end{Shaded}
-
-\noindent
-While the above is easily manipulable with pattern matching and
-functions from the \texttt{Fix} module, it is difficult to write clear
-examples in this style: longer expressions need ever more parentheses
-and in general there is too much syntactical clutter. We will describe how 
-to design a better syntax for writing programs in Appendix~\ref{free-monad-dsl}.
+It turns out that we need some extra concepts to actually write programs with this syntax.
 
 \paragraph{Delegation via Abstraction Passing.}\label{abstraction-passing}
 
