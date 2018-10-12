@@ -17,9 +17,9 @@ import qualified Control.Monad.Free as Free
 import Utils ((|>), List)
 
 {-| A global type with transaction and recursion -}
-type GlobalType participant u = Free (GlobalTypeF participant u) Void
+type TerminatingGlobalType participant u = Free (GlobalTypeF participant u) Void
 
-type IGlobalType participant u a = Free (GlobalTypeF participant u) a 
+type GlobalType participant u a = Free (GlobalTypeF participant u) a 
 
 data GlobalTypeF participant u f
     = Transaction { from :: participant, to :: participant, tipe :: u, continuation ::  f } 
@@ -30,7 +30,7 @@ data GlobalTypeF participant u f
     | End
     deriving (Show, Generic, Functor, Foldable, Traversable)
 
-mapParticipants :: (p1 -> p2) -> GlobalType p1 a -> GlobalType p2 a
+mapParticipants :: (p1 -> p2) -> GlobalType p1 u a -> GlobalType p2 u a
 mapParticipants _ (Pure x) = Pure x
 mapParticipants mapper (Free global) = Free $ 
     case global of 
@@ -52,7 +52,7 @@ mapParticipants mapper (Free global) = Free $
         End -> 
             End
 
-mapType :: (t1 -> t2) -> GlobalType p t1 -> GlobalType p t2
+mapType :: (t1 -> t2) -> GlobalType p t1 a -> GlobalType p t2 a
 mapType mapper (Pure x) = Pure x
 mapType mapper (Free global) = Free $ 
     case global of 
@@ -75,40 +75,35 @@ mapType mapper (Free global) = Free $
             End
 
 
+message :: participant -> participant -> tipe -> GlobalType participant tipe () 
+message from to tipe = liftF (Transaction from to tipe ())
 
-transaction :: (Show participant, Ord participant) => participant -> participant -> tipe -> IGlobalType participant tipe () 
-transaction from to tipe = liftF (Transaction from to tipe ())
-
-transactions :: (Show participant, Ord participant) => participant -> List participant -> tipe -> IGlobalType participant tipe () 
-transactions sender receivers tipe = 
-    let
-        go [] = Pure ()
+messages :: participant -> List participant -> tipe -> GlobalType participant tipe () 
+messages sender receivers tipe = go receivers 
+  where go [] = Pure ()
         go (x:xs) = Free (Transaction sender x tipe $ go xs)
-    in
-        go receivers
 
-
-oneOf :: (Show participant, Ord participant) => participant -> participant -> List (String, IGlobalType participant u a) -> IGlobalType participant u a
+oneOf :: participant -> participant -> List (String, GlobalType participant u a) -> GlobalType participant u a 
 oneOf selector offerer options = Free (Choice selector offerer (Map.fromList options))
 
-recurse :: Free (GlobalTypeF p u) void -> Free (GlobalTypeF p u) void
+recurse :: GlobalType p u a -> GlobalType p u a
 recurse cont = Free (R cont)
 
-broadenScope :: Free (GlobalTypeF p u) void -> Free (GlobalTypeF p u) void
+broadenScope :: GlobalType p u a -> GlobalType p u a
 broadenScope cont = Free (Wk cont)
 
-weakenRecursion :: Free (GlobalTypeF p u) a -> Free (GlobalTypeF p u) a
+weakenRecursion :: GlobalType p u a -> GlobalType p u a
 weakenRecursion cont = Free (Wk cont)
 
-recursionVariable :: Free (GlobalTypeF p u) a 
+recursionVariable :: GlobalType p u a 
 recursionVariable = Free V
 
-end :: Free (GlobalTypeF p u) a 
+end :: TerminatingGlobalType p u  
 end = Free End
 
 
 {-| enumerate all the participants in a global type -}
-participants :: Ord participant => GlobalType participant u -> Set participant
+participants :: Ord participant => TerminatingGlobalType participant u -> Set participant
 participants = Free.iter helper . fmap Void.absurd 
   where helper global = 
             case global of 

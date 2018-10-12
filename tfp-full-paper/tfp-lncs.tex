@@ -683,21 +683,12 @@ based on the process   at $\key{{\loc_4}}{\pC}$.
 %\textbf{\emph{In this section we show how we implement the processes, types, and semantics in the PPDP paper}}
 \label{implementing-the-ppdp17-calculus-in-haskell}
 
-The Process calculus, Global and Local types and the information for reversal are all syntax trees. The first two are 
-written by the programmer, and we that to be convenient. For that reason they are implemented as domain-specific languages (DSLs) in Haskell. 
+The Process calculus, Global and Local types, and the information for reversal are all represented as syntax trees. The first two are 
+written by the programmer, and we want to provide a convenient way to specify them as domain-specific languages (DSLs) in Haskell. 
 
 \subsection{DSLs with the Free monad}
 
-Free monads are a mechanism to conveniently construct domain-specific
-languages. Because Haskell provides special syntax for working with
-monads (do-notation), Free monads are a common technique.
-
-The core idea is that we define a set of instructions. \texttt{Free}
-constructs a tree out of these instructions, which can then be
-interpreted and evaluated. The \texttt{Monad} instance for \texttt{Free}
-makes it possible to use do-notation.
-
-Free is defined as
+Free monads are a common way of defining DSLs in Haskell, mainly because they allow the use of do-notation to write programs in the DSL.
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -722,25 +713,26 @@ A practical example is a stack-based calculator:
 \end{Highlighting}
 \end{Shaded}
 
-Now when we take the free monad of the \texttt{Operation} functor, this
+We define a data type with our instructions, and make sure it has a \texttt{Functor} instance (meaning that there exists a function \texttt{fmap :: (a -> b) -> Operation a -> Operation b}).
+Given an instance of \texttt{Functor}, \texttt{Free} will give us the free monad on that functor. 
+In effect this describes a tree (in this particular case a list) of instructions. 
 
-generates a list (degenerate tree) of instructions. In a lazy language,
-this list is not guaranteed to be finite. If the list is not finite,
+In a lazy language like Haskell, the tree is not guaranteed to be finite. If the tree is not finite,
 evaluating it will cause a stack overflow. We use the \texttt{Void} type
 to ensure the tree is finite with an \texttt{End} at the very bottom. An
 alternative approach is to use existential quantification, but that
 requires enabeling a language extension.
 
 The \texttt{Void} type is the type with zero values. A value of the type
-\texttt{Free\ Operation\ Void} by definition cannot end in the shape
+\texttt{Free\ Operation\ Void} cannot end in the shape
 \texttt{Pure\ \_}, because it requires a value of type \texttt{Void}
 (which don't exist). It also cannot end in \texttt{Push\ \_\ \_} or
 \texttt{Pop\ \_} because these values contain or produce a \texttt{next}
-argument (and \texttt{next} cannot be of type \texttt{Void}). Therefore a value of type \texttt{Free\ Operation\ Void} must end in \texttt{End}.
-, and thus values of type \texttt{Free\ Operation\ Void} are finite and can be safely interpreted.
+argument (and \texttt{next} cannot be of type \texttt{Void}). Therefore a value of type \texttt{Free\ Operation\ Void} must end in \texttt{End}, 
+and thus values of type \texttt{Free\ Operation\ Void} are finite and can be safely interpreted.
 
-We define some wrappers around the constructors for convenience,
-and use them to write programs with do-notation.
+We define wrappers around the constructors for convenience,
+and use them to write programs with do-notation:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -764,10 +756,9 @@ and use them to write programs with do-notation.
 \end{Highlighting}
 \end{Shaded}
 
-Finally, we expose a function to evaluate the structure we've built (but
+Finally, we expose a function to evaluate the structure (but
 only if it is finite). Typically, a \texttt{Free} monad is transformed
-into some other monad, which in turn is evaluated. Here we interpred
-first to \texttt{State}, and then evaluate that.
+into some other monad, which in turn is evaluated. Here we can first transform into \texttt{State}, and then evaluate that.
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -806,11 +797,11 @@ The implementation uses an algebraic data type %(also known as union type or sum
 to encode all the process constructors in the syntax of $P$ given above. 
 Apart from the process-level recursion, \texttt{Program} is a direct translation of the process syntax given in Section~\ref{the-process-model}.
 
+% \KeywordTok{type} \DataTypeTok{Program}\NormalTok{ value }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{ProgramF}\NormalTok{ value) }
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{type} \DataTypeTok{Participant} \FunctionTok{=} \DataTypeTok{String}
 \KeywordTok{type} \DataTypeTok{Identifier} \FunctionTok{=} \DataTypeTok{String}
-\KeywordTok{type} \DataTypeTok{Program}\NormalTok{ value }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{ProgramF}\NormalTok{ value) }
 
 \KeywordTok{data} \DataTypeTok{ProgramF}\NormalTok{ value next }
     \CommentTok{-- communication primitives}
@@ -889,6 +880,61 @@ Because we allow references to values in the implementation, all
 references in a function have to be dereferenced before they can be safely
 sent over a channel.
 
+\paragraph{A Convenient DSL.}\label{high-level-dsl}
+
+Many of the \texttt{ProgramF} constructors require an \texttt{owner}, we
+can thread the owner through a block with a wrapper around
+\texttt{Free}. We use \texttt{StateT} containing the owner and a counter
+to generate unique variable names.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{newtype} \DataTypeTok{HighLevelProgram}\NormalTok{ a }\FunctionTok{=} 
+    \DataTypeTok{HighLevelProgram}\NormalTok{ (}\DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{) (}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{)) a)}
+        \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Functor}\NormalTok{, }\DataTypeTok{Applicative}\NormalTok{, }\DataTypeTok{Monad}
+\NormalTok{        , }\DataTypeTok{MonadState}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{), }\DataTypeTok{MonadFree}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{))}
+
+\OtherTok{uniqueVariableName ::} \DataTypeTok{HighLevelProgram} \DataTypeTok{String}
+\NormalTok{uniqueVariableName }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    (participant, n) }\OtherTok{<-}\NormalTok{ State.get}
+\NormalTok{    State.put (participant, n }\FunctionTok{+} \DecValTok{1}\NormalTok{)}
+\NormalTok{    return }\FunctionTok{$} \StringTok{"var"} \FunctionTok{++}\NormalTok{ show n}
+
+\OtherTok{send ::} \DataTypeTok{Value} \OtherTok{->} \DataTypeTok{HighLevelProgram}\NormalTok{ ()}
+\NormalTok{send value }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    (participant, _) }\OtherTok{<-}\NormalTok{ State.get}
+\NormalTok{    liftF (}\DataTypeTok{Send}\NormalTok{ participant value ())  }
+
+\OtherTok{receive ::} \DataTypeTok{HighLevelProgram} \DataTypeTok{Value}
+\NormalTok{receive }\FunctionTok{=} \KeywordTok{do} 
+\NormalTok{    (participant, _) }\OtherTok{<-}\NormalTok{ State.get}
+\NormalTok{    variableName }\OtherTok{<-}\NormalTok{ uniqueVariableName }
+\NormalTok{    liftF (}\DataTypeTok{Receive}\NormalTok{ participant variableName ())}
+\NormalTok{    return (}\DataTypeTok{VReference}\NormalTok{ variableName)}
+
+\OtherTok{terminate ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
+\NormalTok{terminate }\FunctionTok{=}\NormalTok{ liftF }\DataTypeTok{NoOp}
+
+\OtherTok{compile ::} \DataTypeTok{Participant} \OtherTok{->} \DataTypeTok{HighLevelProgram} \DataTypeTok{Void} \OtherTok{->} \DataTypeTok{Program} \DataTypeTok{Value}
+\NormalTok{compile participant (}\DataTypeTok{HighLevelProgram}\NormalTok{ program) }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    runStateT program (participant, }\DecValTok{0}\NormalTok{) }
+\end{Highlighting}
+\end{Shaded}
+
+We can now implement the \texttt{Vendor} from the three-buyer example as:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{vendor ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
+\NormalTok{vendor }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    t }\OtherTok{<-}\NormalTok{ H.receive}
+\NormalTok{    H.send (price t)}
+\NormalTok{    H.send (price t)}
+    \FunctionTok{...}
+\NormalTok{    terminate}
+\end{Highlighting}
+\end{Shaded}
+
 \subsection{Global Types}
 
 Much like the process syntax, the Haskell implementation of global types closely mimics the formal definition.
@@ -896,7 +942,10 @@ Its implementation is given by:
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\KeywordTok{type} \DataTypeTok{GlobalType}\NormalTok{ participant u }\FunctionTok{=} 
+\KeywordTok{type} \DataTypeTok{GlobalType}\NormalTok{ participant u a }\FunctionTok{=} 
+    \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{GlobalTypeF}\NormalTok{ participant u) a }
+
+\KeywordTok{type} \DataTypeTok{TerminatingGlobalType}\NormalTok{ participant u }\FunctionTok{=} 
     \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{GlobalTypeF}\NormalTok{ participant u) }\DataTypeTok{Void}
 
 \KeywordTok{data} \DataTypeTok{GlobalTypeF}\NormalTok{ participant u next}
@@ -921,7 +970,8 @@ Its implementation is given by:
 
 %We can now see why choice is useful: it allows us to branch on the session type level. For instance, one branch can terminate the protocol, and the other can loop back to start the protocol again from the beginning.
 
-\noindent The final three constructors (\texttt{RecursionPoint}, \texttt{RecursionVariable}, and \\ \texttt{WeakenRecursion}) are required for supporting nested
+\noindent We have to use \texttt{tipe} because \texttt{type} is a keyword in Haskell. 
+The final three constructors (\texttt{RecursionPoint}, \texttt{RecursionVariable}, and \\ \texttt{WeakenRecursion}) are required for supporting nested
 recursion and taken from~\cite{van2017session}. A
 \texttt{RecursionPoint} is a point in the protocol that we can later
 jump back to. A \texttt{RecursionVariable} triggers jumping to a
@@ -930,8 +980,38 @@ to the closest and most recently encountered \texttt{RecursionPoint},
 but \texttt{WeakenRecursion} makes it jump one \texttt{RecursionPoint}
 higher; encountering two weakens will jump two levels higher, etc.
 
-Using \texttt{Monad.Free} (Appendix \ref{free-monad}), we can write
-examples with a more idiomatic Haskell syntax.
+We use \texttt{Monad.Free} to build a DSL for defining global types. 
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{message ::}\NormalTok{ participant }\OtherTok{->}\NormalTok{ participant }\OtherTok{->}\NormalTok{ tipe }\OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ participant tipe () }
+\NormalTok{message from to tipe }\FunctionTok{=}\NormalTok{ liftF (}\DataTypeTok{Transaction}\NormalTok{ from to tipe ())}
+
+\OtherTok{messages ::}\NormalTok{ participant }\OtherTok{->} \DataTypeTok{List}\NormalTok{ participant }
+         \OtherTok{->}\NormalTok{ tipe }\OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ participant tipe () }
+\NormalTok{messages sender receivers tipe }\FunctionTok{=}\NormalTok{ go receivers }
+  \KeywordTok{where}\NormalTok{ go [] }\FunctionTok{=} \DataTypeTok{Pure}\NormalTok{ ()}
+\NormalTok{        go (x}\FunctionTok{:}\NormalTok{xs) }\FunctionTok{=} \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Transaction}\NormalTok{ sender x tipe }\FunctionTok{$}\NormalTok{ go xs)}
+
+\OtherTok{oneOf ::}\NormalTok{ participant }\OtherTok{->}\NormalTok{ participant }
+      \OtherTok{->} \DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, }\DataTypeTok{GlobalType}\NormalTok{ participant u a) }
+      \OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ participant u a }
+\NormalTok{oneOf selector offerer options }\FunctionTok{=} 
+    \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Choice}\NormalTok{ selector offerer (Map.fromList options))}
+
+\OtherTok{recurse ::} \DataTypeTok{GlobalType}\NormalTok{ p u a }\OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ p u a}
+\NormalTok{recurse cont }\FunctionTok{=} \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{R}\NormalTok{ cont)}
+
+\OtherTok{weakenRecursion ::} \DataTypeTok{GlobalType}\NormalTok{ p u a }\OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ p u a}
+\NormalTok{weakenRecursion cont }\FunctionTok{=} \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Wk}\NormalTok{ cont)}
+
+\OtherTok{recursionVariable ::} \DataTypeTok{GlobalType}\NormalTok{ p u a }
+\NormalTok{recursionVariable }\FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{V}
+
+\OtherTok{end ::} \DataTypeTok{TerminatingGlobalType}\NormalTok{ p u  }
+\NormalTok{end }\FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{End}
+\end{Highlighting}
+\end{Shaded}
 
 \begin{example}[Nested Recursion]
 The snippet below illustrates nested recursion. There is an outer
@@ -976,7 +1056,7 @@ Similarly, the three-buyer example can be written as:
 \KeywordTok{data} \DataTypeTok{MyType} \FunctionTok{=} \DataTypeTok{Title} \FunctionTok{|} \DataTypeTok{Price} \FunctionTok{|} \DataTypeTok{Share} \FunctionTok{|} \DataTypeTok{Ok} \FunctionTok{|} \DataTypeTok{Thunk} \FunctionTok{|} \DataTypeTok{Address} \FunctionTok{|} \DataTypeTok{Date}
     \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Eq}\NormalTok{, }\DataTypeTok{Ord}\NormalTok{)}
 \CommentTok{-- a description of the protocol}
-\OtherTok{globalType ::} \DataTypeTok{GlobalType.GlobalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
+\OtherTok{globalType ::} \DataTypeTok{TerminatingGlobalType} \DataTypeTok{MyParticipants} \DataTypeTok{MyType}
 \NormalTok{globalType }\FunctionTok{=} \KeywordTok{do} 
 \NormalTok{    message }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
 \NormalTok{    messages }\DataTypeTok{V}\NormalTok{ [}\DataTypeTok{A}\NormalTok{, }\DataTypeTok{B}\NormalTok{] }\DataTypeTok{Price} 
@@ -1010,16 +1090,16 @@ For the process, there are four things that we need to track:
   \text{Vendor} & =  \bout{d}{x:\tproj{G}{\pS}}\binp{x}{t}\bout{x}{price(t)}\bout{x}{price(t)} \binp{x}{ok}\binp{x}{a} \bout{x}{date}\inact
   \end{align*}
 
-  Using the syntax presented in Appendix~\ref{free-monad-dsl}, we can write this
-  process as:
+We can implement this process as:
 \begin{Shaded}
 \begin{Highlighting}[]
-\OtherTok{vendor ::} \DataTypeTok{H.HighLevelProgram}\NormalTok{ a}
+\OtherTok{vendor ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
 \NormalTok{vendor }\FunctionTok{=} \KeywordTok{do} 
 \NormalTok{    t }\OtherTok{<-}\NormalTok{ H.receive }
 \NormalTok{    H.send (price t) }
 \NormalTok{    H.send (price t) }
     \FunctionTok{...}
+\NormalTok{    terminate}
 \end{Highlighting}
 \end{Shaded}
   The rest of the program depends on the assigned name. So, e.g.,
@@ -1054,11 +1134,11 @@ For the process, there are four things that we need to track:
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\OtherTok{alice ::} \DataTypeTok{H.HighLevelProgram}\NormalTok{ a}
+\OtherTok{alice ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
 \NormalTok{alice }\FunctionTok{=} \KeywordTok{do} 
 \NormalTok{    H.send (}\DataTypeTok{VString} \StringTok{"Logicomix"}\NormalTok{ )}
     \FunctionTok{...}
-\OtherTok{vendor ::} \DataTypeTok{H.HighLevelProgram}\NormalTok{ a}
+\OtherTok{vendor ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
 \NormalTok{vendor }\FunctionTok{=} \KeywordTok{do} 
 \NormalTok{    t }\OtherTok{<-}\NormalTok{ H.receive }
     \FunctionTok{...}
@@ -1260,14 +1340,14 @@ offers mechanisms to step through a program interactively, and run it to
 completion.
 
 We can step through the program interactively in the Haskell REPL
-environment (Appendix \ref{installing-and-running}). 
+environment. 
 When the \texttt{ThreeBuyer} example is loaded, the program is in a state corresponding to configuration $M_1$ from Section \ref{the-process-model}.
 We can print the initial state of our program:
 
 \begin{Shaded}
 \begin{Highlighting}[]
 \FunctionTok{>}\NormalTok{ initialProgram}
-\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Send}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
+\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Send}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
 \end{Highlighting}
 \end{Shaded}
 
@@ -1301,9 +1381,9 @@ evaluate the program: we advance Alice at $l_1$ to reach   $M_2$ and then the ve
 \begin{Shaded}
 \begin{Highlighting}[]
 \FunctionTok{>}\NormalTok{ stepForward }\StringTok{"l1"}\NormalTok{ state}
-\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Receive}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
+\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Receive}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
 \FunctionTok{>}\NormalTok{ stepForward }\StringTok{"l4"}\NormalTok{ state }
-\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{Receive}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
+\NormalTok{locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Receive}\NormalTok{ \{owner }\FunctionTok{=} \StringTok{"A"}\NormalTok{, }\FunctionTok{...} 
 \end{Highlighting}
 \end{Shaded}
 
@@ -1363,14 +1443,14 @@ an error. There are two error cases that we can recover from:
 \end{itemize}
 
 \noindent Otherwise we continue until there are no active (non-terminated)
-locations left. For code please see Appendix \ref{scheduling-code}.
+locations left. 
 
 Running until completion (or error) is also available in the REPL:
 
 \begin{Shaded}
 \begin{Highlighting}[]
 \FunctionTok{>}\NormalTok{ untilError initialProgram}
-\DataTypeTok{Right}\NormalTok{ locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Fix} \DataTypeTok{NoOp}\NormalTok{)), }\FunctionTok{...} 
+\DataTypeTok{Right}\NormalTok{ locations}\FunctionTok{:}\NormalTok{ fromList [(}\StringTok{"l1"}\NormalTok{,(}\StringTok{"A"}\NormalTok{,[],}\DataTypeTok{Free} \DataTypeTok{NoOp}\NormalTok{)), }\FunctionTok{...} 
 \end{Highlighting}
 \end{Shaded}
 
@@ -1379,16 +1459,17 @@ consider these two equivalent global types:
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\NormalTok{globalType1 }\FunctionTok{=} \KeywordTok{do} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
-\NormalTok{globalType2 }\FunctionTok{=} \KeywordTok{do} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price} 
-\NormalTok{    GlobalType.transaction }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share} 
+\NormalTok{globalType1 }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    message }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title}
+\NormalTok{    message }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price}
+\NormalTok{    message }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price}
+\NormalTok{    message }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share}
+
+\NormalTok{globalType2 }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    message }\DataTypeTok{A} \DataTypeTok{V} \DataTypeTok{Title}
+\NormalTok{    message }\DataTypeTok{V} \DataTypeTok{A} \DataTypeTok{Price}
+\NormalTok{    message }\DataTypeTok{V} \DataTypeTok{B} \DataTypeTok{Price}
+\NormalTok{    message }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share}
 \end{Highlighting}
 \end{Shaded}
 
@@ -1529,6 +1610,7 @@ COST Action IC1405 ``Reversible computation -- Extending horizons of computing''
 
 %\pagebreak
 \newpage
+
 \appendix
 
 \section{Appendix}\label{appendix}

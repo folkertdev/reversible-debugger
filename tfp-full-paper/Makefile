@@ -11,3 +11,7 @@ pandoc:
 
 filewatch:
 	ls *.md *.bib | entr make 
+
+scratchpad: 
+	pandoc scratchpad.md -o scratchpad.tex
+	cat scratchpad.tex

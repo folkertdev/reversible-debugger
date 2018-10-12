@@ -12,7 +12,7 @@ import Data.Map.Merge.Strict as Merge
 import Zipper (Zipper)
 import qualified Zipper
 
-import GlobalType (GlobalType, GlobalTypeF)
+import GlobalType (TerminatingGlobalType, GlobalType, GlobalTypeF)
 import qualified GlobalType
 
 import qualified Control.Monad.Free as Free
@@ -92,9 +92,9 @@ select owner selector options =
     Fix $ Select owner selector (Map.fromList options)
 
 
-projections :: forall participant u. (Show participant, Ord participant) => GlobalType participant u -> Map Participant (LocalType u)
+projections :: forall participant u. (Show participant, Ord participant) => TerminatingGlobalType participant u -> Map Participant (LocalType u)
 projections global = 
-    let withStringParticipants :: GlobalType Participant u
+    let withStringParticipants :: TerminatingGlobalType Participant u
         withStringParticipants =  global |> GlobalType.mapParticipants show 
 
         participants = 
@@ -106,7 +106,7 @@ projections global =
 
 
 {-| Project a global type into a local one for a particular participant -}
-project :: Set Participant -> Participant -> GlobalType Participant u -> LocalType u 
+project :: Set Participant -> Participant -> TerminatingGlobalType Participant u -> LocalType u 
 project participants participant = Free.iter helper . fmap Void.absurd
   where helper global =
             case global of 

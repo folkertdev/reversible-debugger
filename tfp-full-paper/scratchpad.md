@@ -85,4 +85,62 @@ evaluate :: TerminatingProgram -> [Int]
 evaluate = flip execState [] . interpret 
 ```
 
+Many of the `ProgramF` constructors require an `owner`, we can thread the owner through a block with a wrapper around `Free`. 
+We use `StateT` containing the owner and a counter to generate unique variable names.
 
+```haskell
+newtype HighLevelProgram a = 
+    HighLevelProgram (StateT (Participant, Int) (Free (ProgramF Value)) a)
+        deriving (Functor, Applicative, Monad
+        , MonadState (Participant, Int), MonadFree (ProgramF Value))
+
+uniqueVariableName :: HighLevelProgram String
+uniqueVariableName = do
+    (participant, n) <- State.get
+    State.put (participant, n + 1)
+    return $ "var" ++ show n
+
+send :: Value -> HighLevelProgram ()
+send value = do
+    (participant, _) <- State.get
+    liftF (Send participant value ())  
+
+receive :: HighLevelProgram Value
+receive = do 
+    (participant, _) <- State.get
+    variableName <- uniqueVariableName 
+    liftF (Receive participant variableName ())
+    return (VReference variableName)
+
+terminate :: HighLevelProgram a
+terminate = liftF NoOp
+
+compile :: Participant -> HighLevelProgram Void -> Program Value
+compile participant (HighLevelProgram program) = do
+    runStateT program (participant, 0) 
+```
+
+We can now implement the `Vendor` from the ThreeBuyer example as: 
+```haskell
+vendor :: H.HighLevelProgram a
+vendor = do
+    t <- H.receive
+    H.send (price t)
+    H.send (price t)
+    ...
+    terminate
+```
+
+```haskell
+globalType1 = do
+    message A V Title
+    message V B Price
+    message V A Price
+    message A B Share
+
+globalType2 = do
+    message A V Title
+    message V A Price
+    message V B Price
+    message A B Share
+```
