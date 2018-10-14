@@ -800,7 +800,6 @@ Apart from the process-level recursion, \texttt{Program} is a direct translation
 % \KeywordTok{type} \DataTypeTok{Program}\NormalTok{ value }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{ProgramF}\NormalTok{ value) }
 \begin{Shaded}
 \begin{Highlighting}[]
-\KeywordTok{type} \DataTypeTok{List} \FunctionTok{=} \DataTypeTok{[]}
 \KeywordTok{type} \DataTypeTok{Participant} \FunctionTok{=} \DataTypeTok{String}
 \KeywordTok{type} \DataTypeTok{Identifier} \FunctionTok{=} \DataTypeTok{String}
 
@@ -817,8 +816,8 @@ Apart from the process-level recursion, \texttt{Program} is a direct translation
 \NormalTok{        ,}\OtherTok{ continuation ::}\NormalTok{ next  }
 \NormalTok{        \}}
  \CommentTok{-- choice primitives}
-    \FunctionTok{|} \DataTypeTok{Offer} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, next))}
-    \FunctionTok{|} \DataTypeTok{Select} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, value, next))}
+    \FunctionTok{|} \DataTypeTok{Offer} \DataTypeTok{Participant}\NormalTok{ [}\NormalTok{(}\DataTypeTok{String}\NormalTok{, next)]}
+    \FunctionTok{|} \DataTypeTok{Select} \DataTypeTok{Participant}\NormalTok{ [}\NormalTok{(}\DataTypeTok{String}\NormalTok{, value, next)]}
  \CommentTok{-- other constructors }
     \FunctionTok{|} \DataTypeTok{Parallel}\NormalTok{ next next }
     \FunctionTok{|} \DataTypeTok{Application} \DataTypeTok{Identifier}\NormalTok{ value}
@@ -988,14 +987,14 @@ We use \texttt{Monad.Free} to build a DSL for defining global types.
 \OtherTok{message ::}\NormalTok{ participant }\OtherTok{->}\NormalTok{ participant }\OtherTok{->}\NormalTok{ tipe }\OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ participant tipe () }
 \NormalTok{message from to tipe }\FunctionTok{=}\NormalTok{ liftF (}\DataTypeTok{Transaction}\NormalTok{ from to tipe ())}
 
-\OtherTok{messages ::}\NormalTok{ participant }\OtherTok{->} \DataTypeTok{List}\NormalTok{ participant }
+\OtherTok{messages ::}\NormalTok{ participant }\OtherTok{->} \NormalTok{[participant]}
          \OtherTok{->}\NormalTok{ tipe }\OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ participant tipe () }
 \NormalTok{messages sender receivers tipe }\FunctionTok{=}\NormalTok{ go receivers }
   \KeywordTok{where}\NormalTok{ go [] }\FunctionTok{=} \DataTypeTok{Pure}\NormalTok{ ()}
 \NormalTok{        go (x}\FunctionTok{:}\NormalTok{xs) }\FunctionTok{=} \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Transaction}\NormalTok{ sender x tipe }\FunctionTok{$}\NormalTok{ go xs)}
 
 \OtherTok{oneOf ::}\NormalTok{ participant }\OtherTok{->}\NormalTok{ participant }
-      \OtherTok{->} \DataTypeTok{List}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, }\DataTypeTok{GlobalType}\NormalTok{ participant u a) }
+      \OtherTok{->} \NormalTok{[(}\DataTypeTok{String}\NormalTok{, }\DataTypeTok{GlobalType}\NormalTok{ participant u a)] }
       \OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ participant u a }
 \NormalTok{oneOf selector offerer options }\FunctionTok{=} 
     \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Choice}\NormalTok{ selector offerer (Map.fromList options))}
@@ -1169,7 +1168,7 @@ We can implement this process as:
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\KeywordTok{type} \DataTypeTok{Zipper}\NormalTok{ a }\FunctionTok{=}\NormalTok{ (}\DataTypeTok{List}\NormalTok{ a, a, }\DataTypeTok{List}\NormalTok{ a)}
+\KeywordTok{type} \DataTypeTok{Zipper}\NormalTok{ a }\FunctionTok{=}\NormalTok{ (}\NormalTok{[a], a, [a])}
 
 \KeywordTok{data} \DataTypeTok{OtherOptions}
     \FunctionTok{=} \DataTypeTok{OtherSelections}\NormalTok{ (}\DataTypeTok{Zipper}\NormalTok{ (}\DataTypeTok{String}\NormalTok{, }\DataTypeTok{Value}\NormalTok{, }\DataTypeTok{Program} \DataTypeTok{Value}\NormalTok{))}
@@ -1247,8 +1246,8 @@ The information about a participant grouped in a type called
     \DataTypeTok{Monitor} 
 \NormalTok{        \{}\OtherTok{ _localType ::} \DataTypeTok{LocalTypeState}\NormalTok{ tipe}
 \NormalTok{        ,}\OtherTok{ _recursiveVariableNumber ::} \DataTypeTok{Int}
-\NormalTok{        ,}\OtherTok{ _recursionPoints ::} \DataTypeTok{List}\NormalTok{ (}\DataTypeTok{LocalType}\NormalTok{ tipe)}
-\NormalTok{        ,}\OtherTok{ _usedVariables ::} \DataTypeTok{List} \DataTypeTok{Binding} 
+\NormalTok{        ,}\OtherTok{ _recursionPoints ::} \NormalTok{[}\DataTypeTok{LocalType}\NormalTok{ tipe]}
+\NormalTok{        ,}\OtherTok{ _usedVariables ::} \NormalTok{[}\DataTypeTok{Binding}\NormalTok{]}
 \NormalTok{        ,}\OtherTok{ _applicationHistory ::} \DataTypeTok{Map} \DataTypeTok{Identifier}\NormalTok{ (value, value)}
 \NormalTok{        ,}\OtherTok{ _store ::} \DataTypeTok{Map} \DataTypeTok{Identifier}\NormalTok{ value }
 \NormalTok{        \}}
@@ -1303,7 +1302,7 @@ participant and a stack for unchosen branches:
 \NormalTok{        ,}\OtherTok{ applicationCount ::} \DataTypeTok{Int}
 \NormalTok{        ,}\OtherTok{ participants ::} \DataTypeTok{Map} \DataTypeTok{Participant}\NormalTok{ (}\DataTypeTok{Monitor}\NormalTok{ value }\DataTypeTok{String}\NormalTok{)}
 \NormalTok{        ,}\OtherTok{ locations ::} \DataTypeTok{Map} \DataTypeTok{Location} 
-\NormalTok{                 (}\DataTypeTok{Participant}\NormalTok{ , }\DataTypeTok{List} \DataTypeTok{OtherOptions}\NormalTok{ , }\DataTypeTok{Program}\NormalTok{ value)}
+\NormalTok{                 (}\DataTypeTok{Participant}\NormalTok{ , [}\DataTypeTok{OtherOptions}\NormalTok{], }\DataTypeTok{Program}\NormalTok{ value)}
 \NormalTok{        ,}\OtherTok{ queue ::} \DataTypeTok{Queue}\NormalTok{ value}
 \NormalTok{        ,}\OtherTok{ isFunction ::}\NormalTok{ value }\OtherTok{->} \DataTypeTok{Maybe}\NormalTok{ (}\DataTypeTok{Identifier}\NormalTok{, }\DataTypeTok{Program}\NormalTok{ value)}
 \NormalTok{        \}}
