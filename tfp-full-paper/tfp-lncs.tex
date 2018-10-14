@@ -800,6 +800,7 @@ Apart from the process-level recursion, \texttt{Program} is a direct translation
 % \KeywordTok{type} \DataTypeTok{Program}\NormalTok{ value }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{ProgramF}\NormalTok{ value) }
 \begin{Shaded}
 \begin{Highlighting}[]
+\KeywordTok{type} \DataTypeTok{List} \FunctionTok{=} \DataTypeTok{[]}
 \KeywordTok{type} \DataTypeTok{Participant} \FunctionTok{=} \DataTypeTok{String}
 \KeywordTok{type} \DataTypeTok{Identifier} \FunctionTok{=} \DataTypeTok{String}
 
@@ -1512,8 +1513,9 @@ exhaustively match on all the cases. Functional languages have had these
 features for a very long time. 
 %In recent years they have also made their way into non-functional languages (Rust, Swift, Kotlin).
 Secondly, purity and immutability are very useful in implementing and
-testing the reversible semantics. \modi{The type system can actually guarantee
-that we have not forgotten to revert anything.}
+testing the reversible semantics. 
+% The data types help with reversing in the correct order by making intermediate reversed states impossible to represent.  
+% \modi{The type system can actually guarantee that we have not forgotten to revert anything.}
 
 In a pure language, given functions
 \texttt{f\ ::\ a\ -\textgreater{}\ b} and
@@ -1527,7 +1529,7 @@ that
 $\mathtt{f} \cdot \mathtt{g}$ and  $\mathtt{g} \cdot \mathtt{f}$ both compose to the identity.
 In an impure language, even if these equalities are observed we
 cannot be sure that there were no side-effects. Because we do not need
-to consider a context (the outside world) here, checking that
+to consider a context (the outside world) in a pure language, checking that
 reversibility works is as simple as comparing initial and final states
 for all backward reduction rules.
 
