@@ -174,7 +174,7 @@ Causal consistency then arises as a key correctness criterion in the definition 
 In this paper, we describe a Haskell implementation of the reversible semantics proposed by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}. As such, our implementation defines a Haskell interpreter of message-passing programs written in their reversible process framework. This allows us to assess in practice the benefits  of the mechanisms deployed by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In developing our implementation, we have found the use of a functional programming language (Haskell in particular) a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully capture the formal semantics given by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} and to trust that our implementation is correct and preserves causal consistency. In particular, algebraic data types (sums and products) are invaluable in expressing the grammars and recursive data structures underlying their model.
 
 \paragraph{Organization.} %The rest of the paper is structured as follows.
-Section~\ref{the-process-model} recalls the key notions from~\cite{DBLP:conf/ppdp/MezzinaP17}, useful to appreciate our Haskell implementation, which we detail 
+Section~\ref{the-process-model} recalls the key notions from~\cite{DBLP:conf/ppdp/MezzinaP17}, useful to follow our Haskell implementation, which we detail 
 in Section~\ref{implementing-the-ppdp17-calculus-in-haskell}.
 Section~\ref{running-debugging} explains how to run programs forwards and backwards using our implementation.
 Section~\ref{discussion} collects concluding remarks. 
@@ -199,24 +199,26 @@ Here we shall  informally describe the key elements of the model, guided by a ru
 \paragraph{Overview.}
 Fig.~\ref{f:model} depicts two of the three salient ingredients of the model:
 \emph{configurations/processes} and the
-\emph{choreography}, which represent the communicating partners and their intended governing protocol, respectively. 
-There is a {configuration} for each protocol participant: it includes a \emph{located process} that specifies asynchronous communication behavior and is subject to a \emph{monitor} that enables forward/backward steps at run-time. This monitor is obtained via the choreography, which describes a protocol among two or more \emph{participants}. 
-Formally, the model considers choreographies defined in terms of \emph{global types} in the sense of multiparty session types~\cite{DBLP:conf/popl/HondaYC08}. 
+\emph{choreography}, which represent the communicating partners (\emph{participants}) and their intended governing protocol, respectively. 
+There is a {configuration} for each participant: it includes a \emph{located process} that specifies asynchronous communication behavior and is subject to a \emph{monitor} that enables forward/backward steps at run-time. This monitor is obtained via the choreography, which describes the intended protocol among the {participants}. 
+Choreographies are defined in terms of \emph{global types} as in multiparty session types~\cite{DBLP:conf/popl/HondaYC08}. 
 (We often use `choreographies' and `global types' as synonyms.)
-A global type can be \emph{projected} onto each participant to obtain 
-its corresponding  \emph{local type}: a type that abstracts a participant's contribution to the choreography. Since these local types specify the intended sequences of communication actions, they may be used as the monitors of the located processes. 
+A global type is \emph{projected} onto each participant to obtain 
+its corresponding  \emph{local type}, which abstracts a participant's contribution to the protocol. 
+Since  local types specify the intended communication actions, they may be used as the monitors of the located processes. 
 
-The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the operational semantics for configurations. This semantics is defined in terms of two reduction relations, forward and backward, denoted $\fw$  and $\bk$, respectively. We shall not recall these relations here; rather, we will introduce their key underlying intuitions by means of an example.
+The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the \emph{operational semantics} for configurations: it  is defined in terms of two reduction relations, forward and backward, denoted $\fw$  and $\bk$, respectively. We shall not recall these relations here; rather, we will introduce their key underlying intuitions by example.
 
 \paragraph{Syntax of Configurations and Processes.}
-The language of processes $P, Q, \ldots$ is a $\pi$-calculus with constructs for labeled (deterministic) choice, communication of abstractions, and function application.
-While labeled choice is typical of session $\pi$-calculi (cf.~\cite{DBLP:conf/esop/HondaVK98}), the latter constructs are typical of \emph{higher-order} process calculi, which combine features from functional and concurrent  languages~\cite{DBLP:journals/tcs/Sangiorgi01}. The complete process syntax, with their intuitive semantics, is  as follows:
+The process language  $P, Q, \ldots$, given next, is a $\pi$-calculus with constructs for labeled (deterministic) choice, communication of abstractions, and function application:
+While labeled choice is typical of session $\pi$-calculi~\cite{DBLP:conf/esop/HondaVK98}, the latter constructs are typical of \emph{higher-order} process calculi, which combine features from functional and concurrent  languages~\cite{DBLP:journals/tcs/Sangiorgi01}. 
+%The complete process syntax, with their intuitive semantics, is  as follows:
 \begin{align*}
 P, Q ::= \, 
         & \bout{u}{V}{P} \,\,\, \, \, &\text{send value $V$ on name $u$, then run $P$} \\
 \sbnfbar & \binp{u}{x}{P} \,\,\, \, \, & \text{receive a value on name $u$, bind it to $x$, then run $P$} \\
-\sbnfbar &  \bsel{u}{\lbl_i. P_i}_{i\in I}\,\,\, \, \, & \text{select an $l_j$, broadcast this choice, then run $P_j$} \\
-\sbnfbar & \bbra{u}{\lbl_i:P_i}_{i \in I} \,\,\, \, \, & \text{receive an   $l_j$, then run  $P_j$} \\
+\sbnfbar &  \bsel{u}{\lbl_i. P_i}_{i\in I}\,\,\, \, \, & \text{select a label $l_j$, broadcast this choice, then run $P_j$} \\
+\sbnfbar & \bbra{u}{\lbl_i:P_i}_{i \in I} \,\,\, \, \, & \text{receive a label  $l_j$, then run  $P_j$} \\
 \sbnfbar   & P \Par Q  &\text{parallel composition of $P$ and $Q$} \\
 \sbnfbar  & \rvar{X} \sbnfbar  \recp{X}{P} \,\,\, &\text{variable and function abstraction}\\
 \sbnfbar & \appl{V}{u} \,\,\, &\text{function application} \\
@@ -239,9 +241,9 @@ Shared names are public names used to establish a protocol (see below); once est
 We   use $\p, \q, \ldots$ to denote  participants, and 
 use session names indexed by participants;  we write, e.g., $s_{[\p]}$.
 We also use $v,v',\ldots$ to denote
-include  (first-order) base values and constants. Variables are denoted  $x,y, \ldots$. 
+   (first-order) base values and constants. Variables are denoted  $x,y, \ldots$. 
 Values $V$ include shared names, 
-first-order values, but also \emph{name abstractions} $\lambda x. P$, where $P$ is a process.
+first-order values, and \emph{name abstractions} $\lambda x. P$, where $P$ is a process.
 Notice that values need not include (indexed) session names, for session name communication (\emph{delegation}) is  representable using abstraction passing~\cite{KPY2016}.
 
 The syntax of \emph{configurations} $M, N, \ldots$ builds upon that of processes; indeed, we may consider configurations as compositions of located processes:
@@ -276,20 +278,22 @@ Constructs for specifying the composition of configurations, name restriction, a
 
 The constructs in the second row appear only at run-time 
 %(i.e., they do not appear in ``source'' programs) 
-and are key to enable the reversible semantics. 
+and   enable the reversible semantics. 
 We call $\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}$ a \emph{running process}:  $\loc$ hosts a process $P$ that implements participant $\p$, with $\stack C$ being a memory of  labeled choices enforced so far. Configuration $\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}$ is a \emph{monitor}
 where: 
 $s_{[\p]}$ is the indexed session being monitored;
 $H$ is a  local type \emph{with history} (see below);
 $\mytilde{x}$ is a set of free variables;
 and  $\store$ is a store that records the value of such variables.
-The \emph{tag} $\mytagg$ serves to determine whether 
+The \emph{tag} $\mytagg$ says whether 
 the running process associated to the monitor is currently involved in a backward step ($\mytagg = \rmark$) or not ($\mytagg = \normark$).
 We write $\codah{s}{h_i}{h_o}$ to denote a \emph{message queue} with input part $h_i$ and output part $h_o$.
 Finally, the \emph{running function} $\mem{k}{(\appl{V}{u})}{\loc}$ serves to  reverse  applications.
 
 \paragraph{Global and Local Types.}
-As already mentioned, choreographies represent multiparty protocols expressed as global types $G, G', \ldots$. Global types can be \emph{projected} onto local types  ($T, T', \ldots$), one per participant. Their syntax follows~\cite{DBLP:conf/popl/HondaYC08}:
+As already mentioned,  multiparty protocols are expressed as global types ($G, G', \ldots$), which can be \emph{projected} onto local types  ($T, T', \ldots$), one per participant. The syntax 
+of value, global, and local types
+follows~\cite{DBLP:conf/popl/HondaYC08}:
 \begin{align*}
 			U, U'  \bnfis & \bool \sbnfbar \nat \sbnfbar \cdots %\bnfbar T 
 			\sbnfbar \shot{T} \\
@@ -305,8 +309,8 @@ As already mentioned, choreographies represent multiparty protocols expressed as
 		\sbnfbar  \mu X. T \sbnfbar X \sbnfbar \lend 
 \end{align*}
 \noindent
-We briefly discuss value, global, and local types. 
-Value types $U$ include basic first-order values,   but also 
+%tWe briefly discuss 
+Value types $U$ include basic first-order values,   and  
 the functional type $\shot{T}$ for {higher-order} values: abstractions from names to processes. 
 (We write $\Proc$ to denote the type of processes.)
 
@@ -328,8 +332,8 @@ conversely, type $\ltsel{\p}{\lbl_i}{T_i}{i}{I}$
 says that \p may select one of such alternatives.
 Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respectively. 
  
- A novelty in the work of Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} are \emph{local types with history}  $H, H', \ldots$. Intuitively, a type $H$ is a local type equipped with a
- cursor (denoted~$\past$) that serves to distinguish  the (local) protocol actions  that have been already executed (the past of the protocol) from those that are yet to be performed (the future of the protocol).
+ A novelty in the work of Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} are \emph{local types with history}  ($H, H'$). A type $H$ is a local type equipped with a
+ cursor (denoted~$\past$) used to distinguish  the  protocol actions  that have been already executed (the past of the protocol) from those that are yet to be performed (the future of the protocol).
  
  \paragraph{Projection.}
  Given these intuitions, the projection of a global type $G$ onto a protocol participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is mostly straightforward, except for choice. 
@@ -381,7 +385,7 @@ choice causes a broadcast of that choice to the other participants}.
 
 \paragraph{Example: Three-Buyer Protocol.}
 We illustrate by example the 
-forward and backward reduction semantics, denoted \fw and \bk: we recall the running example by Mezzina and P\'{e}rez'~\cite{DBLP:conf/ppdp/MezzinaP17}, namely
+forward and backward reduction semantics, denoted \fw and \bk: we recall the running example by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, namely
   a reversible variant of the \emph{Three-Buyer protocol}  (cf, e.g.,~\cite{CDYP2015})
 with abstraction passing. 
 The protocol 
@@ -401,23 +405,22 @@ This protocol may be formalized as the following global type $G$:
 G = ~&  \gtcom{A}{\pS}{\mathsf{title}}{\gtcom{\pS}{\{A,B\}}{\mathsf{price}}{\gtcom{A}{B}{\mathsf{share}}{
 \\
 & \quad \gtcom{B}{\{A,\pS\}}{\mathsf{OK}}{
-\\
-& \quad \gtcom{B}{C}{\mathsf{share}}{\gtcom{B}{C}{\thunkt}{
+ \gtcom{B}{C}{\mathsf{share}}{\gtcom{B}{C}{\thunkt}{
 \\
 & \quad \gtcom{B}{\pS}{\mathsf{address}}{\gtcom{\pS}{B}{\mathsf{date}}{\gend}}}}}}}}
 %\\
 %G_2 = ~& \gtcom{B}{C}{\mathsf{share}}{\gtcom{B}{C}{T}{\gtcom{B}{C}{\shot{T}}{\gend}}}
 \end{align*}
-Above, we   write
+Above,  
 $\gtcom{\p}{\{\q_1,\q_2\}}{U}{G}$
-as a shorthand notation for 
+stands for 
 $\gtcom{\p}{\q_1}{U}{\gtcom{\p}{\q_2}{U}{G}}$
 (and similarly for local types).
-Also, we write $\thunkt$ to denote the type $\shot{\lend}$, associated to a \emph{thunk process} $\abs{x}{P}$ with $x \not \in \fn{P}$, written
-$\thunkp{P}$. A thunk is an inactive process; it can be activated by applying to it a dummy name of type $\lend$, denoted $\dummyn$.
-Moreover, $\mathsf{price}$ and $\mathsf{share}$ are base types treated as integers,
-and $\mathsf{title}$, $\mathsf{OK}$, $\mathsf{address}$, and $\mathsf{date}$ are base types treated as strings.
-Then we have the following projections of $G$ onto local types:
+We write $\thunkt$ to denote the type $\shot{\lend}$, associated to a \emph{thunk} $\abs{x}{P}$ with $x \not \in \fn{P}$, written
+$\thunkp{P}$. A thunk is an inactive process, which is activated by applying to it a dummy name of type $\lend$, denoted $\dummyn$.
+Also, $\mathsf{price}$ and $\mathsf{share}$ are base types treated as integers;
+  $\mathsf{title}$, $\mathsf{OK}$, $\mathsf{address}$, and $\mathsf{date}$ are base types treated as strings.
+The projections of $G$ onto local types are as follows:
 \begin{align*}
 \tproj{G}{\pS} & = \ltinp{A}{\mathsf{title}}{\ltout{\{A,B\}}{\mathsf{price}}{\ltinp{B}{\mathsf{OK}}{\ltinp{B}{\mathsf{address}}{\ltout{B}{\mathsf{date}}{\lend}}}}}
 \\
@@ -425,8 +428,7 @@ Then we have the following projections of $G$ onto local types:
 \\
 \tproj{G}{\pB} & = \ltinp{\pS}{\mathsf{price}}{\ltinp{A}{\mathsf{share}}{\ltout{\{A,\pS\}}{\mathsf{OK}}{
 \ltout{C}{\mathsf{share}}{\ltout{C}{\thunkt}{
-\\
-& \qquad \ltout{\pS}{\mathsf{address}}{\ltinp{\pS}{\mathsf{date}}{\lend}}}}}}}
+ \ltout{\pS}{\mathsf{address}}{\ltinp{\pS}{\mathsf{date}}{\lend}}}}}}}
 \\
 \tproj{G}{\pC} & = \ltinp{B}{\mathsf{share}}{\ltinp{B}{\thunkt}{\lend}}
 \end{align*}
@@ -444,9 +446,9 @@ We now give processes for each participant:
 %&Q_C = \binp{y}{share}\binp{y}{T}\binp{y}{X}\inact  \\
 \end{align*}
 where $price(\cdot)$ returns a value of type $\mathsf{price}$ given a $\mathsf{title}$.
-Observe how Bob's implementation sends part of its protocol to Carol as a thunk containing 
-his session name and address. 
-The whole system, given by configuration $M$ below, is obtained by placing these processes   in appropriate locations ($\loc_1, \ldots, \loc_4$):
+ Bob's implementation sends part of its protocol to Carol as a thunk.
+ % containing  his session name and address. 
+The whole system, given below, is obtained by placing these processes   in appropriate locations ($\loc_1, \ldots, \loc_4$):
 $$
 M = \myloc{\loc_1}{\text{Vendor}} 
 \Par
@@ -490,13 +492,16 @@ M & \fw  \news{s}\big(\,
 where 
 $V_1$, $A_1$, $B_1$, and $C_1$ 
 stand for the continuation of processes $\text{Vendor}$, $\text{Alice}$, $\text{Bob}$, and $\text{Carol}$ after the service 
-request/accept. So we have, for instance, 
-$
-A_1 = \bout{y}{\exBook}\binp{y}{p}\bout{y}{h}\binp{y}{ok}\inact
-$.
+request/accept. 
+%So we have, for instance, 
+%$
+%A_1 = \bout{y}{\exBook}\binp{y}{p}\bout{y}{h}\binp{y}{ok}\inact
+%$.
 %Notice also how session initialization instantiates variable ${z}$ in the thunk contained in Bob's implementation with endpoint $\epB$.
-From $M_1$ we could either undo the previous reduction (using Rule~\bkcolor{\textsc{(RInit)}})
-or execute the communication from $\text{Alice}$ to $\text{Vendor}$ (using two rules:~\fwcolor{\textsc{(Out)}} and ~\fwcolor{\textsc{(In)}}). This latter option would be as follows:
+From $M_1$ we could either undo the previous reduction %(using Rule~\bkcolor{\textsc{(RInit)}})
+or execute the communication from $\text{Alice}$ to $\text{Vendor}$.
+%(using two rules:~\fwcolor{\textsc{(Out)}} and ~\fwcolor{\textsc{(In)}}). 
+This latter option would be as follows:
 \begin{align*}
 M_1 & \fw  \news{s}(\,  \np{\key{{\loc_2}}{\pA}}{ \conf{\inact}{\binp{\epA}{p}\bout{\epA}{h}\binp{\epA}{ok}\inact}} 
 \\
@@ -518,12 +523,16 @@ M_2 \fw & \news{s}(\,  \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\bout{\epS}{price
 where 
 $\store_3  = \upd{x}{d},\upd{t}{\exBook}$,
 $T_\mathsf{\pS}  = \ltinp{B}{\mathsf{OK}}{\ltinp{B}{\mathsf{address}}{\ltout{B}{\mathsf{date}}{\lend}}}$,
-and $N_3$ stands for the participants not involved in the reduction.
-Observe that the cursors in monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$ have evolved, and that the message from $\pA$ to $\pS$ has now been moved to the input queue.
+and $N_3$ stands for the %participants not involved in the reduction.
+rest of the system.
+Note that the cursors in monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$ have moved; also, the message from $\pA$ to $\pS$ is now in the input queue.
 
 We illustrate  reversibility by showing how to return to $M_1$ from $M_3$.
-We need  three backward  rules: \bkcolor{\textsc{(RollS)}}, \bkcolor{\textsc{(RIn)}}, and \bkcolor{\textsc{(ROut)}}.
-First, Rule~\bkcolor{\textsc{(RollS)}} modifies the tags of monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$,
+We need  three backward steps.
+%rules: \bkcolor{\textsc{(RollS)}}, \bkcolor{\textsc{(RIn)}}, and \bkcolor{\textsc{(ROut)}}.
+%First, Rule~\bkcolor{\textsc{(RollS)}} 
+The first
+modifies the tags of monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$,
   leaving the rest unchanged:
 \begin{align*}
 M_3 & \bk  \news{s}(\,  
@@ -539,10 +548,11 @@ M_3 & \bk  \news{s}(\,
 & \Par N_4 \Par \codah{s}{\valueq{\pA}{\pS}{\exBook}}{\emp}{}~)  = M_4
 \end{align*}
 where 
-$\myctxr{\ctx{T}_4}{\bullet}  =\ltout{\pS}{\mathsf{title}}{\bullet}$ is a  \emph{type context} (with hole $\bullet$) and, as before, $N_4$ represents participants not involved in the reduction.
+$\myctxr{\ctx{T}_4}{\bullet}  =\ltout{\pS}{\mathsf{title}}{\bullet}$ is a  \emph{type context} (with hole $\bullet$) and, as before, $N_4$ represents the rest of the system.
 $M_4$ has several possible forward and backward reductions. 
-One particular reduction uses Rule~\bkcolor{\textsc{(RIn)}}
-to undo the input at \pS:
+One particular backward reduction 
+%uses Rule~\bkcolor{\textsc{(RIn)}} to 
+undoes the input at \pS:
 \begin{align*}
 M_4 & \bk  \news{s}(\,  
 \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\binp{\epS}{t}\bout{\epS}{price(t)}\bout{\epS}{price(t)}   \binp{\epS}{ok}\binp{\epS}{a} \bout{\epS}{date}\inact }} 
@@ -562,8 +572,7 @@ The following (backward) reduction from $M_5$ undoes the output at \pA:
 M_5 & \bk  \news{s}(\,  
 \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\binp{\epS}{t}\bout{\epS}{price(t)}\bout{\epS}{price(t)} \\ 
 &   \binp{\epS}{ok}\binp{\epS}{a} \bout{\epS}{date}\inact }} 
-\\
-&  \!\!\!\! \Par 
+ \Par 
  \hmoni{\ep{s}{\pS}}{\!\!\past \ltinp{A}{\mathsf{title}}{\ltout{\{A,B\}}{\mathsf{price}}{T_\mathsf{B}}}}{x}{\upd{x}{d}} 
 \\
 & \!\!\!\! \Par \np{\key{{\loc_2}}{\pA}}{ \conf{\inact}{\bout{\epA}{\exBook}\binp{\epA}{p}\bout{\epA}{h}\binp{\epA}{ok}\inact}} 
@@ -575,9 +584,9 @@ M_5 & \bk  \news{s}(\,
 \Par N_4 \Par \codah{s}{\emp}{\emp}{}~)  = M_6
 \end{align*}
 Clearly, $M_6 = M_1$.
-Summing up, the synchronization realized by the (forward) reduction sequence
-$M_1 \fw M_2 \fw M_3$ can be reversed by the (backward) reduction sequence
-$M_3 \bk M_4 \bk M_5 \bk M_6$.
+Summing up, the (forward) reductions
+$M_1 \fw M_2 \fw M_3$ can be reversed by the (backward) reductions
+$M_3 \bk M_4 \bk M_5 \bk M_6 = M_1$.
 
 To illustrate abstraction passing, let us assume that 
 $M_3$ above follows a sequence of forward reductions
@@ -624,7 +633,8 @@ h_7 & =
 \end{align*}
 %Also, $120 - price(\exBook)$ is the amount \pB may contribute.
 
-If $M_7 \fw \fw M_8$ by using Rules~\fwcolor{\textsc{(Out)}} and ~\fwcolor{\textsc{(In)}}
+If $M_7 \fw \fw M_8$ to enable a (forward) synchronization 
+%by using Rules~\fwcolor{\textsc{(Out)}} and ~\fwcolor{\textsc{(In)}}
 we would have:
 \begin{align*}
 M_8 & = ~   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\inact}} 
@@ -640,7 +650,9 @@ M_8 & = ~   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\inact}}
 \end{align*}
 where
 $\store_9 = \store_8 \upd{code}{\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}}$.
-We now may apply Rule~\fwcolor{\textsc{(Beta)}} to obtain the actual code sent from \pB to \pC:
+We now may 
+%apply Rule~\fwcolor{\textsc{(Beta)}} to 
+obtain the actual code sent from \pB to \pC:
 \begin{align*}
 M_8 & \fw ~   \news{s}\news{k}(\,  
 %\np{\key{\loc_3}{\pB}}{ \conf{\inact}{\inact}} 
@@ -672,10 +684,10 @@ there is no way for \pC to execute the code by referring to a participant differ
 %This justifies the premise 
 %$\p = \er \,\vee\, \p \in \names{\er, h_i}$ present in Rules~\fwcolor{\textsc{(Out)}} and \fwcolor{\textsc{(In)}} 
 %\erase{\fwcolor{\textsc{(Sel)}} and ~\fwcolor{\textsc{(Bra)}}} (and in their backward counterparts):
-When executing previously received mobile code, the participant mentioned in the location (i.e., $\pC$)
-and that mentioned in the located process (i.e., $\pB$) may differ.
-Further  reductions from $M_9$ will  modify the cursor in the type stored in   $\ep{s}{\pB}$
-based on the process   at $\key{{\loc_4}}{\pC}$.
+%When executing previously received mobile code, the participant mentioned in the location (i.e., $\pC$)
+%and that mentioned in the located process (i.e., $\pB$) may differ.
+%Further  reductions from $M_9$ will  modify the cursor in the type stored in   $\ep{s}{\pB}$
+%based on the process   at $\key{{\loc_4}}{\pC}$.
 
 
 
@@ -683,8 +695,8 @@ based on the process   at $\key{{\loc_4}}{\pC}$.
 %\textbf{\emph{In this section we show how we implement the processes, types, and semantics in the PPDP paper}}
 \label{implementing-the-ppdp17-calculus-in-haskell}
 
-The Process calculus, Global and Local types, and the information for reversal are all represented as syntax trees. The first two are 
-written by the programmer, and we want to provide a convenient way to specify them as domain-specific languages (DSLs) in Haskell. 
+We represent the process calculus, global/local types, and the information for reversal as syntax trees. 
+The first two are written by the programmer, and we want to provide a convenient way to specify them as domain-specific languages~(DSLs). 
 
 \subsection{DSLs with the Free monad}
 
@@ -717,16 +729,16 @@ We define a data type with our instructions, and make sure it has a \texttt{Func
 Given an instance of \texttt{Functor}, \texttt{Free} will give us the free monad on that functor. 
 In effect this describes a tree (in this particular case a list) of instructions. 
 
-In a lazy language like Haskell, the tree is not guaranteed to be finite. If the tree is not finite,
+In a lazy language like Haskell, the tree may not be finite. If the tree is not finite,
 evaluating it will cause a stack overflow. We use the \texttt{Void} type
 to ensure the tree is finite with an \texttt{End} at the very bottom. An
 alternative approach is to use existential quantification, but that
-requires enabeling a language extension.
+requires enabling a language extension.
 
-The \texttt{Void} type is the type with zero values. A value of the type
+ \texttt{Void}  is the type with zero values. A value of the type
 \texttt{Free\ Operation\ Void} cannot end in the shape
 \texttt{Pure\ \_}, because it requires a value of type \texttt{Void}
-(which don't exist). It also cannot end in \texttt{Push\ \_\ \_} or
+(which does not exist). It also cannot end in \texttt{Push\ \_\ \_} or
 \texttt{Pop\ \_} because these values contain or produce a \texttt{next}
 argument (and \texttt{next} cannot be of type \texttt{Void}). Therefore a value of type \texttt{Free\ Operation\ Void} must end in \texttt{End}, 
 and thus values of type \texttt{Free\ Operation\ Void} are finite and can be safely interpreted.
@@ -828,8 +840,9 @@ Apart from the process-level recursion, \texttt{Program} is a direct translation
 
 As already discussed, processes exchange values. 
 To write more interesting examples,
-we extend the types of values that can be used from names, booleans and
-functions to   include also references, integers, strings, and basic
+we extend the types of values 
+%that can be used from names, booleans and functions 
+to   include also references, integers, strings, and basic
 integer and comparison operators:
 
 \begin{Shaded}
