@@ -9,6 +9,7 @@
 \usepackage{xcolor}
 \newcommand{\erase}[1]{\textcolor{orange}{#1}}
 \newcommand{\modi}[1]{\textcolor{blue}{#1}}
+\newcommand{\checkthis}[1]{\textcolor{red}{#1}}
 
 \usepackage{fixltx2e} % provides \textsubscript
 % use upquote if available, for straight quotes in verbatim environments
@@ -171,9 +172,10 @@ This motivates the definition of reversible semantics which are \emph{causally c
 
 Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (most notably, the $\pi$-calculus~\cite{MilnerR:calmp1}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{DBLP:conf/popl/HondaYC08} that specify intended protocol executions. While their reversible semantics   is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
 
-In this paper, we describe a Haskell implementation of the reversible semantics proposed by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}. As such, our implementation defines a Haskell interpreter of message-passing programs written in their reversible process framework. This allows us to assess in practice the benefits  of the mechanisms deployed by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} to enforce causally consistent reversibility. In developing our implementation, we have found the use of a functional programming language (Haskell in particular) a natural choice. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully capture the formal semantics given by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} and to trust that our implementation is correct and preserves causal consistency. In particular, algebraic data types (sums and products) are invaluable in expressing the grammars and recursive data structures underlying their model.
+In this paper we describe a Haskell implementation of the reversible semantics  by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}. As such, our implementation defines a Haskell interpreter of message-passing programs written in their reversible process framework. This allows us to assess in practice the mechanisms deployed by Mezzina and P\'{e}rez to enforce causally consistent reversibility. The use of a functional programming language (Haskell in particular) is a natural choice for developing our implementation. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully capture the formal reversible semantics and to trust that our implementation  correctly preserves causal consistency. In particular, algebraic data types (sums and products) are invaluable to express  the grammars and recursive data structures underlying their model.
 
-\paragraph{Organization.} %The rest of the paper is structured as follows.
+%\paragraph{Organization.} %
+The rest of the paper is structured as follows.
 Section~\ref{the-process-model} recalls the key notions from~\cite{DBLP:conf/ppdp/MezzinaP17}, useful to follow our Haskell implementation, which we detail 
 in Section~\ref{implementing-the-ppdp17-calculus-in-haskell}.
 Section~\ref{running-debugging} explains how to run programs forwards and backwards using our implementation.
@@ -200,17 +202,17 @@ Here we shall  informally describe the key elements of the model, guided by a ru
 Fig.~\ref{f:model} depicts two of the three salient ingredients of the model:
 \emph{configurations/processes} and the
 \emph{choreography}, which represent the communicating partners (\emph{participants}) and their intended governing protocol, respectively. 
-There is a {configuration} for each participant: it includes a \emph{located process} that specifies asynchronous communication behavior and is subject to a \emph{monitor} that enables forward/backward steps at run-time. This monitor is obtained via the choreography, which describes the intended protocol among the {participants}. 
+There is a {configuration} for each participant: it includes a \emph{located process} that relies on asynchronous communication and is subject to a \emph{monitor} that enables forward/backward steps at run-time. This monitor is obtained via the choreography, which describes the intended protocol among the {participants}. 
 Choreographies are defined in terms of \emph{global types} as in multiparty session types~\cite{DBLP:conf/popl/HondaYC08}. 
 (We often use `choreographies' and `global types' as synonyms.)
 A global type is \emph{projected} onto each participant to obtain 
 its corresponding  \emph{local type}, which abstracts a participant's contribution to the protocol. 
 Since  local types specify the intended communication actions, they may be used as the monitors of the located processes. 
 
-The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the \emph{operational semantics} for configurations: it  is defined in terms of two reduction relations, forward and backward, denoted $\fw$  and $\bk$, respectively. We shall not recall these relations here; rather, we will introduce their key underlying intuitions by example.
+The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the \emph{operational semantics} for configurations, which  is defined by two reduction relations: forward ($\fw$) and backward ($\bk$). We shall not recall these relations here; rather, we will introduce their key underlying intuitions by example.
 
-\paragraph{Syntax of Configurations and Processes.}
-The process language  $P, Q, \ldots$, given next, is a $\pi$-calculus with constructs for labeled (deterministic) choice, communication of abstractions, and function application:
+\paragraph{Configurations and Processes.}
+The language  of processes  $P, Q, \ldots$, given next, is a $\pi$-calculus with   labeled (deterministic) choice, communication of abstractions, and function application:
 While labeled choice is typical of session $\pi$-calculi~\cite{DBLP:conf/esop/HondaVK98}, the latter constructs are typical of \emph{higher-order} process calculi, which combine features from functional and concurrent  languages~\cite{DBLP:journals/tcs/Sangiorgi01}. 
 %The complete process syntax, with their intuitive semantics, is  as follows:
 \begin{align*}
@@ -269,24 +271,25 @@ M \Par N
 \sbnfbar 
  {\mem{k}{(\appl{V}{u})}{\loc}} % function
 \end{align*}
-Above,  identifiers $\loc, \loc', \ldots$ denote a  \emph{location} or  \emph{site}. 
+Above,  identifiers $\loc, \loc'$ denote a  \emph{location} or  \emph{site}. 
 The first two constructs enable protocol establishment:
-$\myloc{\loc}{\bout{a}{x}{P}}$ is the \emph{request} of a service identified with shared name $a$ implemented by
+$\myloc{\loc}{\bout{a}{x}{P}}$ is the \emph{request} of a service identified by shared name $a$ implemented by
 $P$, whereas $\myloc{\loc}{\binp{a}{x}{P}}$ denotes service \emph{acceptance}. 
-Establishing an $n$-party protocol on service $a$ then requires the synchronization of one configuration requesting $a$, and $n-1$ configurations accepting $a$.
-Constructs for specifying the composition of configurations, name restriction, and the inactive configuration have expected readings.
+Establishing an $n$-party protocol on service $a$ then requires one configuration requesting $a$ 
+synchronizing with  $n-1$ configurations accepting $a$.
+Constructs for  composing configurations, name restriction, and  inaction are as expected.
 
-The constructs in the second row appear only at run-time 
+The second row above shows constructs that appear only at run-time 
 %(i.e., they do not appear in ``source'' programs) 
-and   enable the reversible semantics. 
-We call $\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}$ a \emph{running process}:  $\loc$ hosts a process $P$ that implements participant $\p$, with $\stack C$ being a memory of  labeled choices enforced so far. Configuration $\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}$ is a \emph{monitor}
+and   enable  reversibility. 
+We call $\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}$ a \emph{running process}:  $\loc$ hosts a process $P$ that implements participant $\p$, and $\stack C$ records labeled choices enforced so far. Configuration $\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}$ is a \emph{monitor}
 where: 
 $s_{[\p]}$ is the indexed session being monitored;
 $H$ is a  local type \emph{with history} (see below);
 $\mytilde{x}$ is a set of free variables;
-and  $\store$ is a store that records the value of such variables.
+and store $\store$ records their values.
 The \emph{tag} $\mytagg$ says whether 
-the running process associated to the monitor is currently involved in a backward step ($\mytagg = \rmark$) or not ($\mytagg = \normark$).
+the running process associated to the monitor is involved in a backward step ($\mytagg = \rmark$) or not ($\mytagg = \normark$).
 We write $\codah{s}{h_i}{h_o}$ to denote a \emph{message queue} with input part $h_i$ and output part $h_o$.
 Finally, the \emph{running function} $\mem{k}{(\appl{V}{u})}{\loc}$ serves to  reverse  applications.
 
@@ -310,14 +313,13 @@ follows~\cite{DBLP:conf/popl/HondaYC08}:
 \end{align*}
 \noindent
 %tWe briefly discuss 
-Value types $U$ include basic first-order values,   and  
-the functional type $\shot{T}$ for {higher-order} values: abstractions from names to processes. 
-(We write $\Proc$ to denote the type of processes.)
+Value types $U$ include first-order values,   and  
+ type $\shot{T}$ for {higher-order} values: abstractions from names to processes
+(where $\Proc$ denotes the type of processes.)
 
-Global type $\gtcom{p}{q}{U}{G}$ says that \p may send a value of type $U$ to \q, and then continue as $G$.
+Global type $\gtcom{p}{q}{U}{G}$ says that \p  sends a value of type $U$ to \q, and then continues as $G$.
 Given a finite index set $I$ and pairwise different {labels} $\lbl_i$, global type $\gtcho{p}{q}{\lbl_i}{G_i}$ specifies that  \p may choose  label $\lbl_i$, send this selection to \q, and then continue as $G_i$.
-In these types %thus denote direct communications; 
-we assume that $\p \neq \q$.
+In both cases, $\p \neq \q$.
 Recursive and terminated protocols are denoted $\mu X. G$ and $\gend$, respectively.
 %We write $\parties{G}$ to denote the set of participants in $G$.
 
@@ -336,15 +338,17 @@ Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respect
  cursor (denoted~$\past$) used to distinguish  the  protocol actions  that have been already executed (the past of the protocol) from those that are yet to be performed (the future of the protocol).
  
  \paragraph{Projection.}
- Given these intuitions, the projection of a global type $G$ onto a protocol participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is mostly straightforward, except for choice. 
- The   definition is given in Fig.~\ref{f:proj}.
- Because of recursion, a branch of a choice may recurse back to the beginning.
-When this occurs, all participants have to jump back to the beginning,
-so every choice must be communicated to all participants.
-
-To address this, the choice made by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} (as in many other works) is to disallow different branches using different participants. In practice, 
-this means that all branches must perform the same communication to satisfy the global type, even if the communication is not needed in every branch (some branches may have dummy communications). \modi{As we will see, in our Haskell implementation we use a different method where every
-choice causes a broadcast of that choice to the other participants}. 
+The projection of a global type $G$ onto a protocol participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is defined in Fig.~\ref{f:proj}. 
+ The definition is intuitive, perhaps except for choice.
+ Intuitively, the definition ensures that a choice between $\p$ and $\q$ should not implicitly determine different behavior for participants different from $\p, \q$, for which different behavior should  be determined by some explicit communication.
+ This is a condition adopted by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} but also by several other works, as it allows to ensure implementability of  multiparty session types.
+ Because of recursion, a branch of a choice may recurse back to the beginning: in this case
+ all participants have to jump back to the beginning,
+so every choice must  be explicit  to all participants.
+%To address this, and to ensure implementability of global types,  disallow haviing different branches that use different participants. 
+%In practice, 
+%this means that all branches must perform the same communication to satisfy the global type, even if the communication is not needed in every branch (some branches may have dummy communications). 
+\checkthis{As we will see, our Haskell implementation relies on broadcasts to communicate choices to all protocol participants}. 
 
 \begin{figure}[!t]
 {
@@ -459,9 +463,11 @@ M = \myloc{\loc_1}{\text{Vendor}}
 \myloc{\loc_4}{\text{Carol}} 
 $$
 %\end{document}
-We now use $M$ to informally discuss forward and backward reduction rules for \fw and \bk; \modi{their formal definition is in~\cite{DBLP:conf/ppdp/MezzinaP17}}.
-From $M$, the session starts with an application of 
-Rule \fwcolor{\textsc{(Init)}}, which initializes the protocol by creating the necessary run-time structures (running processes and monitors):
+We now use $M$ to informally discuss freduction rules for \fw and \bk; {their formal definition is in~\cite{DBLP:conf/ppdp/MezzinaP17}}.
+From $M$, the session starts with 
+%an application of  Rule \fwcolor{\textsc{(Init)}}, which 
+a forward reduction that
+initializes the protocol by creating running processes and monitors:
 %To simplify readability, below
 %we write 
 %$\mathtt{r}$,
@@ -498,10 +504,11 @@ request/accept.
 %A_1 = \bout{y}{\exBook}\binp{y}{p}\bout{y}{h}\binp{y}{ok}\inact
 %$.
 %Notice also how session initialization instantiates variable ${z}$ in the thunk contained in Bob's implementation with endpoint $\epB$.
-From $M_1$ we could either undo the previous reduction %(using Rule~\bkcolor{\textsc{(RInit)}})
-or execute the communication from $\text{Alice}$ to $\text{Vendor}$.
+From $M_1$ we could either undo this reduction %(using Rule~\bkcolor{\textsc{(RInit)}})
+or execute the communication from $\text{Alice}$ to $\text{Vendor}$, as 
 %(using two rules:~\fwcolor{\textsc{(Out)}} and ~\fwcolor{\textsc{(In)}}). 
-This latter option would be as follows:
+%This latter option would be as 
+follows:
 \begin{align*}
 M_1 & \fw  \news{s}(\,  \np{\key{{\loc_2}}{\pA}}{ \conf{\inact}{\binp{\epA}{p}\bout{\epA}{h}\binp{\epA}{ok}\inact}} 
 \\
@@ -510,8 +517,7 @@ M_1 & \fw  \news{s}(\,  \np{\key{{\loc_2}}{\pA}}{ \conf{\inact}{\binp{\epA}{p}\b
 \\
 & \!\!\!\!\Par N_2 \Par \codah{s}{\emp}{\valueq{\pA}{\pS}{\exBook}}{}~)  = M_2
 \end{align*}
-where $N_2$ stands for the running processes and monitors for Vendor, Bob, and Carol, who not involved in the reduction.
-We now have:
+where $N_2$ stands for  processes/monitors for Vendor, Bob, and Carol (not involved in the reduction). An additional forward step completes the synchronization:
 \begin{align*}
 M_2 \fw & \news{s}(\,  \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\bout{\epS}{price(t)} \bout{\epS}{price(t)}\binp{\epS}{ok}  \binp{\epS}{a} \bout{\epS}{date}\inact }} 
 \\
@@ -527,13 +533,11 @@ and $N_3$ stands for the %participants not involved in the reduction.
 rest of the system.
 Note that the cursors in monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$ have moved; also, the message from $\pA$ to $\pS$ is now in the input queue.
 
-We illustrate  reversibility by showing how to return to $M_1$ from $M_3$.
-We need  three backward steps.
+We now illustrate  reversibility: to return to $M_1$ from $M_3$ we need  three backward steps.
 %rules: \bkcolor{\textsc{(RollS)}}, \bkcolor{\textsc{(RIn)}}, and \bkcolor{\textsc{(ROut)}}.
 %First, Rule~\bkcolor{\textsc{(RollS)}} 
-The first
-modifies the tags of monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$,
-  leaving the rest unchanged:
+The first one only 
+modifies the tags of monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$:
 \begin{align*}
 M_3 & \bk  \news{s}(\,  
 \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\bout{\epS}{price(t)}\bout{\epS}{price(t)}\binp{\epS}{ok}  \binp{\epS}{a} \bout{\epS}{date}\inact }} 
@@ -638,9 +642,10 @@ If $M_7 \fw \fw M_8$ to enable a (forward) synchronization
 we would have:
 \begin{align*}
 M_8 & = ~   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\inact}} 
+\Par \hmoni{\ep{s}{\pB}}{\myctxr{\ctx{T}_7}{\ltout{C}{\thunkt}{\past\ltout{\pS}{\mathsf{address}}{\ltinp{\pS}{\mathsf{date}}{\lend}}}}}{z,p,h}{\store_7} 
 \\
-& \Par \hmoni{\ep{s}{\pB}}{\myctxr{\ctx{T}_7}{\ltout{C}{\thunkt}{\past\ltout{\pS}{\mathsf{address}}{\ltinp{\pS}{\mathsf{date}}{\lend}}}}}{z,p,h}{\store_7} 
-\\
+%& \Par \hmoni{\ep{s}{\pB}}{\myctxr{\ctx{T}_7}{\ltout{C}{\thunkt}{\past\ltout{\pS}{\mathsf{address}}{\ltinp{\pS}{\mathsf{date}}{\lend}}}}}{z,p,h}{\store_7} 
+%\\
 & \Par \np{\key{{\loc_4}}{\pC}}{ \conf{\inact}{(\appl{code}{\dummyn}) }} 
  \Par 
 \hmoni{\ep{s}{\pC}}{\myctxr{\ctx{T}_8}{ \ltinp{B}{\thunkt}{\past\lend}}}{w,h,code}{\store_9} 
@@ -710,7 +715,7 @@ Free monads are a common way of defining DSLs in Haskell, mainly because they al
 \end{Highlighting}
 \end{Shaded}
 
-A practical example is a stack-based calculator:
+A simple practical example is a stack-based calculator:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -727,7 +732,7 @@ A practical example is a stack-based calculator:
 
 We define a data type with our instructions, and make sure it has a \texttt{Functor} instance (meaning that there exists a function \texttt{fmap :: (a -> b) -> Operation a -> Operation b}).
 Given an instance of \texttt{Functor}, \texttt{Free} will give us the free monad on that functor. 
-In effect this describes a tree (in this particular case a list) of instructions. 
+\checkthis{In effect this describes a tree (in this particular case a list) of instructions}. 
 
 In a lazy language like Haskell, the tree may not be finite. If the tree is not finite,
 evaluating it will cause a stack overflow. We use the \texttt{Void} type
