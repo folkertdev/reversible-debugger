@@ -385,6 +385,7 @@ so every choice must  be explicit  to all participants.
 }
 \vspace{-6mm}
 \caption{Projection of a global type $G$ onto a participant $\gpart{r}$~\cite{DBLP:conf/ppdp/MezzinaP17}.\label{f:proj}}
+\vspace{-5mm}
 \end{figure}
 
 \paragraph{Example: Three-Buyer Protocol.}
@@ -407,11 +408,10 @@ She sends Bob's address (contained in the  code she received) to Vendor.
 This protocol may be formalized as the following global type $G$:
 \begin{align*}
 G = ~&  \gtcom{A}{\pS}{\mathsf{title}}{\gtcom{\pS}{\{A,B\}}{\mathsf{price}}{\gtcom{A}{B}{\mathsf{share}}{
-\\
-& \quad \gtcom{B}{\{A,\pS\}}{\mathsf{OK}}{
+ \gtcom{B}{\{A,\pS\}}{\mathsf{OK}}{\\
+& \quad
  \gtcom{B}{C}{\mathsf{share}}{\gtcom{B}{C}{\thunkt}{
-\\
-& \quad \gtcom{B}{\pS}{\mathsf{address}}{\gtcom{\pS}{B}{\mathsf{date}}{\gend}}}}}}}}
+\gtcom{B}{\pS}{\mathsf{address}}{ \gtcom{\pS}{B}{\mathsf{date}}{\gend}}}}}}}}
 %\\
 %G_2 = ~& \gtcom{B}{C}{\mathsf{share}}{\gtcom{B}{C}{T}{\gtcom{B}{C}{\shot{T}}{\gend}}}
 \end{align*}
@@ -734,8 +734,8 @@ We define a data type with our instructions, and make sure it has a \texttt{Func
 Given an instance of \texttt{Functor}, \texttt{Free} will give us the free monad on that functor. 
 \checkthis{In effect this describes a tree (in this particular case a list) of instructions}. 
 
-In a lazy language like Haskell, the tree may not be finite. If the tree is not finite,
-evaluating it will cause a stack overflow. We use the \texttt{Void} type
+In a lazy language like Haskell, the tree may not be finite and
+evaluating it would cause a stack overflow. We use the \texttt{Void} type
 to ensure the tree is finite with an \texttt{End} at the very bottom. An
 alternative approach is to use existential quantification, but that
 requires enabling a language extension.
@@ -865,7 +865,8 @@ integer and comparison operators:
 \end{Highlighting}
 \end{Shaded}
 
-It turns out that we need some extra concepts to actually write programs with this syntax.
+We need some extra concepts to actually write programs with this syntax.
+\checkthis{Got here}
 
 \paragraph{Delegation via Abstraction Passing.}\label{abstraction-passing}
 
