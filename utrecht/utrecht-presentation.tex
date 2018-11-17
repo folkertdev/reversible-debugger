@@ -17,7 +17,7 @@
 
 % lncs 
 \usepackage{makeidx}
-\institute{University of Groningen, The Netherlands, \\ \vspace*{0.5cm} Supervisors: \\ Jorge P\'erez \\ Gerard Renardel }
+\institute{University of Groningen, The Netherlands} 
 
 \providecommand{\tightlist}{%
   \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
@@ -79,7 +79,7 @@
 \newcommand{\NormalTok}[1]{#1}
 \hypersetup{breaklinks=true,
             bookmarks=true,
-            pdfauthor={Folkert de Vries},
+            pdfauthor={Folkert de Vries & Jorge Pérez},
             pdftitle={Reversible Session-Based Concurrency in Haskell},
             colorlinks=true,
             citecolor=blue,
@@ -149,12 +149,12 @@
 
 \title[\textcolor{white}{Reversible Session-Based Concurrency}]{Reversible Session-Based Concurrency}
 \subtitle{An implementation in Haskell}
-\author[F. de Vries]{Folkert de Vries} 
-\date[June 26, 2018]
+\author[F. de Vries]{Folkert de Vries \& Jorge Pérez} 
+\date[November 22, 2018]
 {
-    Bachelor Symposium 2018
+    PLNL 2018
 \\
-June 26, 2018
+November 22, 2018
 }
 
 \usepackage[english]{babel}
@@ -184,297 +184,13 @@ June 26, 2018
 
 \end{frame}
 
-\begin{frame}[t]
-\frametitle{TFP Conference}
-\begin{center}
-\includegraphics[scale=0.06]{img/gothenburg.JPG}
-\end{center}
-\end{frame}
-    
-
 \begin{frame}
-\frametitle{Problem}
-\begin{center}
-
-    \LARGE{Concurrency is hard}
-
-    \Large{Bridging the gap between theory and practice}
-
-% Normal programming is also hard, but we've worked to build good tools and systems
-% To make it less error-prone. Solutions like garbage collection, type systems and 
-% precise data specifications (ADTs, GADTs)
-
-% and we're working on new solutions. Linear types, borrow checkers, dependent types
-
-% So, can we do the same thing for concurrency, can we just make somthing simple, sane and elegant. 
-
-\end{center}
-\end{frame}
-
-\begin{frame}
-\frametitle{Goal}
-\begin{center}
-
-    A functional implementation of the model in the paper \\ ``Causally Consistent Reversible Choreographies'' (PPDP 2017) \\ by Mezzina and P\'{e}rez 
-\end{center}
-\bigskip
-
-Our contributions:
-\begin{itemize}
-    \item practical validation of theoretical ideas
-    \item a natural connection between reversibility and immutable data structures in pure functional languages 
-    \item a step toward reversible concurrent debuggers and failure guiding evaluation
-\end{itemize}
-
-
-\end{frame}
-
-
-
-
-\section{Core Concepts: The pi-calculus, session types and reversibility}
-%%%% =======================================================
-
-
-\begin{frame}
-\frametitle{Core Concepts}
-\begin{center}
-
-
-\begin{itemize}
-    \item \textbf{Reversible} moving backwards through a program
-    \item \textbf{Session-Based} sessions and their types 
-    \item \textbf{Concurrency} calculi for concurrent computation
-\end{itemize}
-
-
-\end{center}
-\end{frame}
-
-%%%% =======================================================
-
-\begin{frame}
-\begin{center}
-    \LARGE{Defining Concurrent Computation} 
-\end{center}
-\end{frame}
-
-\begin{frame}
-\frametitle{The lambda-calculus}
-
-Our favorite model for sequential computation: The lambda calculus 
-\begingroup
-\fontsize{10pt}{12pt}\selectfont
-\begin{align*}
-M, N ::= \, & x \,\,\, \, \, & \text{Variable}\\
-|\,\,\, & (\lambda x. M) \,\,\, \, \, &\text{Function definition}\\
-|\,\,\, & (M\, N) \,\,\, \, \, \, \, \, \, &\text{Applying a function to an argument} 
-\end{align*}
-\endgroup
-
-
-
-$\beta$-reduction: 
-$$(\lambda x. M) \, E \rightarrow (M[x/E])$$
-
-
-\end{frame}
-
-\begin{frame}
-\frametitle{The pi-calculus}
-In contrast, the pi-calculus defines
-\begingroup
-\fontsize{10pt}{12pt}\selectfont
-\begin{align*}
-P, Q, R ::= \, & \overline{x} \langle y \rangle.P \,\,\, \, \, &\text{Send the value }y\text{ over channel }x\text{, then run }P \\
-|\,\,\, & x(y).P \,\,\, \, \, & \text{Receive on channel }x\text{, bind the result to }y\text{, then run }P \\
-|\,\,\, & P|Q \,\,\, \, \, \, \, \, \, &\text{Run }P\text{ and }Q\text{ simultaneously} \\
-|\,\,\, & (\nu x)P  \,\,\, &\text{Create a new channel }x\text{ and run }P \\
-|\,\,\, & !P \,\,\, &\text{Repeatedly spawn copies of }P \\
-|\,\,\, & 0 & \text{Terminate the process} \\
-|\,\,\, & P + Q & \text{(Optionally) Nondeterministic choice}
-\end{align*}
-\endgroup
-
-
-reduction: 
-$$\overline{x}\langle z \rangle.P\, |\, x(y).Q \rightarrow P | Q[z/y]$$
-
-
-\end{frame}
-
-
-\begin{frame}
-\begin{center}
-    \LARGE{Sessions \& Session Types} 
-\end{center}
-\end{frame}
-
-\begin{frame}[t]
-\frametitle{Session Types}
-
-\begin{center}
-    \textbf{Data types} prevent us from making silly mistakes with \textbf{data}. \linebreak 
-
-\begin{center}
-\includegraphics[scale=0.30]{img/batman.png}
-\end{center}
-
-\end{center}
-
-
-
-
-\end{frame}
-
-\begin{frame}[t]
-\frametitle{Session Types}
-    \textbf{Session types} prevent common mistakes in \textbf{communication}.  
-
-\begin{itemize}
-    \item Send without a receive \& receive without a send
-    \item type mismatch between sent and expected value
-    \item Sending/Receiving before you're supposed to
-    \item undesired infinite recursion
-\end{itemize}
-
-An idea introduced in the late 90s by Honda, Kubo, and Vasconcelos (ESOP 1998), and widely studied ever since. 
-
-\end{frame}
-
-\begin{frame}[t]
-\frametitle{Session Types}
-
-Global Type
-
-\begin{itemize}
-    \item There is a Transaction between Carol and Bob, a \texttt{Bool} is sent.
-    \item There is a Transaction between Alice and Carol, an \texttt{Int} is sent.
-\end{itemize}
-
-\end{frame}
-
-\begin{frame}
-\frametitle{Projection}
+\frametitle{Theoretical Background}
 \begin{center}
 \includegraphics[scale=1.0]{figmodel.pdf}
 \end{center}
 \end{frame}
     
-
-\begin{frame}[t]
-\frametitle{Session Types}
-
-Global Type
-
-\begin{itemize}
-    \item There is a Transaction between Carol and Bob, a \texttt{Bool} is sent.
-    \item There is a Transaction between Alice and Carol, an \texttt{Int} is sent.
-\end{itemize}
-
-Local Type (for Carol)
-
-\begin{itemize}
-    \item I will send Bob a \texttt{Bool}
-    \item I expect an \texttt{Int} from Alice
-\end{itemize}
-
-\end{frame}
-
-\begin{frame}[t]
-\frametitle{Session Types}
-
-Global Type
-
-\begin{itemize}
-    \item There is a Transaction between Carol and Bob, a \texttt{Bool} is sent.
-    \item There is a Transaction between Alice and Carol, an \texttt{Int} is sent.
-\end{itemize}
-
-Local Type (for Carol)
-
-\begin{itemize}
-    \item I will send Bob a \texttt{Bool}
-    \item I expect an \texttt{Int} from Alice
-\end{itemize}
-
-Properties: 
-\begin{itemize}
-    \item Order: enforced ordering of communication over a channel
-    \item Progress: every sent message is eventually received
-    \item Safety: sent values are typed, there can be no mistmatch
-\end{itemize}
-\end{frame}
-
-
-\begin{frame}
-\frametitle{Session Types: Static vs. Dynamic}
-
-\begin{center}
-\includegraphics[scale=0.120]{img/runtime-vs-compile-time-errors.png}
-\end{center}
-\end{frame}
-
-\begin{frame}
-\frametitle{Session Types: Static vs. Dynamic}
-\begin{center}
-
-    \Large{We will always need dynamic verification of our session types}
-
-\end{center}
-Because in practice systems are: 
-
-
-\begin{itemize}
-    \item opaque
-    \item written in multiple languages
-\end{itemize}
-    % Of course we'd like everything to be statically types... 
-    % 
-    % But the real world is complex, systems are written in multiple languages, so 
-    % we also need dynamic, runtime session type checking in practice.
-
-\end{frame}
-
-
-\begin{frame}
-\begin{center}
-    \LARGE{Reversibility} 
-\end{center}
-\end{frame}
-
-
-
-\begin{frame}
-\frametitle{Reversibility}
-
-
-\begin{center}
-    \Large{Leave behind a trail of breadcrumbs} 
-    \begin{center}
-        \includegraphics[scale=0.200]{img/breadcrumbs.jpg}
-    \end{center}
-So we can always find our way back
-\end{center}
-\end{frame}
-
-
-\begin{frame}
-\frametitle{Reversibility}
-
-\textbf{Causal Consistency}: Reversible steps lead to states that can be reached with forward steps only. No extra new states are introduced.
-
-\begin{center}
-    \Large{\texttt{backward $\circ$ forward $\approx$ identity}}
-\end{center}
-
-
-
-% \begin{center}
-% \includegraphics[scale=0.40]{causal-consistency.pdf}
-% \end{center}
-
-\end{frame}
 
 \begin{frame}
 \begin{center}
@@ -486,7 +202,7 @@ So we can always find our way back
 
 \begin{frame}[fragile]
 \frametitle{Implementation}
-    We can define 3 data types 
+    Three core concepts $\rightarrow$ three data types:
     \begin{Shaded}
         \begin{Highlighting}[]
             \CommentTok{-- Our Process Calculus}
@@ -497,7 +213,7 @@ So we can always find our way back
             \KeywordTok{data} \DataTypeTok{TypeContext} \FunctionTok{=} \NormalTok{...} 
         \end{Highlighting}
     \end{Shaded}
-    And then implement:
+    With the functions:
     \begin{Shaded}
         \begin{Highlighting}[]
             \KeywordTok{type} \DataTypeTok{Session} \NormalTok{a }\FunctionTok{=} \DataTypeTok{StateT} \DataTypeTok{ExecutionState} \NormalTok{(}\DataTypeTok{Except} \DataTypeTok{Error}\NormalTok{) a}
@@ -581,13 +297,36 @@ So we can always find our way back
     \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{GlobalTypeF}\NormalTok{ participant u) }\DataTypeTok{Void}
 \end{Highlighting}
 \end{Shaded}
-    Use \texttt{Void} to ensure the global type is "finite".
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Implementation: Use of \texttt{Void}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{type} \DataTypeTok{TerminatingGlobalType}\NormalTok{ participant u }\FunctionTok{=} 
+    \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{GlobalTypeF}\NormalTok{ participant u) }\DataTypeTok{Void}
+\end{Highlighting}
+\end{Shaded}
+
+A value of type \texttt{Free f Void} doesn't contain \texttt{Pure} constructors.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{data} \DataTypeTok{Free}\NormalTok{ f a }
+    \FunctionTok{=} \DataTypeTok{Pure}\NormalTok{ a }
+    \FunctionTok{|} \DataTypeTok{Free}\NormalTok{ (f (}\DataTypeTok{Free}\NormalTok{ f a))}
+\end{Highlighting}
+\end{Shaded}
+
+Ensures* that we've terminated our program/type. 
 
 \end{frame}
 
 
 \begin{frame}[fragile]
-\frametitle{Implementation}
+\frametitle{Implementation: Type-level reversibility}
     The "Breadcrumbs"
 
 \begin{Shaded}
@@ -604,6 +343,68 @@ So we can always find our way back
 
 \KeywordTok{type} \DataTypeTok{Zipper}\NormalTok{ a }\FunctionTok{=} 
 \NormalTok{    ([a], a, [a])}
+\end{Highlighting}
+\end{Shaded}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Implementation: Value-level reversibility}
+
+We must remember variable names:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{vendor ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
+\NormalTok{vendor }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    t }\OtherTok{<-}\NormalTok{ H.receive}
+\NormalTok{    H.send (price t) }
+\NormalTok{    H.send (price t) }
+    \FunctionTok{...}
+\NormalTok{    terminate}
+\end{Highlighting}
+\end{Shaded}
+
+Subsequent instructions (the sends) depend on the name $t$.
+When evaluating and then reverting, we have to put the same name into the AST.
+
+\end{frame}
+
+
+
+\begin{frame}[fragile]
+\frametitle{Implementation: Value-level reversibility}
+
+We must remember function calls and their arguments:
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Implementation: Value-level reversibility}
+
+We must remember unselected branches:
+
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Implementation: Value-level reversibility}
+
+We must remember messages on the channel:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OtherTok{alice ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
+\NormalTok{alice }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    H.send (}\DataTypeTok{VString} \StringTok{"Logicomix"}\NormalTok{ )}
+    \FunctionTok{...}
+
+\OtherTok{vendor ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
+\NormalTok{vendor }\FunctionTok{=} \KeywordTok{do}
+\NormalTok{    t }\OtherTok{<-}\NormalTok{ H.receive}
+    \FunctionTok{...}
 \end{Highlighting}
 \end{Shaded}
 
