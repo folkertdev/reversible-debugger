@@ -378,12 +378,22 @@ When evaluating and then reverting, we have to put the same name into the AST.
 
 We must remember function calls and their arguments:
 
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{dave }\FunctionTok{=}\NormalTok{ H.compile }\StringTok{"Location1"} \StringTok{"D"} \FunctionTok{$} \KeywordTok{do} 
+\NormalTok{    code }\OtherTok{<-}\NormalTok{ receive }
+\NormalTok{    applyFunction code }\DataTypeTok{VUnit}
+\end{Highlighting}
+\end{Shaded}
+
 \end{frame}
 
 \begin{frame}[fragile]
 \frametitle{Implementation: Value-level reversibility}
 
-We must remember unselected branches:
+We want to remember unselected branches
+
+Future research: let past failures inform present choices
 
 
 \end{frame}
