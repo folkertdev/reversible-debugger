@@ -172,18 +172,20 @@ This motivates the definition of reversible semantics which are \emph{causally c
 
 Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (most notably, the $\pi$-calculus~\cite{MilnerR:calmp1}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{DBLP:conf/popl/HondaYC08} that specify intended protocol executions. While their reversible semantics   is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
 
-In this paper we describe a Haskell implementation of the reversible semantics  by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}. As such, our implementation defines a Haskell interpreter of message-passing programs written in their reversible process framework. This allows us to assess in practice the mechanisms deployed by Mezzina and P\'{e}rez to enforce causally consistent reversibility. The use of a functional programming language (Haskell in particular) is a natural choice for developing our implementation. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully capture the formal reversible semantics and to trust that our implementation  correctly preserves causal consistency. In particular, algebraic data types (sums and products) are invaluable to express  the grammars and recursive data structures underlying their model.
+In this paper we describe a Haskell implementation of the reversible semantics  by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} (the MP model, in the following). As such, our implementation defines a Haskell interpreter of message-passing programs written in their reversible model. This allows us to assess in practice the mechanisms %deployed by Mezzina and P\'{e}rez 
+of the MP model
+to enforce causally consistent reversibility. The use of a functional programming language (Haskell) is a natural choice for developing our implementation. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully capture the formal reversible semantics and to trust that our implementation  correctly preserves causal consistency. In particular, algebraic data types (sums and products) are essential to express the grammars and recursive data structures underlying the MP model.
 
 %\paragraph{Organization.} %
 The rest of the paper is structured as follows.
-Section~\ref{the-process-model} recalls the key notions from~\cite{DBLP:conf/ppdp/MezzinaP17}, useful to follow our Haskell implementation, which we detail 
+Section~\ref{the-process-model} recalls the key notions of the MP model, useful to follow our Haskell implementation, which we detail 
 in Section~\ref{implementing-the-ppdp17-calculus-in-haskell}.
 Section~\ref{running-debugging} explains how to run programs forwards and backwards using our implementation.
 Section~\ref{discussion} collects concluding remarks. 
 
 %For reviewer's convenience, Appendices~\ref{free-monad-dsl} -- \ref{scheduling-code} describe further details about the implementation, including installation instructions.
 
-\section{The Process Model}
+\section{The MP Model of Reversible, Concurrent Processes}
 \label{the-process-model}
 
 \begin{figure}[!t]
@@ -195,11 +197,11 @@ Section~\ref{discussion} collects concluding remarks.
 \vspace{-5mm}
 \end{figure}
 
-Our aim is to develop a Haskell implementation of the process model presented in~\cite{DBLP:conf/ppdp/MezzinaP17}, and depicted in Fig.~\ref{f:model}. 
+Our aim is to develop a Haskell implementation of the MP model~\cite{DBLP:conf/ppdp/MezzinaP17}, which is depicted in Fig.~\ref{f:model}. 
 Here we shall  informally describe the key elements of the model, guided by a running example. Interested readers are referred to~\cite{DBLP:conf/ppdp/MezzinaP17} for further details, in particular the definition and proof of causal consistency. 
 
 \paragraph{Overview.}
-Fig.~\ref{f:model} depicts two of the three salient ingredients of the model:
+Fig.~\ref{f:model} depicts two of the three salient ingredients of the MP model:
 \emph{configurations/processes} and the
 \emph{choreography}, which represent the communicating partners (\emph{participants}) and their intended governing protocol, respectively. 
 There is a {configuration} for each participant: it includes a \emph{located process} that relies on asynchronous communication and is subject to a \emph{monitor} that enables forward/backward steps at run-time. This monitor is obtained via the choreography, which describes the intended protocol among the {participants}. 
@@ -209,7 +211,7 @@ A global type is \emph{projected} onto each participant to obtain
 its corresponding  \emph{local type}, which abstracts a participant's contribution to the protocol. 
 Since  local types specify the intended communication actions, they may be used as the monitors of the located processes. 
 
-The third ingredient of the model in~\cite{DBLP:conf/ppdp/MezzinaP17}, not depicted in Fig.~\ref{f:model}, is the \emph{operational semantics} for configurations, which  is defined by two reduction relations: forward ($\fw$) and backward ($\bk$). We shall not recall these relations here; rather, we will introduce their key underlying intuitions by example.
+The third ingredient of the MP model, not depicted in Fig.~\ref{f:model}, is the \emph{operational semantics} for configurations, which  is defined by two reduction relations: forward ($\fw$) and backward ($\bk$). We shall not recall these relations here; rather, we will introduce their key underlying intuitions by example.
 
 \paragraph{Configurations and Processes.}
 The language  of processes  $P, Q, \ldots$, given next, is a $\pi$-calculus with   labeled (deterministic) choice, communication of abstractions, and function application:
@@ -334,14 +336,14 @@ conversely, type $\ltsel{\p}{\lbl_i}{T_i}{i}{I}$
 says that \p may select one of such alternatives.
 Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respectively. 
  
- A novelty in the work of Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} are \emph{local types with history}  ($H, H'$). A type $H$ is a local type equipped with a
+ A novelty in the MP model are \emph{local types with history}  ($H, H'$). A type $H$ is a local type equipped with a
  cursor (denoted~$\past$) used to distinguish  the  protocol actions  that have been already executed (the past of the protocol) from those that are yet to be performed (the future of the protocol).
  
  \paragraph{Projection.}
 The projection of a global type $G$ onto a protocol participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is defined in Fig.~\ref{f:proj}. 
  The definition is intuitive, perhaps except for choice.
  Intuitively, the definition ensures that a choice between $\p$ and $\q$ should not implicitly determine different behavior for participants different from $\p, \q$, for which different behavior should  be determined by some explicit communication.
- This is a condition adopted by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} but also by several other works, as it allows to ensure implementability of  multiparty session types.
+ This is a condition adopted by the MP model but also by several other works, as it allows to ensure implementability of  multiparty session types.
  Because of recursion, a branch of a choice may recurse back to the beginning: in this case
  all participants have to jump back to the beginning,
 so every choice must  be explicit  to all participants.
@@ -463,7 +465,7 @@ M = \myloc{\loc_1}{\text{Vendor}}
 \myloc{\loc_4}{\text{Carol}} 
 $$
 %\end{document}
-We now use $M$ to informally discuss freduction rules for \fw and \bk; {their formal definition is in~\cite{DBLP:conf/ppdp/MezzinaP17}}.
+We now use $M$ to informally discuss reduction rules for \fw and \bk; {their formal definition is in~\cite{DBLP:conf/ppdp/MezzinaP17}}.
 From $M$, the session starts with 
 %an application of  Rule \fwcolor{\textsc{(Init)}}, which 
 a forward reduction that
@@ -706,7 +708,6 @@ The first two are written by the programmer, and we want to provide a convenient
 \subsection{DSLs with the Free monad}
 
 Free monads are a common way of defining DSLs in Haskell, mainly because they allow the use of do-notation to write programs in the DSL.
-
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{data} \DataTypeTok{Free}\NormalTok{ f a   }
@@ -716,7 +717,6 @@ Free monads are a common way of defining DSLs in Haskell, mainly because they al
 \end{Shaded}
 
 A simple practical example is a stack-based calculator:
-
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{data} \DataTypeTok{Operation}\NormalTok{ next  }
@@ -724,21 +724,20 @@ A simple practical example is a stack-based calculator:
     \FunctionTok{|} \DataTypeTok{Pop}\NormalTok{ (}\DataTypeTok{Maybe} \DataTypeTok{Int} \OtherTok{->}\NormalTok{ next) }
     \FunctionTok{|} \DataTypeTok{End}
     \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Functor}\NormalTok{)  }
-
 \KeywordTok{type} \DataTypeTok{Program}\NormalTok{ next }\FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{Operation}\NormalTok{ next}
 \KeywordTok{type} \DataTypeTok{TerminatingProgram} \FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{Operation} \DataTypeTok{Void}
 \end{Highlighting}
 \end{Shaded}
 
-We define a data type with our instructions, and make sure it has a \texttt{Functor} instance (meaning that there exists a function \texttt{fmap :: (a -> b) -> Operation a -> Operation b}).
-Given an instance of \texttt{Functor}, \texttt{Free} will give us the free monad on that functor. 
+We define a data type with our instructions, and make sure it has a \texttt{Functor} instance (i.e., there exists a function \texttt{fmap :: (a -> b) -> Operation a -> Operation b}).
+Given an instance of \texttt{Functor}, \texttt{Free} returns the free monad on that functor. 
 \checkthis{In effect this describes a tree (in this particular case a list) of instructions}. 
 
 In a lazy language like Haskell, the tree may not be finite and
 evaluating it would cause a stack overflow. We use the \texttt{Void} type
 to ensure the tree is finite with an \texttt{End} at the very bottom. An
-alternative approach is to use existential quantification, but that
-requires enabling a language extension.
+alternative approach is to use existential quantification, but that would 
+require enabling a language extension.
 
  \texttt{Void}  is the type with zero values. A value of the type
 \texttt{Free\ Operation\ Void} cannot end in the shape
@@ -750,18 +749,14 @@ and thus values of type \texttt{Free\ Operation\ Void} are finite and can be saf
 
 We define wrappers around the constructors for convenience,
 and use them to write programs with do-notation:
-
 \begin{Shaded}
 \begin{Highlighting}[]
 \OtherTok{push ::} \DataTypeTok{Int} \OtherTok{->} \DataTypeTok{Program}\NormalTok{ ()}
 \NormalTok{push v }\FunctionTok{=}\NormalTok{ liftF (}\DataTypeTok{Push}\NormalTok{ v ())   }
-
 \OtherTok{pop ::} \DataTypeTok{Program}\NormalTok{ (}\DataTypeTok{Maybe} \DataTypeTok{Int}\NormalTok{) }
 \NormalTok{pop }\FunctionTok{=}\NormalTok{ liftF (}\DataTypeTok{Pop}\NormalTok{ id)}
-
 \OtherTok{terminate ::} \DataTypeTok{TerminatingProgram}  
 \NormalTok{terminate }\FunctionTok{=}\NormalTok{ liftF }\DataTypeTok{End}
-
 \OtherTok{program ::} \DataTypeTok{TerminatingProgram}  
 \NormalTok{program }\FunctionTok{=} \KeywordTok{do}    
 \NormalTok{    push }\DecValTok{5}  
@@ -785,21 +780,17 @@ into some other monad, which in turn is evaluated. Here we can first transform i
         \DataTypeTok{Pure}\NormalTok{ _ }\OtherTok{->} 
             \CommentTok{-- cannot occur}
 \NormalTok{            return () }
-
         \DataTypeTok{Free} \DataTypeTok{End} \OtherTok{->} 
 \NormalTok{            return () }
-
         \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Push}\NormalTok{ a next) }\OtherTok{->} \KeywordTok{do} 
 \NormalTok{            State.modify (\textbackslash{}state }\OtherTok{->}\NormalTok{ a }\FunctionTok{:}\NormalTok{ state)}
 \NormalTok{            interpret next}
-
         \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Pop}\NormalTok{ toNext) }\OtherTok{->} \KeywordTok{do}
 \NormalTok{            state }\OtherTok{<-}\NormalTok{ State.get}
             \KeywordTok{case}\NormalTok{ state }\KeywordTok{of} 
 \NormalTok{                x}\FunctionTok{:}\NormalTok{xs }\OtherTok{->} \KeywordTok{do}
 \NormalTok{                    State.put xs}
 \NormalTok{                    interpret (toNext (}\DataTypeTok{Just}\NormalTok{ x))}
-
 \NormalTok{                [] }\OtherTok{->} 
 \NormalTok{                    interpret (toNext }\DataTypeTok{Nothing}\NormalTok{)}
 
@@ -843,13 +834,13 @@ Apart from the process-level recursion, \texttt{Program} is a direct translation
 \end{Highlighting}
 \end{Shaded}
 
+\noindent
 As already discussed, processes exchange values. 
 To write more interesting examples,
 we extend the types of values 
 %that can be used from names, booleans and functions 
 to   include also references, integers, strings, and basic
 integer and comparison operators:
-
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{data} \DataTypeTok{Value} 
@@ -866,14 +857,14 @@ integer and comparison operators:
 \end{Shaded}
 
 We need some extra concepts to actually write programs with this syntax.
-\checkthis{Got here}
+%\checkthis{Got here}
 
 \paragraph{Delegation via Abstraction Passing.}\label{abstraction-passing}
 
 Delegation occurs when a participant can send (part of)
 its protocol to be fulfilled (i.e., implemented) by another participant. 
-An example of
-where this idea is useful is a load balancing server: from the client's
+To illustrate the convenience of this mechanism, 
+consider a  load balancing server: from the client's
 perspective, the server handles the request, but actually the load
 balancer delegates incoming requests to workers. The client does not
 need to be aware of this implementation detail.
@@ -900,11 +891,11 @@ references in a function have to be dereferenced before they can be safely
 sent over a channel.
 
 \paragraph{A Convenient DSL.}\label{high-level-dsl}
-
+\checkthis{
 Many of the \texttt{ProgramF} constructors require an \texttt{owner}, we
 can thread the owner through a block with a wrapper around
 \texttt{Free}. We use \texttt{StateT} containing the owner and a counter
-to generate unique variable names.
+to generate unique variable names.}
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -956,8 +947,8 @@ We can now implement the \texttt{Vendor} from the three-buyer example as:
 
 \subsection{Global Types}
 
-Much like the process syntax, the Haskell implementation of global types closely mimics the formal definition.
-Its implementation is given by: 
+Much like the process syntax, the Haskell implementation of global types closely mimics the formal definition:
+%Its implementation is given by: 
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -990,10 +981,10 @@ Its implementation is given by:
 %We can now see why choice is useful: it allows us to branch on the session type level. For instance, one branch can terminate the protocol, and the other can loop back to start the protocol again from the beginning.
 
 \noindent We have to use \texttt{tipe} because \texttt{type} is a keyword in Haskell. 
-The final three constructors (\texttt{RecursionPoint}, \texttt{RecursionVariable}, and \\ \texttt{WeakenRecursion}) are required for supporting nested
-recursion and taken from~\cite{van2017session}. A
-\texttt{RecursionPoint} is a point in the protocol that we can later
-jump back to. A \texttt{RecursionVariable} triggers jumping to a
+The constructors \texttt{RecursionPoint}, \texttt{RecursionVariable}, and  \texttt{WeakenRecursion} are required to support nested
+recursion; they are taken from~\cite{van2017session}. A
+\texttt{RecursionPoint} is a point in the protocol to which we can 
+jump back later. A \texttt{RecursionVariable} triggers jumping to a
 previously encountered \texttt{RecursionPoint}. By default, it will jump
 to the closest and most recently encountered \texttt{RecursionPoint},
 but \texttt{WeakenRecursion} makes it jump one \texttt{RecursionPoint}
@@ -1090,15 +1081,14 @@ Similarly, the three-buyer example can be written as:
 \end{Shaded}
 
 \subsection{A Reversible Semantics}\label{a-reversible-semantics}
-Having shown how to implement processes and global types, we now move to explain how to implement the  reversible operational semantics. The goal is to define structures so that we can move back to previous program states, reversing forward
+Having shown  implementations for processes and global types, we now explain how to implement the  reversible operational semantics. We should define structures that allow us to move back to prior program states, reversing forward
 steps.
 
-To enable backward steps, we need to store some information when we move forward, just as enabled by the configurations in the formal language.
-As described by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, we need to track information about the local type and the process.
-
-For the local type, we define a data type called \texttt{TypeContext}. It
+To enable backward steps, we need to store some information when we move forward, just as enabled by the configurations in the MP model.
+Indeed, we need to track information about the local type and the process.
+For the local type, we define a data type called \texttt{TypeContext}: it
 contains the actions that have been performed; for some of them, it also
-stores extra information like the \texttt{owner}.
+stores extra information (e.g., \texttt{owner}).
 For the process, there are four things that we need to track:
 
 \begin{enumerate}[1.]
@@ -1125,28 +1115,28 @@ We can implement this process as:
   when we evaluate the \texttt{t\ \textless{}-\ H.receive} line
   (moving to configuration \(M_3\)), and then revert it, we must
   reconstruct a receive that assigns to \texttt{t}, because the
-  following lines depend on the name \texttt{t}. 
+  following lines depend on the name \texttt{t}. \\
 
 \item \emph{Function calls and their arguments}.
-      Consider the transition from configuration $M_7$ to $M_8$, as discussed in Section~\ref{the-process-model}. Once the thunk
+      Consider the reduction from configuration $M_7$ to $M_8$, as discussed in Section~\ref{the-process-model}. Once the thunk
   is evaluated, producing configuration \(M_8\), we lose all evidence that the
   code produced by the evaluation  was the result of a function
   application. 
-  Without knowledge of the function application, reversing $M_8$ will
+  Without this evidence, reversing $M_8$ will
   not result in $M_7$. Indeed, we need to keep track of function
   applications. The function and its argument are stored in a map
   indexed by a unique identifier $k$. The identifier $k$ itself is also
   stored in the local type with history to later associate the type with
   a specific function and argument.
 
-  One might think that a stack would be a simpler solution, but a stack
+ Notice that a stack would seem a simpler solution, but it
   can give invalid behavior. Say that a participant is running in two
   locations, and the last-performed action at both locations is a
   function application. Now we want to undo both applications, but the
   order in which to undo them is undefined: we need both orders to work.
   Only using a stack could mix up the applications. When the application
   keeps track of exactly which function and argument it used the end
-  result is always the same.  
+  result is always the same.  \\
   
 \item \emph{Messages on the channel}.
     We consider again the implementation of the first three steps of the protocol:
@@ -1164,26 +1154,25 @@ We can implement this process as:
 \end{Highlighting}
 \end{Shaded}
 
-  When the message is sent by Alice, she forgets the value that has been
-  sent. It has to be stored to succesfully undo the sending action.
+  After Alice sends her message, this message has to be stored to successfully undo the sending action.
   Likewise, when starting from configuration $M_3$ and undoing the receive,
   the value must be placed back into the queue. 
 
-  Our implementation follows closely follows the formal semantics by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}. 
+  Our implementation follows closely follows the formal semantics of the MP model. 
   The semantics describe how a value moves from the sender into the
   queue, and when it is received the queue stores the value on the queue
-  history stack. When the receive is rolled, the queue pops the value
+  history stack. \checkthis{When the receive is rolled}, the queue pops the value
   from its stack and puts it at the front of the queue again. Rolling
   the send will remove the value from the queue and puts it back into
-  the sender's program. 
+  the sender's program. \\
+  
 \item \emph{Unused branches}.
   When a labeled choice is made and then reverted, we want all our options to be
   available again. Currently, another label cannot actually be selected
   after reverting: the selected label depends only on the values of
   variables in the program. Future work may make it possible to also use
   the failure information to influence the choice made.
-  
-  The following code shows how the choices are stored:
+   The following code shows how the choices are stored:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -1229,8 +1218,8 @@ We can implement this process as:
 
 
 \subsection{Putting it all together}\label{combining}
-With all the definitions in pace, we can now define the forward and backward
-evaluation of our system. Our aim is to implement the reduction relations \fw and \bk with the types:
+With all the definitions in place, we can now define the forward and backward
+evaluation of our system. We implement the reduction relations \fw and \bk with the types:
 \begin{Shaded}
 \begin{Highlighting}[]
 \OtherTok{forward  ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Session}\NormalTok{ ()}
@@ -1243,7 +1232,7 @@ threads or machines) and try to move the process at that location
 forward or backward. The \texttt{Session} type contains the
 \texttt{ExecutionState}, the state of the session (all programs, local
 types, variable bindings, etc.), and can throw errors of type
-\texttt{Error}, for instance when an unbound variable is used.
+\texttt{Error} (for instance when an unbound variable is used):
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -1252,11 +1241,10 @@ types, variable bindings, etc.), and can throw errors of type
 \end{Shaded}
 %({See also Appendices \ref{state} on \texttt{StateT} and \ref{except} on \texttt{Except}.)
 
-The semantics by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} guides how we store the execution
-state. Some data is bound to its location (e.g., the process that
-is running) and other data is bound to its participant (e.g., the
+The semantics of the MP model guides how we store the execution
+state. Some data is bound to its location (e.g., the current running process), while other data is bound to its participant (e.g., the
 local type).
-The information about a participant grouped in a type called
+The information about a participant is grouped in a type called
 \texttt{Monitor}:
 
 \begin{Shaded}
@@ -1280,7 +1268,7 @@ The information about a participant grouped in a type called
     \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Show}\NormalTok{, }\DataTypeTok{Eq}\NormalTok{) }
 \end{Highlighting}
 \end{Shaded}
-
+Some explanations follow:
 \begin{itemize}
 \item
   \texttt{\_localType} contains \texttt{TypeContext} and
@@ -1295,16 +1283,16 @@ The information about a participant grouped in a type called
 \item
   \texttt{\_usedVariables} and \texttt{\_applicationHistory} are used in
   reversal. As mentioned in Section \ref{a-reversible-semantics}, used
-  variable names need to be stored in order to be able to use them when
+  variable names must be stored so we can use them when
   reversing. We store them in a stack keeping both the original name
   given by the programmer and the generated unique internal name. For
-  function applications we use a \texttt{Map} indexd by unique
+  function applications we use a \texttt{Map} indexed by unique
   identifiers that stores function and argument.
 \item
    \texttt{\_store} is a variable store with the currently
   defined bindings. Variable shadowing (when two processes of the same
   participant define the same variable name) is not an issue: 
-  variables are assigned a guaranteed unique name.
+  variables are assigned a name that is guaranteed unique.
 \end{itemize}
 
 \noindent We can now define \texttt{ExecutionState}: it contains some counters for
@@ -1329,12 +1317,12 @@ participant and a stack for unchosen branches:
 \end{Shaded}
 
 The message queue is global and thus also lives in the
-\texttt{ExecutionState}. Finally we need a way of inspecting values, to
+\texttt{ExecutionState}. Finally, we need a way of inspecting values, to
 see whether they are functions and if so, to extract their bodies for
 application.
 
 \subsection{Causal Consistency?}\label{properties-of-reversibility}
-As mentioned in the Introduction, causal consistency is a key correctness criterion for a reversible semantics. This property has been proved Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} for the formal model laid out in Section \ref{the-process-model}. One may then wonder, does our Haskell implementation preserve this property? 
+As mentioned in the Introduction, causal consistency is a key correctness criterion for a reversible semantics. This property has been proved by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} for the MP model summarized out in Section \ref{the-process-model}. One may then wonder, does our Haskell implementation preserve this property? 
 
 Intuitively, causal consistency is the property that backward steps always lead to states that 
 could have been reached by moving forward only.
@@ -1344,12 +1332,12 @@ backward is only allowed when all its causally dependent actions are
 undone. 
 
 In the semantics and the implementation, this causal dependency becomes a data dependency. 
-For instance, a send can only be undone when the queue is in a state that can only be reached by first undoing the corresponding receive.
-Only in this state is the appropriate data, of the appropriate type, available.
+For instance, a send can only be undone only when the queue is in a state that can only be reached by first undoing the corresponding receive.
+Only in this state the appropriate data  of the appropriate type is available.
 Being able to undo a send thus means that the corresponding receive has already been rolled back, so it is impossible to introduce causal inconsistencies. 
 
 Because of the encoding of causal dependencies as data dependencies, and the fact that these data dependencies are preserved in the implementation,  
-we claim that the Haskell implementation is faithful enough to the formal semantics, and therefore that the causal consistency property is preserved.
+we claim that our Haskell implementation respects the formal semantics of the MP model, and therefore that it preserves the causal consistency property.
 
 
 \section{Running and Debugging Programs}\label{running-debugging}
@@ -1589,12 +1577,12 @@ for all backward reduction rules.
 
 \paragraph{Concluding Remarks.}\label{conclusion}
 
-We have given a functional implementation of the reversible semantics by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} using the Haskell
-programming language. By embedding the reversible semantics we can now run and
+We have given a functional implementation of the (reversible) MP model~\cite{DBLP:conf/ppdp/MezzinaP17} using the Haskell
+programming language. By embedding this reversible semantics we can now run and
 verify our example programs automatically and inspect them
 interactively.
 
-We have seen that the formal programming model by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} paper can be split into three core components: (i)~a process calculus, (ii)~multiparty
+We have seen that the MP model can be split into three core components: (i)~a process calculus, (ii)~multiparty
 session types (global and local types), and (iii)~forward and backward reduction semantics. The three components can be cleanly represented as recursive Haskell data types. We are confident that other features developed in Mezzina and P\'{e}rez's work~\cite{DBLP:conf/ppdp/MezzinaP17} (in particular, an alternative semantics for decoupled rollbacks)
 can easily be integrated in the development described here.
 Relatedly, the implementation process has shown that sticking to the
