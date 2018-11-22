@@ -185,7 +185,7 @@ Section~\ref{discussion} collects concluding remarks.
 
 %For reviewer's convenience, Appendices~\ref{free-monad-dsl} -- \ref{scheduling-code} describe further details about the implementation, including installation instructions.
 
-\section{The MP Model of Reversible, Concurrent Processes}
+\section{The MP Model of Reversible Concurrent Processes}
 \label{the-process-model}
 
 \begin{figure}[!t]
@@ -980,7 +980,7 @@ Much like the process syntax, the Haskell implementation of global types closely
 
 %We can now see why choice is useful: it allows us to branch on the session type level. For instance, one branch can terminate the protocol, and the other can loop back to start the protocol again from the beginning.
 
-\noindent We have to use \texttt{tipe} because \texttt{type} is a keyword in Haskell. 
+\noindent We have to use \texttt{tipe} because \texttt{type} is a reserved keyword in Haskell. 
 The constructors \texttt{RecursionPoint}, \texttt{RecursionVariable}, and  \texttt{WeakenRecursion} are required to support nested
 recursion; they are taken from~\cite{van2017session}. A
 \texttt{RecursionPoint} is a point in the protocol to which we can 
@@ -1479,8 +1479,8 @@ consider these two equivalent global types:
 \NormalTok{    message }\DataTypeTok{A} \DataTypeTok{B} \DataTypeTok{Share}
 \end{Highlighting}
 \end{Shaded}
-
-The second and third transaction are swapped. The communication they describe
+\noindent
+Above, the second and third messages (involving \texttt{\DataTypeTok{Price}}) are swapped. The communication they describe
 is the same, but in practice they are very different. The first example will
 run to completion, whereas the second can deadlock because \texttt{A} can
 send a \texttt{Share} before \texttt{V} does. \texttt{B} expects the
