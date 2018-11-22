@@ -342,15 +342,15 @@ Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respect
  \paragraph{Projection.}
 The projection of a global type $G$ onto a protocol participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is defined in Fig.~\ref{f:proj}. 
  The definition is intuitive, perhaps except for choice.
- Intuitively, the definition ensures that a choice between $\p$ and $\q$ should not implicitly determine different behavior for participants different from $\p, \q$, for which different behavior should  be determined by some explicit communication.
- This is a condition adopted by the MP model but also by several other works, as it allows to ensure implementability of  multiparty session types.
+ Intuitively, the definition ensures that a choice between $\p$ and $\q$ should not implicitly determine different behavior for participants different from $\p$ and $\q$, for which different behavior should  be determined by some explicit communication.
+ This is a condition adopted by the MP model but also by several other works, as it ensures decentralized implementability of  multiparty session types.
  Because of recursion, a branch of a choice may recurse back to the beginning: in this case
  all participants have to jump back to the beginning,
 so every choice must  be explicit  to all participants.
 %To address this, and to ensure implementability of global types,  disallow haviing different branches that use different participants. 
 %In practice, 
 %this means that all branches must perform the same communication to satisfy the global type, even if the communication is not needed in every branch (some branches may have dummy communications). 
-\checkthis{As we will see, our Haskell implementation relies on broadcasts to communicate choices to all protocol participants}. 
+\checkthis{Our Haskell implementation relies on broadcasts to communicate choices to all protocol participants; this reduces the need for explicit communications in global types}. 
 
 \begin{figure}[!t]
 {
@@ -731,7 +731,7 @@ A simple practical example is a stack-based calculator:
 
 We define a data type with our instructions, and make sure it has a \texttt{Functor} instance (i.e., there exists a function \texttt{fmap :: (a -> b) -> Operation a -> Operation b}).
 Given an instance of \texttt{Functor}, \texttt{Free} returns the free monad on that functor. 
-\checkthis{In effect this describes a tree (in this particular case a list) of instructions}. 
+\checkthis{In this example, this free monad describes a list of instructions.} 
 
 In a lazy language like Haskell, the tree may not be finite and
 evaluating it would cause a stack overflow. We use the \texttt{Void} type
@@ -857,7 +857,6 @@ integer and comparison operators:
 \end{Shaded}
 
 We need some extra concepts to actually write programs with this syntax.
-%\checkthis{Got here}
 
 \paragraph{Delegation via Abstraction Passing.}\label{abstraction-passing}
 
@@ -892,7 +891,7 @@ sent over a channel.
 
 \paragraph{A Convenient DSL.}\label{high-level-dsl}
 \checkthis{
-Many of the \texttt{ProgramF} constructors require an \texttt{owner}, we
+Many of the \texttt{ProgramF} constructors require an \texttt{owner}; we
 can thread the owner through a block with a wrapper around
 \texttt{Free}. We use \texttt{StateT} containing the owner and a counter
 to generate unique variable names.}
@@ -1161,8 +1160,8 @@ We can implement this process as:
   Our implementation follows closely follows the formal semantics of the MP model. 
   The semantics describe how a value moves from the sender into the
   queue, and when it is received the queue stores the value on the queue
-  history stack. \checkthis{When the receive is rolled}, the queue pops the value
-  from its stack and puts it at the front of the queue again. Rolling
+  history stack. \checkthis{When the receive is reversed}, the queue pops the value
+  from its stack and puts it at the front of the queue again. Reversing
   the send will remove the value from the queue and puts it back into
   the sender's program. \\
   
@@ -1334,7 +1333,7 @@ undone.
 In the semantics and the implementation, this causal dependency becomes a data dependency. 
 For instance, a send can only be undone only when the queue is in a state that can only be reached by first undoing the corresponding receive.
 Only in this state the appropriate data  of the appropriate type is available.
-Being able to undo a send thus means that the corresponding receive has already been rolled back, so it is impossible to introduce causal inconsistencies. 
+Being able to undo a send thus means that the corresponding receive has already been reversed, so it is impossible to introduce causal inconsistencies. 
 
 Because of the encoding of causal dependencies as data dependencies, and the fact that these data dependencies are preserved in the implementation,  
 we claim that our Haskell implementation respects the formal semantics of the MP model, and therefore that it preserves the causal consistency property.
