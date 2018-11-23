@@ -9,7 +9,8 @@
 \usepackage{xcolor}
 \newcommand{\erase}[1]{\textcolor{orange}{#1}}
 \newcommand{\modi}[1]{\textcolor{blue}{#1}}
-\newcommand{\checkthis}[1]{\textcolor{red}{#1}}
+%\newcommand{\checkthis}[1]{\textcolor{red}{#1}}
+\newcommand{\checkthis}[1]{#1}
 
 \usepackage{fixltx2e} % provides \textsubscript
 % use upquote if available, for straight quotes in verbatim environments
@@ -698,7 +699,7 @@ there is no way for \pC to execute the code by referring to a participant differ
 
 
 
-\section{Our Haskell Implementation}
+\section{Implementing the MP model in Haskell}
 %\textbf{\emph{In this section we show how we implement the processes, types, and semantics in the PPDP paper}}
 \label{implementing-the-ppdp17-calculus-in-haskell}
 
@@ -939,8 +940,8 @@ We can now implement the \texttt{Vendor} from the three-buyer example as:
 \end{Shaded}
 
 \subsection{Global Types}
-
-Much like the process syntax, the Haskell implementation of global types closely mimics the formal definition:
+Following Figure~\ref{f:model}, our implementation uses a global type specification to obtain a local type, one per participant, by means of projection. 
+Much like the process syntax, the specification of these global types closely mimics the formal definition:
 %Its implementation is given by: 
 
 \begin{Shaded}
