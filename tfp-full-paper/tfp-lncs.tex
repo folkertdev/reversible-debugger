@@ -731,21 +731,15 @@ A simple practical example is a stack-based calculator:
 
 We define a data type with our instructions, and make sure it has a \texttt{Functor} instance (i.e., there exists a function \texttt{fmap :: (a -> b) -> Operation a -> Operation b}).
 Given an instance of \texttt{Functor}, \texttt{Free} returns the free monad on that functor. 
-\checkthis{In this example, this free monad describes a list of instructions.} 
+\checkthis{In this example, the free monad on \texttt{Operation} describes a list of instructions.} 
 
-In a lazy language like Haskell, the tree may not be finite and
-evaluating it would cause a stack overflow. We use the \texttt{Void} type
-to ensure the tree is finite with an \texttt{End} at the very bottom. An
-alternative approach is to use existential quantification, but that would 
-require enabling a language extension.
+The \texttt{Free} functor defines a \texttt{Pure} case that we don't need.
+We use the \texttt{Void} type to ensure that program the only contains \texttt{Free} constructors with an \texttt{Free End} at the very bottom. 
+The use of \texttt{Void} also gives some indication that the program is finite. 
 
- \texttt{Void}  is the type with zero values. A value of the type
-\texttt{Free\ Operation\ Void} cannot end in the shape
-\texttt{Pure\ \_}, because it requires a value of type \texttt{Void}
-(which does not exist). It also cannot end in \texttt{Push\ \_\ \_} or
-\texttt{Pop\ \_} because these values contain or produce a \texttt{next}
-argument (and \texttt{next} cannot be of type \texttt{Void}). Therefore a value of type \texttt{Free\ Operation\ Void} must end in \texttt{End}, 
-and thus values of type \texttt{Free\ Operation\ Void} are finite and can be safely interpreted.
+\texttt{Void} is the data type with zero values (similar to the empty set). Thus a value of the type
+\texttt{Free\ Operation\ Void} cannot be of the shape \texttt{Pure\ \_}, because it requires a value of type \texttt{Void}.
+An alternative approach is to use existential quantification, but that requires enabling a language extension.
 
 We define wrappers around the constructors for convenience,
 and use them to write programs with do-notation:
