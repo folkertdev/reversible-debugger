@@ -979,7 +979,7 @@ Much like the process syntax, the Haskell implementation of global types closely
 
 %We can now see why choice is useful: it allows us to branch on the session type level. For instance, one branch can terminate the protocol, and the other can loop back to start the protocol again from the beginning.
 
-\noindent We have to use \texttt{tipe} because \texttt{type} is a reserved keyword in Haskell. 
+\noindent We use `\texttt{tipe}' because `\texttt{type}' is a reserved keyword in Haskell. 
 The constructors \texttt{RecursionPoint}, \texttt{RecursionVariable}, and  \texttt{WeakenRecursion} are required to support nested
 recursion; they are taken from~\cite{van2017session}. A
 \texttt{RecursionPoint} is a point in the protocol to which we can 
