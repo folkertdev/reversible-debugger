@@ -215,22 +215,25 @@ Since  local types specify the intended communication actions, they may be used 
 The third ingredient of the MP model, not depicted in Fig.~\ref{f:model}, is the \emph{operational semantics} for configurations, which  is defined by two reduction relations: forward ($\fw$) and backward ($\bk$). We shall not recall these relations here; rather, we will introduce their key underlying intuitions by example.
 
 \paragraph{Configurations and Processes.}
-The language  of processes  $P, Q, \ldots$, given next, is a $\pi$-calculus with   labeled (deterministic) choice, communication of abstractions, and function application:
+The language  of processes  $P, Q, \ldots$, given next, is a $\pi$-calculus with   labeled  choice, communication of abstractions, and function application:
 While labeled choice is typical of session $\pi$-calculi~\cite{DBLP:conf/esop/HondaVK98}, the latter constructs are typical of \emph{higher-order} process calculi, which combine features from functional and concurrent  languages~\cite{DBLP:journals/tcs/Sangiorgi01}. 
 %The complete process syntax, with their intuitive semantics, is  as follows:
 \begin{align*}
 P, Q ::= \, 
         & \bout{u}{V}{P} \,\,\, \, \, &\text{send value $V$ on name $u$, then run $P$} \\
 \sbnfbar & \binp{u}{x}{P} \,\,\, \, \, & \text{receive a value on name $u$, bind it to $x$, then run $P$} \\
-\sbnfbar &  \bsel{u}{\lbl_i. P_i}_{i\in I}\,\,\, \, \, & \text{select a label $l_j$, broadcast this choice, then run $P_j$} \\
-\sbnfbar & \bbra{u}{\lbl_i:P_i}_{i \in I} \,\,\, \, \, & \text{receive a label  $l_j$, then run  $P_j$} \\
+\sbnfbar &  \bsel{u}{\lbl_i. P_i}_{i\in I}\,\,\, \, \, & \text{select a label $l_j$ ($j \in I$), broadcast this choice, run $P_j$} \\
+\sbnfbar & \bbra{u}{\lbl_i:P_i}_{i \in I} \,\,\, \, \, & \text{receive a label  $l_j$ ($j \in I$), run  $P_j$} \\
 \sbnfbar   & P \Par Q  &\text{parallel composition of $P$ and $Q$} \\
-\sbnfbar  & \rvar{X} \sbnfbar  \recp{X}{P} \,\,\, &\text{variable and function abstraction}\\
+\sbnfbar  & \rvar{X} \sbnfbar  \recp{X}{P} \,\,\, &\text{variable and process recursion}\\
 \sbnfbar & \appl{V}{u} \,\,\, &\text{function application} \\
 \sbnfbar  & \news{n}P \,\,\, &\text{name restriction: make $n$ local (or private) to $P$} \\
 \sbnfbar  & \inact \,\,\, &\text{terminated process}
 \end{align*}
-The higher-order character of our process language may be better understood by spelling out the syntax of values $V, W, \ldots$:
+In $\bsel{u}{\lbl_i. P_i}_{i\in I}$ and $\bbra{u}{\lbl_i:P_i}_{i \in I}$, we use $I$ to denote some index set. 
+%Notice that $\bsel{u}{\lbl_i. P_i}_{i\in I}$ generalizes the selection construct $\lbl_i. P_i$ in most session languages.
+The higher-order character of our process language may be better understood by considering that the syntax of values ($V, W, \ldots$) includes 
+\emph{name abstractions} $\lambda x. P$, where $P$ is a process. Formally we have: 
 \begin{align*}
 u,w  \bnfis& n \sbnfbar x,y,z
 \qquad \quad
@@ -241,15 +244,24 @@ n,n' \bnfis a,b \sbnfbar \ep{s}{\p}
 V,W \bnfis & {a,b} \sbnfbar  x,y,z \sbnfbar  v, v' \sbnfbar {\abs{x}{P}}
 \end{align*}
 \noindent 
-where  $a,b,c,\ldots$ and $s,s',\ldots$ range over shared and session names, respectively.
+where  
+$u, w, \ldots$
+range over 
+names ($n, n', \ldots$) and variables ($x,y,\ldots$).
+%We write $v, v', \ldots$ to denote basic values and constants.
+We distinguish between shared and session names, 
+ranged over
+$a,b,c,\ldots$ and $s,s',\ldots$, respectively.
 Shared names are public names used to establish a protocol (see below); once established, the protocol runs along a session name, which is private to participants.
 We   use $\p, \q, \ldots$ to denote  participants, and 
 use session names indexed by participants;  we write, e.g., $s_{[\p]}$.
 We also use $v,v',\ldots$ to denote
-   (first-order) base values and constants. Variables are denoted  $x,y, \ldots$. 
+     base values and constants. 
+   %Variables are denoted  $x,y, \ldots$. 
 Values $V$ include shared names, 
-first-order values, and \emph{name abstractions} $\lambda x. P$, where $P$ is a process.
-Notice that values need not include (indexed) session names, for session name communication (\emph{delegation}) is  representable using abstraction passing~\cite{KPY2016}.
+first-order values, and  {name abstractions}.
+Notice that values need not include (indexed) session names: 
+session name communication (\emph{delegation}) is  representable using abstraction passing~\cite{KPY2016}.
 
 The syntax of \emph{configurations} $M, N, \ldots$ builds upon that of processes; indeed, we may consider configurations as compositions of located processes:
 \begin{align*}
@@ -285,16 +297,28 @@ Constructs for  composing configurations, name restriction, and  inaction are as
 The second row above shows constructs that appear only at run-time 
 %(i.e., they do not appear in ``source'' programs) 
 and   enable  reversibility. 
-We call $\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}$ a \emph{running process}:  $\loc$ hosts a process $P$ that implements participant $\p$, and $\stack C$ records labeled choices enforced so far. Configuration $\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}$ is a \emph{monitor}
+
+\begin{itemize}
+\item  $\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}$ is a \emph{running process}:  location $\loc$ hosts a process $P$ that implements participant $\p$, and $\stack C$ records labeled choices enforced so far. 
+
+\item $\monig{\ep{s}{\p}}{H}{\mytilde{x}}{\store}$ is a \emph{monitor}
 where: 
 $s_{[\p]}$ is the indexed session being monitored;
 $H$ is a  local type \emph{with history} (see below);
 $\mytilde{x}$ is a set of free variables;
 and store $\store$ records their values.
 The \emph{tag} $\mytagg$ says whether 
-the running process associated to the monitor is involved in a backward step ($\mytagg = \rmark$) or not ($\mytagg = \normark$).
-We write $\codah{s}{h_i}{h_o}$ to denote a \emph{message queue} with input part $h_i$ and output part $h_o$.
-Finally, the \emph{running function} $\mem{k}{(\appl{V}{u})}{\loc}$ serves to  reverse  applications.
+the running process tied to the monitor is involved in a backward step ($\mytagg = \rmark$) or not ($\mytagg = \normark$).
+
+\item   $\codah{s}{h_i}{h_o}$ is the \emph{message queue} of session $s$, composed of an input part $h_i$ and an output part $h_o$.
+Messages sent by output prefixes are placed in the output part; an input prefix takes the first message in the output part and moves it to the input part. Hence, messages in the queue are not consumed but moved between the two parts of the queue.
+
+\item Finally, the \emph{running function} $\mem{k}{(\appl{V}{u})}{\loc}$ serves to reverse the $\beta$-reduction resulting from the application $\appl{V}{u}$. In $\mem{k}{(\appl{V}{u})}{\loc}$, 
+ $\loc$ is the location where the application resides, and 
+  $k$ is a freshly generated identifier.
+\end{itemize}
+These intuitions are formalized by the operational semantics of the MP model; see~\cite{DBLP:conf/ppdp/MezzinaP17} for details.
+
 
 \paragraph{Global and Local Types.}
 As already mentioned,  multiparty protocols are expressed as global types ($G, G', \ldots$), which can be \emph{projected} onto local types  ($T, T', \ldots$), one per participant. The syntax 
@@ -318,7 +342,7 @@ follows~\cite{DBLP:conf/popl/HondaYC08}:
 %tWe briefly discuss 
 Value types $U$ include first-order values,   and  
  type $\shot{T}$ for {higher-order} values: abstractions from names to processes
-(where $\Proc$ denotes the type of processes.)
+(where $\Proc$ denotes the type of processes).
 
 Global type $\gtcom{p}{q}{U}{G}$ says that \p  sends a value of type $U$ to \q, and then continues as $G$.
 Given a finite index set $I$ and pairwise different {labels} $\lbl_i$, global type $\gtcho{p}{q}{\lbl_i}{G_i}$ specifies that  \p may choose  label $\lbl_i$, send this selection to \q, and then continue as $G_i$.
@@ -341,17 +365,20 @@ Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respect
  cursor (denoted~$\past$) used to distinguish  the  protocol actions  that have been already executed (the past of the protocol) from those that are yet to be performed (the future of the protocol).
  
  \paragraph{Projection.}
-The projection of a global type $G$ onto a protocol participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is defined in Fig.~\ref{f:proj}. 
- The definition is intuitive, perhaps except for choice.
- Intuitively, the definition ensures that a choice between $\p$ and $\q$ should not implicitly determine different behavior for participants different from $\p$ and $\q$, for which different behavior should  be determined by some explicit communication.
+The projection of a global type $G$ onto a participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is defined in Fig.~\ref{f:proj}. 
+ The definition is   self-explanatory, perhaps except for choice.
+ Intuitively, projection ensures that a choice between $\p$ and $\q$ should not implicitly determine different behavior for participants different from $\p$ and $\q$, for which any different behavior should  be determined by some explicit communication.
  This is a condition adopted by the MP model but also by several other works, as it ensures decentralized implementability of  multiparty session types.
- Because of recursion, a branch of a choice may recurse back to the beginning: in this case
- all participants have to jump back to the beginning,
-so every choice must  be explicit  to all participants.
 %To address this, and to ensure implementability of global types,  disallow haviing different branches that use different participants. 
 %In practice, 
 %this means that all branches must perform the same communication to satisfy the global type, even if the communication is not needed in every branch (some branches may have dummy communications). 
-\checkthis{Our Haskell implementation relies on broadcasts to communicate choices to all protocol participants; this reduces the need for explicit communications in global types}. 
+\checkthis{Our implementation relies on broadcasts to communicate choices to all protocol participants; this reduces the need for explicit communications in global types}. 
+Projection consistently handles 
+the combination of recursion and choices in global types. 
+In the particular case in which a branch of a choice in the global type may recurse back to the beginning, 
+the local types for all involved participants will be themselves recursive; this ensures that 
+participants will jump back to the beginning of the protocol in a coordinated way.
+
 
 \begin{figure}[!t]
 {
@@ -466,7 +493,7 @@ M = \myloc{\loc_1}{\text{Vendor}}
 \myloc{\loc_4}{\text{Carol}} 
 $$
 %\end{document}
-We now use $M$ to informally discuss reduction rules for \fw and \bk; {their formal definition is in~\cite{DBLP:conf/ppdp/MezzinaP17}}.
+We now use $M$ to informally discuss reduction rules for \fw and \bk; {their formal definition is in Mezzina and P\'{e}rez's paper~\cite{DBLP:conf/ppdp/MezzinaP17}}.
 From $M$, the session starts with 
 %an application of  Rule \fwcolor{\textsc{(Init)}}, which 
 a forward reduction that
