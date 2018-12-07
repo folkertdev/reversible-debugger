@@ -11,6 +11,7 @@
 \newcommand{\modi}[1]{\textcolor{blue}{#1}}
 %\newcommand{\checkthis}[1]{\textcolor{red}{#1}}
 \newcommand{\checkthis}[1]{#1}
+%\newcommand{\secref}[1]{\S\,\ref{#1}}
 
 \usepackage{fixltx2e} % provides \textsubscript
 % use upquote if available, for straight quotes in verbatim environments
@@ -201,7 +202,7 @@ Section~\ref{discussion} collects concluding remarks.
 Our aim is to develop a Haskell implementation of the MP model~\cite{DBLP:conf/ppdp/MezzinaP17}, which is depicted in Fig.~\ref{f:model}. 
 Here we shall  informally describe the key elements of the model, guided by a running example. Interested readers are referred to~\cite{DBLP:conf/ppdp/MezzinaP17} for further details, in particular the definition and proof of causal consistency. 
 
-\paragraph{Overview.}
+\subsection{Overview}
 Fig.~\ref{f:model} depicts two of the three salient ingredients of the MP model:
 \emph{configurations/processes} and the
 \emph{choreography}, which represent the communicating partners (\emph{participants}) and their intended governing protocol, respectively. 
@@ -214,7 +215,7 @@ Since  local types specify the intended communication actions, they may be used 
 
 The third ingredient of the MP model, not depicted in Fig.~\ref{f:model}, is the \emph{operational semantics} for configurations, which  is defined by two reduction relations: forward ($\fw$) and backward ($\bk$). We shall not recall these relations here; rather, we will introduce their key underlying intuitions by example.
 
-\paragraph{Configurations and Processes.}
+\subsection{Configurations and Processes}
 The language  of processes  $P, Q, \ldots$, given next, is a $\pi$-calculus with   labeled  choice, communication of abstractions, and function application:
 While labeled choice is typical of session $\pi$-calculi~\cite{DBLP:conf/esop/HondaVK98}, the latter constructs are typical of \emph{higher-order} process calculi, which combine features from functional and concurrent  languages~\cite{DBLP:journals/tcs/Sangiorgi01}. 
 %The complete process syntax, with their intuitive semantics, is  as follows:
@@ -317,10 +318,10 @@ Messages sent by output prefixes are placed in the output part; an input prefix 
  $\loc$ is the location where the application resides, and 
   $k$ is a freshly generated identifier.
 \end{itemize}
-These intuitions are formalized by the operational semantics of the MP model; see~\cite{DBLP:conf/ppdp/MezzinaP17} for details.
+These intuitions are formalized by the operational semantics of the MP model, which we do not discuss here; see Mezzina and P\'{e}rez's paper~\cite{DBLP:conf/ppdp/MezzinaP17} for details.
 
 
-\paragraph{Global and Local Types.}
+\subsection{Global and Local Types}
 As already mentioned,  multiparty protocols are expressed as global types ($G, G', \ldots$), which can be \emph{projected} onto local types  ($T, T', \ldots$), one per participant. The syntax 
 of value, global, and local types
 follows~\cite{DBLP:conf/popl/HondaYC08}:
@@ -364,7 +365,7 @@ Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respect
  A novelty in the MP model are \emph{local types with history}  ($H, H'$). A type $H$ is a local type equipped with a
  cursor (denoted~$\past$) used to distinguish  the  protocol actions  that have been already executed (the past of the protocol) from those that are yet to be performed (the future of the protocol).
  
- \paragraph{Projection.}
+ \subsection{Projection}
 The projection of a global type $G$ onto a participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is defined in Fig.~\ref{f:proj}. 
  The definition is   self-explanatory, perhaps except for choice.
  Intuitively, projection ensures that a choice between $\p$ and $\q$ should not implicitly determine different behavior for participants different from $\p$ and $\q$, for which any different behavior should  be determined by some explicit communication.
@@ -418,7 +419,8 @@ participants will jump back to the beginning of the protocol in a coordinated wa
 \vspace{-5mm}
 \end{figure}
 
-\paragraph{Example: Three-Buyer Protocol.}
+\subsection{Example: Three-Buyer Protocol}\label{ss:exam}
+
 We illustrate by example the 
 forward and backward reduction semantics, denoted \fw and \bk: we recall the running example by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, namely
   a reversible variant of the \emph{Three-Buyer protocol}  (cf, e.g.,~\cite{CDYP2015})
@@ -493,10 +495,11 @@ M = \myloc{\loc_1}{\text{Vendor}}
 \myloc{\loc_4}{\text{Carol}} 
 $$
 %\end{document}
-We now use $M$ to informally discuss reduction rules for \fw and \bk; {their formal definition is in Mezzina and P\'{e}rez's paper~\cite{DBLP:conf/ppdp/MezzinaP17}}.
+We now use $M$ to informally discuss the reduction relations \fw and \bk; below we shall refer to forward and backward reduction rules {defined in Mezzina and P\'{e}rez's paper~\cite[\S\,2.2.2]{DBLP:conf/ppdp/MezzinaP17}}.
+
 From $M$, the session starts with 
-%an application of  Rule \fwcolor{\textsc{(Init)}}, which 
-a forward reduction that
+an application of  Rule~\fwcolor{\textsc{(Init)}}, which 
+defines a forward reduction that
 initializes the protocol by creating running processes and monitors:
 %To simplify readability, below
 %we write 
@@ -526,17 +529,20 @@ M & \fw  \news{s}\big(\,
 \end{align*}
 %$$
 where 
-$V_1$, $A_1$, $B_1$, and $C_1$ 
+$V_1\subst{\epS}{x}$, $A_1\subst{\epA}{y}$, $B_1\subst{\epB}{z}$, and $C_1\subst{\epC}{w}$ 
 stand for the continuation of processes $\text{Vendor}$, $\text{Alice}$, $\text{Bob}$, and $\text{Carol}$ after the service 
 request/accept. 
+Observe that $s$ is a fresh session name created after initialization; 
+we write  $\subst{\epS}{x}$ to denote a substitution of variable $x$ with session name $\epS$.
 %So we have, for instance, 
 %$
 %A_1 = \bout{y}{\exBook}\binp{y}{p}\bout{y}{h}\binp{y}{ok}\inact
 %$.
 %Notice also how session initialization instantiates variable ${z}$ in the thunk contained in Bob's implementation with endpoint $\epB$.
-From $M_1$ we could either undo this reduction %(using Rule~\bkcolor{\textsc{(RInit)}})
-or execute the communication from $\text{Alice}$ to $\text{Vendor}$, as 
-%(using two rules:~\fwcolor{\textsc{(Out)}} and ~\fwcolor{\textsc{(In)}}). 
+
+From $M_1$ we could either undo this forward reduction (using Rule~\bkcolor{\textsc{(RInit)}})
+or execute the communication from $\text{Alice}$ to $\text{Vendor}$,
+using Rules~\fwcolor{\textsc{(Out)}} and ~\fwcolor{\textsc{(In)}} as 
 %This latter option would be as 
 follows:
 \begin{align*}
@@ -547,7 +553,9 @@ M_1 & \fw  \news{s}(\,  \np{\key{{\loc_2}}{\pA}}{ \conf{\inact}{\binp{\epA}{p}\b
 \\
 & \!\!\!\!\Par N_2 \Par \codah{s}{\emp}{\valueq{\pA}{\pS}{\exBook}}{}~)  = M_2
 \end{align*}
-where $N_2$ stands for  processes/monitors for Vendor, Bob, and Carol (not involved in the reduction). An additional forward step completes the synchronization:
+where $N_2$ stands for  processes/monitors for Vendor, Bob, and Carol (not involved in the reduction). 
+In $M_2$, the message from $\pA$ to $\pS$ now appears in the output part of the queue.
+An additional forward step completes the synchronization:
 \begin{align*}
 M_2 \fw & \news{s}(\,  \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\bout{\epS}{price(t)} \bout{\epS}{price(t)}\binp{\epS}{ok}  \binp{\epS}{a} \bout{\epS}{date}\inact }} 
 \\
@@ -561,12 +569,14 @@ $\store_3  = \upd{x}{d},\upd{t}{\exBook}$,
 $T_\mathsf{\pS}  = \ltinp{B}{\mathsf{OK}}{\ltinp{B}{\mathsf{address}}{\ltout{B}{\mathsf{date}}{\lend}}}$,
 and $N_3$ stands for the %participants not involved in the reduction.
 rest of the system.
-Note that the cursors in monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$ have moved; also, the message from $\pA$ to $\pS$ is now in the input queue.
+Note that the cursors in monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$ have moved; also, the message from $\pA$ to $\pS$ is now in the input part of the queue.
 
-We now illustrate  reversibility: to return to $M_1$ from $M_3$ we need  three backward steps.
-%rules: \bkcolor{\textsc{(RollS)}}, \bkcolor{\textsc{(RIn)}}, and \bkcolor{\textsc{(ROut)}}.
-%First, Rule~\bkcolor{\textsc{(RollS)}} 
-The first one only 
+We now illustrate  reversibility: to return to $M_1$ from $M_3$ we need  three backward 
+%steps.
+reduction
+rules: \bkcolor{\textsc{(RollS)}}, \bkcolor{\textsc{(RIn)}}, and \bkcolor{\textsc{(ROut)}}.
+First, Rule~\bkcolor{\textsc{(RollS)}} 
+%The first one only 
 modifies the tags of monitors $\ep{s}{\pS}$ and $\ep{s}{\pA}$:
 \begin{align*}
 M_3 & \bk  \news{s}(\,  
@@ -583,10 +593,11 @@ M_3 & \bk  \news{s}(\,
 \end{align*}
 where 
 $\myctxr{\ctx{T}_4}{\bullet}  =\ltout{\pS}{\mathsf{title}}{\bullet}$ is a  \emph{type context} (with hole $\bullet$) and, as before, $N_4$ represents the rest of the system.
+
 $M_4$ has several possible forward and backward reductions. 
 One particular backward reduction 
-%uses Rule~\bkcolor{\textsc{(RIn)}} to 
-undoes the input at \pS:
+uses Rule~\bkcolor{\textsc{(RIn)}} to 
+undo the input at \pS:
 \begin{align*}
 M_4 & \bk  \news{s}(\,  
 \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\binp{\epS}{t}\bout{\epS}{price(t)}\bout{\epS}{price(t)}   \binp{\epS}{ok}\binp{\epS}{a} \bout{\epS}{date}\inact }} 
@@ -601,7 +612,10 @@ M_4 & \bk  \news{s}(\,
 \\
 & \Par N_4 \Par \codah{s}{\emp}{\valueq{\pA}{\pS}{\exBook}}{}~)  = M_5
 \end{align*}
-The following (backward) reduction from $M_5$ undoes the output at \pA:
+As a result, the message from $\pA$ to $\pS$ is back again in the output part of the queue.
+The following backward reduction from $M_5$ 
+uses Rule~\bkcolor{\textsc{(ROut)}}
+to undo the output at \pA:
 \begin{align*}
 M_5 & \bk  \news{s}(\,  
 \np{\key{{\loc_1}}{\pS}}{ \conf{\inact}{\binp{\epS}{t}\bout{\epS}{price(t)}\bout{\epS}{price(t)} \\ 
@@ -618,8 +632,8 @@ M_5 & \bk  \news{s}(\,
 \Par N_4 \Par \codah{s}{\emp}{\emp}{}~)  = M_6
 \end{align*}
 Clearly, $M_6 = M_1$.
-Summing up, the (forward) reductions
-$M_1 \fw M_2 \fw M_3$ can be reversed by the (backward) reductions
+Summing up, the forward reductions
+$M_1 \fw M_2 \fw M_3$ can be reversed by the backward reductions
 $M_3 \bk M_4 \bk M_5 \bk M_6 = M_1$.
 
 To illustrate abstraction passing, let us assume that 
@@ -637,6 +651,8 @@ M_7 = ~ &   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\bbout{\epB}{\t
 \Par N_5 \Par \codah{s}{h_7}{\emp}{}~) 
 \end{align*}
 where 
+$\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}$
+is a thunk (to be activated with the dummy value $\dummyn$) and 
 $\myctxr{\ctx{T}_7}{\bullet}$, $\store_7$, $\myctxr{\ctx{T}_8}{\bullet}$, $\store_8$,
 and $h_7$ capture past interactions as follows:
 \begin{align*}
@@ -1115,7 +1131,7 @@ For the process, there are four things that we need to track:
 \begin{enumerate}[1.]
 \def\labelenumi{\arabic{enumi}.}
 \item \emph{Used variable names in receives}.
-    Recall the process implementation for  the vendor in the three-buyer example:
+    Recall the process implementation for  the vendor in the three-buyer example in \secref{ss:exam}:
   \begin{align*}
   \text{Vendor} & =  \bout{d}{x:\tproj{G}{\pS}}\binp{x}{t}\bout{x}{price(t)}\bout{x}{price(t)} \binp{x}{ok}\binp{x}{a} \bout{x}{date}\inact
   \end{align*}
@@ -1179,7 +1195,7 @@ We can implement this process as:
   Likewise, when starting from configuration $M_3$ and undoing the receive,
   the value must be placed back into the queue. 
 
-  Our implementation follows closely follows the formal semantics of the MP model. 
+  Our implementation closely follows the formal semantics of the MP model. 
   The semantics describe how a value moves from the sender into the
   queue, and when it is received the queue stores the value on the queue
   history stack. \checkthis{When the receive is reversed}, the queue pops the value

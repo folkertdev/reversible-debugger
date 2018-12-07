@@ -1,11 +1,11 @@
-{\rtf1\ansi\ansicpg1252\cocoartf1671\cocoasubrtf100
+{\rtf1\ansi\ansicpg1252\cocoartf1561\cocoasubrtf200
 {\fonttbl\f0\fswiss\fcharset0 ArialMT;\f1\fnil\fcharset0 AppleSymbols;\f2\fnil\fcharset0 ArialUnicodeMS;
 }
-{\colortbl;\red255\green255\blue255;\red26\green26\blue26;\red255\green255\blue255;\red0\green0\blue255;
-}
-{\*\expandedcolortbl;;\cssrgb\c13333\c13333\c13333;\cssrgb\c100000\c100000\c100000;\cssrgb\c1680\c19835\c100000;
-}
-\paperw11900\paperh16840\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+{\colortbl;\red255\green255\blue255;\red26\green26\blue26;\red255\green255\blue255;\red251\green2\blue7;
+\red0\green0\blue255;\red0\green0\blue255;\red251\green2\blue7;}
+{\*\expandedcolortbl;;\cssrgb\c13333\c13333\c13333;\cssrgb\c100000\c100000\c100000;\cssrgb\c100000\c14913\c0;
+\cssrgb\c1680\c19835\c100000;\cssrgb\c1680\c19835\c100000;\cssrgb\c100000\c14913\c0;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11180\viewh17780\viewkind0
 \deftab720
 \pard\pardeftab720\partightenfactor0
 
@@ -24,28 +24,28 @@
 \
 \cb3 > 2. I am an outsider to process calculi and session types. Some of my comments may seem naive, but might still be useful as many of the readers might not be familiar with the areas either.\cb1 \
 \cb3 >\cb1 \
-\cf4 \cb3 OK.\cf2 \cb1 \
+\cf5 \cb3 OK.\cf2 \cb1 \
 \
 \cb3 > 3. My understanding of the paper increases every time I read it, and I might find more points to address as I read it again.\cb1 \
 \cb3 >\cb1 \
-\cf4 \cb3 OK.\cf2 \cb1 \
+\cf5 \cb3 OK.\cf2 \cb1 \
 \
 \cb3 > 4. I will now go through all the points I would like to raise in the order they appear in the paper.\cb1 \
-\cf4 \cb3 OK.\cf2 \cb1 \
+\cf5 \cb3 OK.\cf2 \cb1 \
 \
 \cb3 > 5. Page 3: l_i and P_i should be l_j and P_j\cb1 \
-\cf4 \cb3 Actually, they are fine as they are; we have clarified that I_j is one of the possible labels (and similarly for P_j).\cf2 \cb1 \
+\cf5 \cb3 Actually, they are fine as they are; we have clarified that I_j is one of the possible labels (and similarly for P_j).\cf2 \cb1 \
 \
 \cb3 >\cb1 \
 \cb3 > 6. Page 3: For completeness it would be good to also explain the 'u,w ::= \'85\'92 construction.\cb1 \
-\cf4 \cb3 Done.\cf2 \cb1 \
+\cf5 \cb3 Done.\cf2 \cb1 \
 \
 \cb3 >\cb1 \
 \cb3 > 7. Page 4: As Reviewer 2 noted:\cb1 \
 \cb3 > > It's confusing to first introduce parallel composition with syntax "|" and then use "|" as the symbol to separate different syntactic options\cb1 \
 \cb3 >\cb1 \
 \cb3 > It would be good to use a different symbol, or somehow highlight the syntactic similarity in the text.\cb1 \
-\cf4 \cb3 Well, they are already different symbols: the bnf bar is larger/thicker than the parallel composition operator.\cf2 \cb1 \
+\cf5 \cb3 Well, they are already different symbols: the bnf bar is larger/thicker than the parallel composition operator.\cf2 \cb1 \
 \
 \cb3 > 8. Page 4:\cb1 \
 \cb3 > > We write (\'85) to denote a message queue with input part hi and output part ho\cb1 \
@@ -58,7 +58,7 @@
 \cb3 >\cb1 \
 \cb3 > Having at least one sentence explaining that the output queue contains \'91consumed\'92 messages would be very helpful. In fact, I initially incorrectly assumed that it is h_o that contains the \'91consumed\'92 messages.\cb1 \
 \cb3 >\cb1 \
-\cf4 \cb3 Done: we have added a sentence here.\cf2 \cb1 \
+\cf5 \cb3 Done: we have added a sentence here.\cf2 \cb1 \
 \
 \cb3 > 9. Page 4:\cb1 \
 \cb3 > > Finally, the running function k
@@ -77,14 +77,14 @@
 \f2 \uc0\u8971 
 \f0  should be explicitly referenced on page 16. After reading it many times through I guessed that \'91the thunk\'92 refers to \'91code *\'92. In general, the lack of concrete links like this between different parts of the paper seems to be a major problem in this draft. Inserting a forward reference from page 4 to page 16 might also be a good idea.\cb1 \
 \cb3 >\cb1 \
-\cf4 \cb3 We have extended the description of running functions.\cf2 \cb1 \
+\cf5 \cb3 We have extended the description of running functions.\cf2 \cb1 \
 \
 \cb3 > 10. Page 5:\cb1 \
 \cb3 > > The definition is intuitive, perhaps except for choice. Intuitively, the definition ensures that a choice between p and q should not implicitly determine different behavior for participants different from p and q, for which different behavior should be determined by some explicit communication.\cb1 \
 \cb3 >\cb1 \
 \cb3 > A language nitpick: it is a bit unfortunate to say that the definition of choice is not \'91intuitive\'92, but then refer to the intuition behind it in the following sentence.\cb1 \
 \cb3 >\cb1 \
-\cf4 \cb3 We have rephrased this.\cf2 \cb1 \
+\cf5 \cb3 We have rephrased this.\cf2 \cb1 \
 \
 \cb3 > 11. Page 5:\cb1 \
 \cb3 > > Intuitively, the definition ensures that a choice between p and q should not implicitly determine different behavior for participants different from p and q, for which different behavior should be determined by some explicit communication. This is a condition adopted by the MP model but also by several other works, as it ensures decentralized implementability of multiparty session types. Because of recursion, a branch of a choice may recurse back to the beginning: in this case all participants have to jump back to the beginning, so every choice must be explicit to all participants. Our Haskell implementation relies on broadcasts to communicate choices to all protocol participants; this reduces the need for explicit communications in global types.\cb1 \
@@ -93,7 +93,7 @@
 \cb3 >\cb1 \
 \cb3 > In fact, the corresponding paragraph in the original draft is not self-contradictory. Reviewer 2 requested explaining the sentence on the differences between the implementation and the formalism. I would recommend reverting back to the original paragraph, and trying to address the comment of Reviewer 2. The new paragraph seems to convey the wrong message.\cb1 \
 \cb3 >\cb1 \
-\cf4 \cb3 We reworked this, to separate the messages:\cb1 \
+\cf5 \cb3 We reworked this, to separate the messages:\cb1 \
 \cb3 1- the fact that projection ensures that choices can be implemented in a decentralized way\cb1 \
 \cb3 2- the interplay between recursion and choices\cb1 \
 \cb3 The explanations concerning "explicit communications" concern 1, not 2.\cf2 \cb1 \
@@ -101,455 +101,170 @@
 \cb3 > 12. Page 6: Please address this comment of Reviewer 2:\cb1 \
 \cb3 > > Do not use numeric citations as part of sentences. Don't say "as in [6]\'94. Sentences should remain grammatically correct if the numbers are removed.\cb1 \
 \cb3 >\cb1 \
-\cf4 \cb3 Fixed.\cf2 \cb1 \
+\cf5 \cb3 Fixed.\cf2 \cb1 \
 \
 \cb3 > 13. Page 6:\cb1 \
 \cb3 > > From M, the session starts with a forward reduction\cb1 \
 \cb3 >\cb1 \
 \cb3 > It would be good to refer to a concrete page number in the referenced paper, and the rule name, for the first reduction.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 14. Page 6: The syntax 'A1\{s[A]/y\}\'92 doesn\'92t seem to be explained anywhere.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 15. I have not managed to check all the syntax of the example starting on page 6.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 16: Page 9: Using 'deriving (Functor)' requires DeriveFunctor or possibly another GHC extension. Please mention it.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 17: Page 9:\cb1 \
+\cb3 >\
+\cf5 Fixed: we have referred to the section in [6].\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 14. Page 6: The syntax 'A1\{s[A]/y\}\'92 doesn\'92t seem to be explained anywhere.\cb1 \
+\cb3 >\
+\cf5 Fixed.\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 15. I have not managed to check all the syntax of the example starting on page 6.\cb1 \
+\cb3 >\
+\cf6 We have revised all the example, adding clarifications where appropriate.\cf2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 16: Page 9: Using 'deriving (Functor)' requires DeriveFunctor or possibly another GHC extension. Please mention it.\cb1 \
+\cb3 >\
+\cf4 FOLKERT?\cf2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 17: Page 9:\cb1 \
 \cb3 > > type TerminatingProgram = Free Program Void\cb1 \
 \cb3 > I would suggest using 'type TerminatingProgram = Program Void\'92 instead making it explicit that 'TerminatingProgram' is an instance of 'Program a\'92. This also applies to the definition of 'TerminatingGlobalType' on page 13.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 18: Page 9: It would be good to include some intuition about the Free monad before the paragraph starting with 'The Free functor defines a Pure case that we don\'92t need.\'92. An intuition I find useful is that a value of type Free Operation a is an incomplete program with placeholder values of type a in place of some of the continuations (the next type parameter of the functor is the type of the continuation). Composition then puts other (possibly incomplete) programs into the placeholders.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 19: Page 9:\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 18: Page 9: It would be good to include some intuition about the Free monad before the paragraph starting with 'The Free functor defines a Pure case that we don\'92t need.\'92. An intuition I find useful is that a value of type Free Operation a is an incomplete program with placeholder values of type a in place of some of the continuations (the next type parameter of the functor is the type of the continuation). Composition then puts other (possibly incomplete) programs into the placeholders.\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 19: Page 9:\cb1 \
 \cb3 > > The Free functor defines a Pure case that we don\'92t need\cb1 \
 \cb3 > I would argue that you do need the Pure case, as you are using it for composition. Although closed programs (TerminatingProgram) indeed do not contain it.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 20: Page 9:\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 20: Page 9:\cb1 \
 \cb3 > > The use of Void also gives some indication that theprogram is finite.\cb1 \
 \cb3 >\cb1 \
 \cb3 > This statement concerns me, because:\cb1 \
 \cb3 > * In principle you may construct and infinite term using Haskell\'92s unbound recursion.\cb1 \
 \cb3 > * Your language has explicit recursion anyway.\cb1 \
 \cb3 > I would recommend making the statement more qualified.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 21: Page 10: liftF is not defined anywhere. Please at least show its type and explain what it does. I found it a bit tricky to understand what liftF does for the StateT transformer.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 22: Page 11: It is puzzling for me why the Value type has so many constructors. I would like to understand what they correspond to in the formalism.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 23: Page 12:\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 21: Page 10: liftF is not defined anywhere. Please at least show its type and explain what it does. I found it a bit tricky to understand what liftF does for the StateT transformer.\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 22: Page 11: It is puzzling for me why the Value type has so many constructors. I would like to understand what they correspond to in the formalism.\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 23: Page 12:\cb1 \
 \cb3 > > Because we allow references to values in the implementation, all references ina function have to be dereferenced before they can be safely sent over a channel.\cb1 \
 \cb3 > I don\'92t see any mention of references in the formalism, so this must be one of the differences between the formalism and the implementation? If yes, it should be clearly explained.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 24: Page 14: The code refers to the \'91R\'92, \'91Wk\'92 and \'91V\'92 constructors, which should probably be \'91RecursionPoint\'92, \'91WeakenRecursion\'92 and \'91RecursionVariable\'92 instead.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 25: What about projections from global types to local types? The code later one refers to the type LocalType, which suggests that the projection is implemented. It should at least be mentioned for completeness.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 26: It is not clear what kind of type safety is provided by either of the formalism and the implementation. It would be good if some statement about this were included. See also this comment by Reviewer 1 to the original draft:\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 24: Page 14: The code refers to the \'91R\'92, \'91Wk\'92 and \'91V\'92 constructors, which should probably be \'91RecursionPoint\'92, \'91WeakenRecursion\'92 and \'91RecursionVariable\'92 instead.\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 25: What about projections from global types to local types? The code later one refers to the type LocalType, which suggests that the projection is implemented. It should at least be mentioned for completeness.\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 26: It is not clear what kind of type safety is provided by either of the formalism and the implementation. It would be good if some statement about this were included. See also this comment by Reviewer 1 to the original draft:\cb1 \
 \cb3 > > In the discussion, it is mentioned that \'93the type system can actually guarantee that we have not forgotten to revert anything\'94. Is this really true? If so, it is an interesting point which deserves a lot more illustration.\cb1 \
 \cb3 >\cb1 \
-\cb3 >\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 TO BE DONE! Perhaps in Sect 3.6?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \
+>\cb1 \
 \cb3 > 27: Page 16:\cb1 \
 \cb3 > > Recall the process implementation for thevendor in the three-buyer example\cb1 \
 \cb3 >\cb1 \
 \cb3 > Please include a page reference.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 28: Page 17:\cb1 \
+\cb3 >\
+\cf5 Fixed: we included a section reference.\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 28: Page 17:\cb1 \
 \cb3 > > follows closely follows\cb1 \
 \cb3 >\cb1 \
 \cb3 > Pick one.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 29: Page 17: Please provide the definition or explanation of Except.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 30: Page 21:\cb1 \
+\cb3 >\
+\cf5 Fixed.\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 29: Page 17: Please provide the definition or explanation of Except.\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 30: Page 21:\cb1 \
 \cb3 > > Note that this scheduler can still get into deadlocks\cb1 \
 \cb3 > Is this a property of this particular scheduler, or of the whole formalism? Is there a better scheduler that would avoid such deadlocks?\cb1 \
 \cb3 >\cb1 \
-\cb3 > 31: Page 21:\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \
+> 31: Page 21:\cb1 \
 \cb3 > > B expects the share from V first\cb1 \
 \cb3 > V sends the message \'91Price\'92 to B in this example, not \'91Share\'92.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 32: Page 21: GlobalTypeF uses the \'91R\'92, \'91Wk\'92 and \'91V\'92 constructors, which don\'92t match the previous definition.\cb1 \
-\cb3 >\cb1 \
-\cb3 > 33: Page 22: Please address this comment of Reviewer 2:\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\cf2 \cb3 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 32: Page 21: GlobalTypeF uses the \'91R\'92, \'91Wk\'92 and \'91V\'92 constructors, which don\'92t match the previous definition.\cb1 \
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 > 33: Page 22: Please address this comment of Reviewer 2:\cb1 \
 \cb3 > > Page 20: "The definitions correspond directly". Somewhat ironically, you're choosing an example where they don't, because you're using a de-Bruijn encoding to avoid variable names, which means that "V" and "Wk\'94 both correspond to the variable case.\cb1 \
-\cb3 >\cb1 \
-\cb3 > I have focused on pointing out larger issues. I will proof-read your next draft when you send it to me, and I advise you to do your own proof-reading (or even ask someone). We may need one or several more iterations, so I don\'92t think we can make it before the original deadline. Perhaps we should aim at 7 December, but of course the sooner the better.\cb1 \
-\cb3 >\cb1 \
-\cb3 > When it comes to the page limit, could you try if you can fit everything within 25 pages?\cb1 \
-\cb3 >\cb1 \
-\cb3 > Thanks for your work and good luck!\cb1 \
-\cb3 >\cb1 \
-\cb3 > Best,\cb1 \
-\cb3 > Micha\uc0\u322 \cb1 \
-\cb3 >\cb1 \
-\cb3 > > On 24 Nov 2018, at 02:43, Jorge A. Perez <j.a.perez@rug.nl> wrote:\cb1 \
-\cb3 > >\cb1 \
-\cb3 > > Dear Micha\uc0\u322 ,\cb1 \
-\cb3 > >\cb1 \
-\cb3 > > Please find in attachment our revised paper.\cb1 \
-\cb3 > >\cb1 \
-\cb3 > > Many thanks for the opportunity of revising the paper through shepherding.\cb1 \
-\cb3 > > In our revision we have taken in consideration all suggestions and\cb1 \
-\cb3 > > remarks from the three reviewers.\cb1 \
-\cb3 > >\cb1 \
-\cb3 > > Our submission included a number of appendices that were meant to\cb1 \
-\cb3 > > offer complementary information to reviewers. In some places we used\cb1 \
-\cb3 > > forward references that seemed logical to us. Some of the reviewers\cb1 \
-\cb3 > > felt that the pointers to the appendices were not adequate; the\cb1 \
-\cb3 > > revised version has no appendices and we have solved confusing forward\cb1 \
-\cb3 > > references.\cb1 \
-\cb3 > >\cb1 \
-\cb3 > > Related to the above, Reviewer #2 was confused about the role of\cb1 \
-\cb3 > > former Appendix A.1 (about Fix). We have removed content related to\cb1 \
-\cb3 > > Fix, and added a description about the Free monad in Section 3.1. We\cb1 \
-\cb3 > > think this has helped to greatly streamline the paper's presentation.\cb1 \
-\cb3 > > We also improved the connection between the current paper and\cb1 \
-\cb3 > > reference [6], which is the theoretical model we implemented in\cb1 \
-\cb3 > > Haskell. These improvements are included in Section 2.\cb1 \
-\cb3 > >\cb1 \
-\cb3 > > Could you please confirm correct reception? Also, how indications on\cb1 \
-\cb3 > > the rest of the process would be greatly appreciated.\cb1 \
-\cb3 > >\cb1 \
-\cb3 > > Best regards,\cb1 \
-\cb3 > > Jorge and Folkert\cb1 \
-\cb3 > >\cb1 \
-\cb3 > > On Mon, Nov 19, 2018 at 12:27 PM Michal Palka <michal.palka@chalmers.se> wrote:\cb1 \
-\cb3 > >>\cb1 \
-\cb3 > >> Dear Jorge and Folkert,\cb1 \
-\cb3 > >>\cb1 \
-\cb3 > >> My apologies, due to internal miscommunication we missed this completely. Since none of the reviewers offered to shepherd your submission, I will do it. Would it be possible that you send the most recent version of your draft to me, and explain which of the reviewers\'92 comments you have addressed and how?\cb1 \
-\cb3 > >>\cb1 \
-\cb3 > >> We will see how it will work with the deadline, and we may extend it if needed.\cb1 \
-\cb3 > >>\cb1 \
-\cb3 > >> Best,\cb1 \
-\cb3 > >> Micha\uc0\u322 \cb1 \
-\cb3 > >>\cb1 \
-\cb3 > >>> On 7 Nov 2018, at 21:42, Jorge A. Perez <j.a.perez@rug.nl> wrote:\cb1 \
-\cb3 > >>>\cb1 \
-\cb3 > >>> Dear Micha\uc0\u322  and Magnus,\cb1 \
-\cb3 > >>>\cb1 \
-\cb3 > >>> We had sent the email below some time ago, but perhaps you did not receive it?\cb1 \
-\cb3 > >>> In any case, since we haven't heard from you after receiving the\cb1 \
-\cb3 > >>> reviews, further instructions would be appreciated.\cb1 \
-\cb3 > >>>\cb1 \
-\cb3 > >>> Best regards,\cb1 \
-\cb3 > >>> Jorge and Folkert\cb1 \
-\cb3 > >>>\cb1 \
-\cb3 > >>>\cb1 \
-\cb3 > >>> On Mon, Oct 8, 2018 at 11:53 AM Jorge A. Perez <j.a.perez@rug.nl> wrote:\cb1 \
-\cb3 > >>>>\cb1 \
-\cb3 > >>>> Dear Micha\uc0\u322  and Magnus,\cb1 \
-\cb3 > >>>>\cb1 \
-\cb3 > >>>> Many thanks for the notification.\cb1 \
-\cb3 > >>>> The careful and detailed reviews are highly appreciated. The feedback\cb1 \
-\cb3 > >>>> is quite precise as how we could improve our paper's presentation, and\cb1 \
-\cb3 > >>>> we should be able to send a revised version soon - how do we proceed?\cb1 \
-\cb3 > >>>>\cb1 \
-\cb3 > >>>> Best regards,\cb1 \
-\cb3 > >>>> Jorge (also on behalf of Folkert)\cb1 \
-\cb3 > >>>>\cb1 \
-\cb3 > >>>> On Mon, Oct 1, 2018 at 11:10 AM TFP2018-post-reviews\cb1 \
-\cb3 > >>>> <tfp2018postreviews@easychair.org> wrote:\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> Dear Jorge A. P\'e9rez,\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> We have the pleasure to inform you that your submission:\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> 5: Reversible Choreographies in Haskell\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> was selected for publication in this year's TFP proceedings.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> Due to the reviewers' concerns about some aspects of the paper's presentation, we would like the paper to be 'shepherded' by a PC member to ensure the required quality of presentation.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> We will get back to you about the details on the publication process and 'shepherding' shortly.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> Kind regards,\cb1 \
-\cb3 > >>>>> Micha\uc0\u322  Pa\u322 ka and Magnus Myreen\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> ----------------------- REVIEW 1 ---------------------\cb1 \
-\cb3 > >>>>> PAPER: 5\cb1 \
-\cb3 > >>>>> TITLE: Reversible Choreographies in Haskell\cb1 \
-\cb3 > >>>>> AUTHORS: Folkert de Vries and Jorge A. P\'e9rez\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> Overall evaluation: 1 (weak accept)\cb1 \
-\cb3 > >>>>> Reviewer's confidence: 4 ((high))\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> ----------- Overall evaluation -----------\cb1 \
-\cb3 > >>>>> The paper describes a Haskell implementation of a reversible\cb1 \
-\cb3 > >>>>> session-based concurrent system. The paper mainly consists of two\cb1 \
-\cb3 > >>>>> parts: the formal semantics of the concurrent system and an\cb1 \
-\cb3 > >>>>> implementation in Haskell.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> I find the paper interesting to read. The use of Haskell features\cb1 \
-\cb3 > >>>>> (particularly free monad and monad transformers) is wholly\cb1 \
-\cb3 > >>>>> appropriate, though not exactly original. The resulting language is\cb1 \
-\cb3 > >>>>> clean and useable.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> A major problem with the paper is that it is not\cb1 \
-\cb3 > >>>>> self-contained. Section 2 bombards the reader with a lot of\cb1 \
-\cb3 > >>>>> technicalities, and yet completely omitted the reduction rules, which\cb1 \
-\cb3 > >>>>> are supposedly to contain the essence of reversibility? Section 3\cb1 \
-\cb3 > >>>>> makes frequent references to the Appendix and is impossible to\cb1 \
-\cb3 > >>>>> understand on its own. Moreover, the Appendix is also organised in a\cb1 \
-\cb3 > >>>>> way that there are many forward references.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> In the discussion, it is mentioned that \'93the type system can actually\cb1 \
-\cb3 > >>>>> guarantee that we have not forgotten to revert anything\'94. Is this\cb1 \
-\cb3 > >>>>> really true? If so, it is an interesting point which deserves a lot\cb1 \
-\cb3 > >>>>> more illustration.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> ----------------------- REVIEW 2 ---------------------\cb1 \
-\cb3 > >>>>> PAPER: 5\cb1 \
-\cb3 > >>>>> TITLE: Reversible Choreographies in Haskell\cb1 \
-\cb3 > >>>>> AUTHORS: Folkert de Vries and Jorge A. P\'e9rez\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> Overall evaluation: 0 (borderline paper)\cb1 \
-\cb3 > >>>>> Reviewer's confidence: 3 ((medium))\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> ----------- Overall evaluation -----------\cb1 \
-\cb3 > >>>>> The paper discusses a process model for message-passing concurrent programs\cb1 \
-\cb3 > >>>>> that allows both forward and backward steps. It then describes a Haskell\cb1 \
-\cb3 > >>>>> implementation of the formal model.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> I find this paper difficult to judge: on one hand, the model being implemented\cb1 \
-\cb3 > >>>>> is reasonably difficult and subtle, so having a clear implementation in Haskell\cb1 \
-\cb3 > >>>>> is certainly useful and enlightening, and making sure that everything is\cb1 \
-\cb3 > >>>>> correct and faithfully implemented is an impressive amount of work. On the\cb1 \
-\cb3 > >>>>> other hand, I'm left wondering for what audience this paper is written, and\cb1 \
-\cb3 > >>>>> whether it truly helps in explaining where the difficulties in this endeavour\cb1 \
-\cb3 > >>>>> are.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> It is basically impossible to fully understand this paper without reading the\cb1 \
-\cb3 > >>>>> much-cited "Causally consisten reversible choreographies" paper as well. For\cb1 \
-\cb3 > >>>>> example, it's great that the paper gives room to examples, but the notation in\cb1 \
-\cb3 > >>>>> these examples, e.g. in particular the names of transition rules, are taken\cb1 \
-\cb3 > >>>>> from the other paper without any further explanation.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> On the other hand, the paper includes a lengthy appendix which is describing,\cb1 \
-\cb3 > >>>>> at least in parts, completely basic aspects of the Haskell language, which I\cb1 \
-\cb3 > >>>>> think can be expected to be known to a TFP audience.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> (To me, this suggests that the paper may be a resubmission that was originally\cb1 \
-\cb3 > >>>>> targetted at a different audience, which of course in principle is fine, but\cb1 \
-\cb3 > >>>>> it would be good if the paper then was adapted to the possibly different\cb1 \
-\cb3 > >>>>> expectations.)\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> Despite all the basic Haskell knowledge included in the appendix, the actual\cb1 \
-\cb3 > >>>>> distribution of content between main paper and appendix is puzzling, and a lot\cb1 \
-\cb3 > >>>>> of information is just completely missing. To provide an example: The paper\cb1 \
-\cb3 > >>>>> introduces the "Fix" datatype in Section 3.1 and even motivates it using a\cb1 \
-\cb3 > >>>>> simple, unrelated, example. However, then the paper claims that better syntax\cb1 \
-\cb3 > >>>>> for writing programs based on Fix is introduced in Appendix A.1. Appendix A.1\cb1 \
-\cb3 > >>>>> then discusses the free monad, and using do notation for free monads to construct\cb1 \
-\cb3 > >>>>> syntax trees for some languages.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> I don't know if the excursion via Fix is helpful to better understand Free.\cb1 \
-\cb3 > >>>>> Certainly, the Expr example would hardly benefit from using Free, and would,\cb1 \
-\cb3 > >>>>> if one really is annoyed by having to insert manual Fix constructor applications,\cb1 \
-\cb3 > >>>>> be more easily improved using smart constructors or pattern synonyms.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> More problematic, however, is that the later code examples cannot really be\cb1 \
-\cb3 > >>>>> understood without knowing that a free monad is used, which makes it strange\cb1 \
-\cb3 > >>>>> that this is discussed only in the appendix, whereas Fix is given so much room.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> Furthermore, Section 3.2 introduces a datatype for global types, but the\cb1 \
-\cb3 > >>>>> example on page 13 makes use of functions which somehow seem to correspond\cb1 \
-\cb3 > >>>>> to the constructors, but are not using the same names. One has to guess that\cb1 \
-\cb3 > >>>>> "message" probably corresponds to "Transaction", and that "oneOf" probably\cb1 \
-\cb3 > >>>>> corresponds to "Choice", and that "messages" is probably a simple helper\cb1 \
-\cb3 > >>>>> function expanding to multiple calls of "message". All this is unnecessary\cb1 \
-\cb3 > >>>>> though, as it would be easy enough to spell out what the correspondence is,\cb1 \
-\cb3 > >>>>> or to at least use the same names.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> The appendix also contains some misleading explanations of Haskell concepts,\cb1 \
-\cb3 > >>>>> which would have to be removed if this paper was accepted.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> All in all, if the described implementation does work and is correct, which\cb1 \
-\cb3 > >>>>> I cannot fully judge, then the paper might still be of interest, but I cannot\cb1 \
-\cb3 > >>>>> develop a lot of enthusiasm for it given the flaws in presentation.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> Other comments:\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Do not use numeric citations as part of sentences. Don't say "as in [6]".\cb1 \
-\cb3 > >>>>> Sentences should remain grammatically correct if the numbers are removed.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 1: "been have reached" -> "have been reached"\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 3: It's confusing to first introduce parallel composition with syntax\cb1 \
-\cb3 > >>>>> "|" and then use "|" as the symbol to separate different syntactic options,\cb1 \
-\cb3 > >>>>> and then on the next line introduce two syntactic constructs on a single\cb1 \
-\cb3 > >>>>> line, namely variables and function abstraction. Also, why function\cb1 \
-\cb3 > >>>>> abstraction, isn't this recursion?\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 5: "As we will see, in our Haskell implementation we use a different\cb1 \
-\cb3 > >>>>> method ..." Elsewhere, you mention how great it is to have the Haskell code\cb1 \
-\cb3 > >>>>> follow the formal description as closely as possible. Why are you choosing\cb1 \
-\cb3 > >>>>> a different method? These kind of design decisions, in particular if they're\cb1 \
-\cb3 > >>>>> motivated by problems in modelling a particular approach, are actually what\cb1 \
-\cb3 > >>>>> is essential knowledge if someone else were to try to reimplement your\cb1 \
-\cb3 > >>>>> approach, or learn from your paper.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 10: What is "List" in "List (String, next)"? Are you using a non-standard\cb1 \
-\cb3 > >>>>> list type, and if so, why?\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 11: "It first send ... and then expects ..." The example expression\cb1 \
-\cb3 > >>>>> makes use of parallel composition, so the description does not seem to match.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 11: "from the Fix module" What is the "Fix module"?\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 12: "before it can be safely" -> "... they ..."\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 12: Use of "Free" without explanation.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 12: "tipe :: u" Are you using "tipe" for "type" because the latter\cb1 \
-\cb3 > >>>>> is a keyword?\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 13: None of the functions in the examples have been introduced.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 14: The type "HighLevelProgram" is only explained in the appendix.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 14: "that the code that the evaluation" grammar\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 20: "The definitions correspond directly". Somewhat ironically,\cb1 \
-\cb3 > >>>>> you're choosing an example where they don't, because you're using a de-Bruijn\cb1 \
-\cb3 > >>>>> encoding to avoid variable names, which means that "V" and "Wk" both\cb1 \
-\cb3 > >>>>> correspond to the variable case.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 22: "see Appendix A.8" Do you really need to order your sections in\cb1 \
-\cb3 > >>>>> the appendix such that you need forward references? It feels strange to\cb1 \
-\cb3 > >>>>> have this appendix here and still not introduce "Free". The translation\cb1 \
-\cb3 > >>>>> between the first example and the second is still not entirely trivial.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 24: Appendix A.3 is not needed. Furthermore, it contains misleading\cb1 \
-\cb3 > >>>>> terminology by suggesting that the evaluation of programs might produce\cb1 \
-\cb3 > >>>>> side effects. Evaluation of IO actions in Haskell does not produce side\cb1 \
-\cb3 > >>>>> effects, only IO actions that are a part of the main action are actually\cb1 \
-\cb3 > >>>>> executed. Typically, the term "execution" is being used to the completely\cb1 \
-\cb3 > >>>>> separate process that executes this one IO action and has nothing to do\cb1 \
-\cb3 > >>>>> with normal evaluation. E.g., running seq on an IO action will never trigger\cb1 \
-\cb3 > >>>>> a side effect. Also, while it is true that the lambda in (>>=) suggests\cb1 \
-\cb3 > >>>>> a data dependency, this alone is not enough to guarantee the ordering of\cb1 \
-\cb3 > >>>>> effects. Haskell does not prescribe a particular evaluation order, and\cb1 \
-\cb3 > >>>>> terms under a lambda are allowed to be evaluated. In particular so if the\cb1 \
-\cb3 > >>>>> bound variable is not even used, such as in the "putStrLn" example on\cb1 \
-\cb3 > >>>>> page 25. More care has to be taken to actually guarantee the ordering of\cb1 \
-\cb3 > >>>>> effects in this case, which is part of the internal implementation of (>>=)\cb1 \
-\cb3 > >>>>> for IO.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 25: A.4 and A.5 are also clearly not needed.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 26: "Monad forces the order of operations" is also misleading.\cb1 \
-\cb3 > >>>>> This is true for IO, but not necessarily true for any monad.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 26: On A.6: Why introduce "Either" and then say "this type",\cb1 \
-\cb3 > >>>>> if you then use a type called "Except"? Why not simply introduce\cb1 \
-\cb3 > >>>>> "Except"?\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 26: A.6 and A.7 are perhaps less obvious than the sections before,\cb1 \
-\cb3 > >>>>> but still not really needed.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 28: "Fix requires the data type to have a natural leaf" This is\cb1 \
-\cb3 > >>>>> not true. In Haskell, there are infinite types. For example, streams\cb1 \
-\cb3 > >>>>> can be defined via "type Stream a = Fix ((,) a)".\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> - Page 28: "and as the name suggests" No new paragraph here.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> ----------------------- REVIEW 3 ---------------------\cb1 \
-\cb3 > >>>>> PAPER: 5\cb1 \
-\cb3 > >>>>> TITLE: Reversible Choreographies in Haskell\cb1 \
-\cb3 > >>>>> AUTHORS: Folkert de Vries and Jorge A. P\'e9rez\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> Overall evaluation: 2 (accept)\cb1 \
-\cb3 > >>>>> Reviewer's confidence: 3 ((medium))\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> ----------- Overall evaluation -----------\cb1 \
-\cb3 > >>>>> I found the paper quite well-written and novelty-wise moderately\cb1 \
-\cb3 > >>>>> interesting.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> The reversible semantics of message-passing concurrency controlled by\cb1 \
-\cb3 > >>>>> choreographies (multi-party session types) is quite involved (more in\cb1 \
-\cb3 > >>>>> terms of the amount of bookkeeping needed than conceptual complexity),\cb1 \
-\cb3 > >>>>> but the authors do a fairly good job summarizing the paper [6] on pp\cb1 \
-\cb3 > >>>>> 3-9.  It is probably inevitable that for a fuller picture of this\cb1 \
-\cb3 > >>>>> material an interested reader must consult [6].\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> The rest of the paper explains an executable implementation of the\cb1 \
-\cb3 > >>>>> semantics Haskell.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> For a reader experienced in using Haskell for such a purpose there are\cb1 \
-\cb3 > >>>>> no real surprises in this development, but the text may be useful for\cb1 \
-\cb3 > >>>>> experts in concurrency theory and session types.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> Small remarks / typos\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> p 1: "could been have reached" -> "could have been reached"\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> p 2: "For reviewer's convenience" -> "For reviewers' convenience"\cb1 \
-\cb3 > >>>>> (but I expect you'll delete both this sentence and the appendices)\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> p 8, last displaymath: The defining equation for $\\sigma_8$ should be\cb1 \
-\cb3 > >>>>> on a separate line.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> p 10, 22ff: "\\texttt\{Fix\}ed values": This terminology is really bad.\cb1 \
-\cb3 > >>>>> You can speak about 'fixpoint types' or 'fixedpoint types',\cb1 \
-\cb3 > >>>>> but 'fixed types' is bad.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> p 11: "manipulatable" -> "manipulable"\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> p 16: You may want to move "deriving" in "data Monitor"\cb1 \
-\cb3 > >>>>> to the same vertical position as in "data Binding" for uniformity\cb1 \
-\cb3 > >>>>> and better readability.\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> p 19: "falty"??\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> p 21, References:\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> [3]: spell out POPL here (and generally the full name of any non-LNCS\cb1 \
-\cb3 > >>>>> conference), so the indexers record the citation correctly\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> [5]: add page numbers, if available\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>> [7]: add issue and page numbers\cb1 \
-\cb3 > >>>>>\cb1 \
-\cb3 > >>>>\cb1 \
-\cb3 > >>>>\cb1 \
-\cb3 > >>>> --\cb1 \
-\cb3 > >>>> Jorge A. P\'e9rez\cb1 \
-\cb3 > >>>> Assistant Professor\cb1 \
-\cb3 > >>>> Bernoulli Institute for Math, CS and AI\cb1 \
-\cb3 > >>>> University of Groningen, The Netherlands\cb1 \
-\cb3 > >>>> URL: http://www.jperez.nl\cb1 \
-\cb3 > >>>\cb1 \
-\cb3 > >>>\cb1 \
-\cb3 > >>>\cb1 \
-\cb3 > >>> --\cb1 \
-\cb3 > >>> Jorge A. P\'e9rez\cb1 \
-\cb3 > >>> Assistant Professor\cb1 \
-\cb3 > >>> Bernoulli Institute for Math, CS and AI\cb1 \
-\cb3 > >>> University of Groningen, The Netherlands\cb1 \
-\cb3 > >>> URL: http://www.jperez.nl\cb1 \
-\cb3 > >>\cb1 \
-\cb3 > >\cb1 \
-\cb3 > >\cb1 \
-\cb3 > > --\cb1 \
-\cb3 > > Jorge A. P\'e9rez\cb1 \
-\cb3 > > Assistant Professor\cb1 \
-\cb3 > > Bernoulli Institute for Math, CS and AI\cb1 \
-\cb3 > > University of Groningen, The Netherlands\cb1 \
-\cb3 > > URL: http://www.jperez.nl\cb1 \
-\cb3 > > <tfp-lncs.pdf>\cb1 \
-\cb3 >\cb1 \
-\
-\
-\cb3 --\cb1 \
-\cb3 Jorge A. P\'e9rez\cb1 \
-\cb3 Assistant Professor\cb1 \
-\cb3 Bernoulli Institute for Math, CS and AI\cb1 \
-\cb3 University of Groningen, The Netherlands\cb1 \
-\cb3 URL: http://www.jperez.nl\cb1 \
-\cb3 Office: +31 50 36 33971}
+\cb3 >\
+\pard\pardeftab720\partightenfactor0
+\cf7 \cb3 FOLKERT?\
+}
