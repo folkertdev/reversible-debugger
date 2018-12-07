@@ -9,8 +9,8 @@
 \usepackage{xcolor}
 \newcommand{\erase}[1]{\textcolor{orange}{#1}}
 \newcommand{\modi}[1]{\textcolor{blue}{#1}}
-%\newcommand{\checkthis}[1]{\textcolor{red}{#1}}
-\newcommand{\checkthis}[1]{#1}
+\newcommand{\checkthis}[1]{\textcolor{red}{#1}}
+%\newcommand{\checkthis}[1]{#1}
 %\newcommand{\secref}[1]{\S\,\ref{#1}}
 
 \usepackage{fixltx2e} % provides \textsubscript
@@ -373,7 +373,7 @@ The projection of a global type $G$ onto a participant $\p$, denoted $\tproj{G}{
 %To address this, and to ensure implementability of global types,  disallow haviing different branches that use different participants. 
 %In practice, 
 %this means that all branches must perform the same communication to satisfy the global type, even if the communication is not needed in every branch (some branches may have dummy communications). 
-\checkthis{Our implementation relies on broadcasts to communicate choices to all protocol participants; this reduces the need for explicit communications in global types}. 
+ {Our implementation relies on broadcasts to communicate choices to all protocol participants; this reduces the need for explicit communications in global types}. 
 Projection consistently handles 
 the combination of recursion and choices in global types. 
 In the particular case in which a branch of a choice in the global type may recurse back to the beginning, 
@@ -775,7 +775,7 @@ A simple practical example is a stack-based calculator:
 
 We define a data type with our instructions, and make sure it has a \texttt{Functor} instance (i.e., there exists a function \texttt{fmap :: (a -> b) -> Operation a -> Operation b}).
 Given an instance of \texttt{Functor}, \texttt{Free} returns the free monad on that functor. 
-\checkthis{In this example, the free monad on \texttt{Operation} describes a list of instructions.} 
+ {In this example, the free monad on \texttt{Operation} describes a list of instructions.} 
 
 The \texttt{Free} functor defines a \texttt{Pure} case that we don't need.
 We use the \texttt{Void} type to ensure that program the only contains \texttt{Free} constructors with an \texttt{Free End} at the very bottom. 
@@ -928,7 +928,7 @@ references in a function have to be dereferenced before they can be safely
 sent over a channel.
 
 \paragraph{A Convenient DSL.}\label{high-level-dsl}
-\checkthis{
+{
 Many of the \texttt{ProgramF} constructors require an \texttt{owner}; we
 can thread the owner through a block with a wrapper around
 \texttt{Free}. We use \texttt{StateT} containing the owner and a counter
@@ -1198,7 +1198,7 @@ We can implement this process as:
   Our implementation closely follows the formal semantics of the MP model. 
   The semantics describe how a value moves from the sender into the
   queue, and when it is received the queue stores the value on the queue
-  history stack. \checkthis{When the receive is reversed}, the queue pops the value
+  history stack.  {When the receive is reversed}, the queue pops the value
   from its stack and puts it at the front of the queue again. Reversing
   the send will remove the value from the queue and puts it back into
   the sender's program. \\
