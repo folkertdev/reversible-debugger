@@ -365,7 +365,7 @@ Recursive and terminated local types are denoted $\mu X. T$ and $\lend$, respect
  A novelty in the MP model are \emph{local types with history}  ($H, H'$). A type $H$ is a local type equipped with a
  cursor (denoted~$\past$) used to distinguish  the  protocol actions  that have been already executed (the past of the protocol) from those that are yet to be performed (the future of the protocol).
  
- \subsection{Projection}
+ \subsection{Projection}\label{projection}
 The projection of a global type $G$ onto a participant $\p$, denoted $\tproj{G}{\gpart{p}}$,  is defined in Fig.~\ref{f:proj}. 
  The definition is   self-explanatory, perhaps except for choice.
  Intuitively, projection ensures that a choice between $\p$ and $\q$ should not implicitly determine different behavior for participants different from $\p$ and $\q$, for which any different behavior should  be determined by some explicit communication.
@@ -769,26 +769,31 @@ A simple practical example is a stack-based calculator:
     \FunctionTok{|} \DataTypeTok{End}
     \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Functor}\NormalTok{)  }
 \KeywordTok{type} \DataTypeTok{Program}\NormalTok{ next }\FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{Operation}\NormalTok{ next}
-\KeywordTok{type} \DataTypeTok{TerminatingProgram} \FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{Operation} \DataTypeTok{Void}
+\KeywordTok{type} \DataTypeTok{TerminatingProgram} \FunctionTok{=} \DataTypeTok{Program} \DataTypeTok{Void}
 \end{Highlighting}
 \end{Shaded}
 
 We define a data type with our instructions, and make sure it has a \texttt{Functor} instance (i.e., there exists a function \texttt{fmap :: (a -> b) -> Operation a -> Operation b}).
+This instance is automatically derived using the \texttt{DeriveFunctor} language extension.
 Given an instance of \texttt{Functor}, \texttt{Free} returns the free monad on that functor. 
  {In this example, the free monad on \texttt{Operation} describes a list of instructions.} 
 
-The \texttt{Free} functor defines a \texttt{Pure} case that we don't need.
-We use the \texttt{Void} type to ensure that program the only contains \texttt{Free} constructors with an \texttt{Free End} at the very bottom. 
-The use of \texttt{Void} also gives some indication that the program is finite. 
+In general, a value of type \texttt{Free Operation a} describes a program with holes: an incomplete program with placeholder values of type \texttt{a} in the position of some continuations. 
+Composition allows filling the holes with (possibly incomplete) subprograms. 
+The holes are places where the \texttt{Pure} constructor occurs in the program. When evaluating, we want to have a tree without holes. We can levarage the type system to guarantee that \texttt{Pure}
+does not occur in the programs we evaluate by using \texttt{Void}.
 
 \texttt{Void} is the data type with zero values (similar to the empty set). Thus a value of the type
 \texttt{Free\ Operation\ Void} cannot be of the shape \texttt{Pure\ \_}, because it requires a value of type \texttt{Void}.
 An alternative approach is to use existential quantification, but that requires enabling a language extension.
 
-We define wrappers around the constructors for convenience,
-and use them to write programs with do-notation:
+We define wrappers around the constructors for convenience. The \texttt{liftF} function takes a concrete value of our program functor (\texttt{ProgramF a}) and turns it into a 
+free value (\texttt{Free ProgramF a}, i.e. \texttt{Program a}).
+The helpers are used to write programs with do-notation:
 \begin{Shaded}
 \begin{Highlighting}[]
+\CommentTok{-- specialized version of liftF for Free}
+\OtherTok{liftF ::} \NormalTok{(}\DataTypeTok{Functor}\NormalTok{ f) => f a -> }\DataTypeTok{Free}\NormalTok{ f a}
 \OtherTok{push ::} \DataTypeTok{Int} \OtherTok{->} \DataTypeTok{Program}\NormalTok{ ()}
 \NormalTok{push v }\FunctionTok{=}\NormalTok{ liftF (}\DataTypeTok{Push}\NormalTok{ v ())   }
 \OtherTok{pop ::} \DataTypeTok{Program}\NormalTok{ (}\DataTypeTok{Maybe} \DataTypeTok{Int}\NormalTok{) }
@@ -874,11 +879,10 @@ Apart from the process-level recursion, \texttt{Program} is a direct translation
 
 \noindent
 As already discussed, processes exchange values. 
-To write more interesting examples,
-we extend the types of values 
-%that can be used from names, booleans and functions 
-to   include also references, integers, strings, and basic
-integer and comparison operators:
+The \texttt{Value} type has some extra constructors in comparison to the formal description to create more interesting examples.
+We have added integers, strings, and basic integer and comparison operators. The label used to differentiate the different cases of offer and select statements
+is also part of the value type. Reference refers to the variable case of the formal definition.
+
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{data} \DataTypeTok{Value} 
@@ -923,9 +927,8 @@ The \texttt{ProgramF} constructors that move the local type forward
 whose local type they should be checked against and modify. This field is
 also present in \texttt{TypeContext}, the data type we define for representing local types in Section \ref{a-reversible-semantics}. 
 
-Because we allow references to values in the implementation, all
-references in a function have to be dereferenced before they can be safely
-sent over a channel.
+Because variables are not shared between sessions, all variables (in the arguments to operators and in function bodies) 
+must be dereferenced before a value can be safely sent over a channel.
 
 \paragraph{A Convenient DSL.}\label{high-level-dsl}
 {
@@ -984,7 +987,8 @@ We can now implement the \texttt{Vendor} from the three-buyer example as:
 
 \subsection{Global Types}
 Following Figure~\ref{f:model}, our implementation uses a global type specification to obtain a local type, one per participant, by means of projection. 
-Much like the process syntax, the specification of these global types closely mimics the formal definition:
+The projection of a global type onto its participants is implemented as described in section \ref{projection}.
+Much like the process syntax, the specification of global types closely mimics the formal definition:
 %Its implementation is given by: 
 
 \begin{Shaded}
@@ -993,7 +997,7 @@ Much like the process syntax, the specification of these global types closely mi
     \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{GlobalTypeF}\NormalTok{ participant u) a }
 
 \KeywordTok{type} \DataTypeTok{TerminatingGlobalType}\NormalTok{ participant u }\FunctionTok{=} 
-    \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{GlobalTypeF}\NormalTok{ participant u) }\DataTypeTok{Void}
+    \DataTypeTok{GlobalType}\NormalTok{ participant u }\DataTypeTok{Void}
 
 \KeywordTok{data} \DataTypeTok{GlobalTypeF}\NormalTok{ participant u next}
     \FunctionTok{=} \DataTypeTok{Transaction} 
@@ -1047,13 +1051,13 @@ We use \texttt{Monad.Free} to build a DSL for defining global types.
     \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Choice}\NormalTok{ selector offerer (Map.fromList options))}
 
 \OtherTok{recurse ::} \DataTypeTok{GlobalType}\NormalTok{ p u a }\OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ p u a}
-\NormalTok{recurse cont }\FunctionTok{=} \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{R}\NormalTok{ cont)}
+\NormalTok{recurse cont }\FunctionTok{=} \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{RecursionPoint}\NormalTok{ cont)}
 
 \OtherTok{weakenRecursion ::} \DataTypeTok{GlobalType}\NormalTok{ p u a }\OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ p u a}
-\NormalTok{weakenRecursion cont }\FunctionTok{=} \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{Wk}\NormalTok{ cont)}
+\NormalTok{weakenRecursion cont }\FunctionTok{=} \DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{WeakenRecursion}\NormalTok{ cont)}
 
 \OtherTok{recursionVariable ::} \DataTypeTok{GlobalType}\NormalTok{ p u a }
-\NormalTok{recursionVariable }\FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{V}
+\NormalTok{recursionVariable }\FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{RecursionVariable}
 
 \OtherTok{end ::} \DataTypeTok{TerminatingGlobalType}\NormalTok{ p u  }
 \NormalTok{end }\FunctionTok{=} \DataTypeTok{Free} \DataTypeTok{End}
@@ -1116,6 +1120,8 @@ Similarly, the three-buyer example can be written as:
 \NormalTok{    end}
 \end{Highlighting}
 \end{Shaded}
+
+
 
 \subsection{A Reversible Semantics}\label{a-reversible-semantics}
 Having shown  implementations for processes and global types, we now explain how to implement the  reversible operational semantics. We should define structures that allow us to move back to prior program states, reversing forward
@@ -1268,8 +1274,7 @@ These functions take a \texttt{Location} (our way of modeling different
 threads or machines) and try to move the process at that location
 forward or backward. The \texttt{Session} type contains the
 \texttt{ExecutionState}, the state of the session (all programs, local
-types, variable bindings, etc.), and can throw errors of type
-\texttt{Error} (for instance when an unbound variable is used):
+types, variable bindings, etc.). The \texttt{Except} type indicates that errors of type \texttt{Error} can be thrown, for instance when an unbound variable is used:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -1520,8 +1525,8 @@ consider these two equivalent global types:
 Above, the second and third messages (involving \texttt{\DataTypeTok{Price}}) are swapped. The communication they describe
 is the same, but in practice they are very different. The first example will
 run to completion, whereas the second can deadlock because \texttt{A} can
-send a \texttt{Share} before \texttt{V} does. \texttt{B} expects the
-share from \texttt{V} first, but the share from \texttt{A} is the first
+send a \texttt{Share} before \texttt{V} sends the \texttt{Price}. \texttt{B} expects the
+price from \texttt{V} first, but the share from \texttt{A} is the first
 in the queue. Therefore, no progress can be made.
 
 
@@ -1543,12 +1548,18 @@ types.
     \sbnfbar %& 
     \mu X. G \sbnfbar X \sbnfbar \gend 
 \end{align*}
+
+
+\footnotesize
 \begin{Shaded}
 \begin{Highlighting}[]
-\KeywordTok{data} \DataTypeTok{GlobalTypeF}\NormalTok{ u next }\FunctionTok{=} 
-    \DataTypeTok{Transaction}\NormalTok{ \{}\FunctionTok{..}\NormalTok{\} }\FunctionTok{|} \DataTypeTok{Choice}\NormalTok{ \{}\FunctionTok{..}\NormalTok{\}  }\FunctionTok{|} \DataTypeTok{R}\NormalTok{ next }\FunctionTok{|} \DataTypeTok{V} \FunctionTok{|} \DataTypeTok{End} \FunctionTok{|} \DataTypeTok{Wk}\NormalTok{ next}
+\KeywordTok{data} \DataTypeTok{GlobalTypeF}\NormalTok{ u next }
+    \FunctionTok{=} \DataTypeTok{Transaction}\NormalTok{ \{}\FunctionTok{..}\NormalTok{\} }\FunctionTok{|} \DataTypeTok{Choice}\NormalTok{ \{}\FunctionTok{..}\NormalTok{\}  }\FunctionTok{|} \DataTypeTok{RecursionPoint}\NormalTok{ next }\FunctionTok{|} \DataTypeTok{RecursionVariable} \FunctionTok{|} \DataTypeTok{End} 
+    \FunctionTok{|} \DataTypeTok{WeakenRecursion}\NormalTok{ next}
 \end{Highlighting}
 \end{Shaded}
+
+\normalsize 
 
 The definitions correspond directly. Moreover, we know that these are
 all the ways to construct a value of type \texttt{GlobalTypeF} and can
