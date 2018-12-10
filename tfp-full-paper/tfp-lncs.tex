@@ -216,6 +216,7 @@ Since  local types specify the intended communication actions, they may be used 
 The third ingredient of the MP model, not depicted in Fig.~\ref{f:model}, is the \emph{operational semantics} for configurations, which  is defined by two reduction relations: forward ($\fw$) and backward ($\bk$). We shall not recall these relations here; rather, we will introduce their key underlying intuitions by example.
 
 \subsection{Configurations and Processes}
+\label{ss:processes}
 The language  of processes  $P, Q, \ldots$, given next, is a $\pi$-calculus with   labeled  choice, communication of abstractions, and function application:
 While labeled choice is typical of session $\pi$-calculi~\cite{DBLP:conf/esop/HondaVK98}, the latter constructs are typical of \emph{higher-order} process calculi, which combine features from functional and concurrent  languages~\cite{DBLP:journals/tcs/Sangiorgi01}. 
 %The complete process syntax, with their intuitive semantics, is  as follows:
@@ -322,6 +323,7 @@ These intuitions are formalized by the operational semantics of the MP model, wh
 
 
 \subsection{Global and Local Types}
+\label{ss:types}
 As already mentioned,  multiparty protocols are expressed as global types ($G, G', \ldots$), which can be \emph{projected} onto local types  ($T, T', \ldots$), one per participant. The syntax 
 of value, global, and local types
 follows~\cite{DBLP:conf/popl/HondaYC08}:
@@ -414,9 +416,9 @@ participants will jump back to the beginning of the protocol in a coordinated wa
 \tproj{\gend}{\gpart{r}} = \lend
 \end{align*}
 }
-\vspace{-6mm}
+%\vspace{-6mm}
 \caption{Projection of a global type $G$ onto a participant $\gpart{r}$~\cite{DBLP:conf/ppdp/MezzinaP17}.\label{f:proj}}
-\vspace{-5mm}
+%\vspace{-5mm}
 \end{figure}
 
 \subsection{Example: Three-Buyer Protocol}\label{ss:exam}
@@ -424,7 +426,9 @@ participants will jump back to the beginning of the protocol in a coordinated wa
 We illustrate by example the 
 forward and backward reduction semantics, denoted \fw and \bk: we recall the running example by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, namely
   a reversible variant of the \emph{Three-Buyer protocol}  (cf, e.g.,~\cite{CDYP2015})
-with abstraction passing. 
+with abstraction passing (\emph{delegation}). 
+
+\subsubsection{The Protocol as Global and Local Types}
 The protocol 
 involves three buyers (Alice ($\pA$), Bob ($\pB$), Carol ($\pC$)) who interact with a Vendor ($\pS$) as follows:
 
@@ -468,6 +472,8 @@ The projections of $G$ onto local types are as follows:
 \\
 \tproj{G}{\pC} & = \ltinp{B}{\mathsf{share}}{\ltinp{B}{\thunkt}{\lend}}
 \end{align*}
+
+\subsubsection{Process Implementations and Their Behavior}
 We now give processes for each participant:
 \begin{align*}
 \text{Vendor} & =  \bout{d}{x:\tproj{G}{\pS}}\binp{x}{t}\bout{x}{price(t)}\bout{x}{price(t)} \binp{x}{ok}\binp{x}{a} \bout{x}{date}\inact  
@@ -636,8 +642,9 @@ Summing up, the forward reductions
 $M_1 \fw M_2 \fw M_3$ can be reversed by the backward reductions
 $M_3 \bk M_4 \bk M_5 \bk M_6 = M_1$.
 
+\subsubsection{Abstraction Passing (Delegation)}
 To illustrate abstraction passing, let us assume that 
-$M_3$ above follows a sequence of forward reductions
+$M_3$ above performs forward reductions
 until the configuration:
 \begin{align*}
 M_7 = ~ &   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\bbout{\epB}{\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}}\inact}} 
@@ -746,8 +753,10 @@ there is no way for \pC to execute the code by referring to a participant differ
 %\textbf{\emph{In this section we show how we implement the processes, types, and semantics in the PPDP paper}}
 \label{implementing-the-ppdp17-calculus-in-haskell}
 
-We represent the process calculus, global/local types, and the information for reversal as syntax trees. 
-The first two are written by the programmer, and we want to provide a convenient way to specify them as domain-specific languages~(DSLs). 
+We represent the process calculus, global types, local types, and the information for reversal as syntax trees. 
+Local types are obtained by from the global type via projection, following \secref{projection}, 
+whereas processes and global types 
+  written by the programmer. For this reason, we want to provide a convenient way to specify them as domain-specific languages~(DSLs). 
 
 \subsection{DSLs with the Free monad}
 
@@ -778,17 +787,18 @@ This instance is automatically derived using the \texttt{DeriveFunctor} language
 Given an instance of \texttt{Functor}, \texttt{Free} returns the free monad on that functor. 
  {In this example, the free monad on \texttt{Operation} describes a list of instructions.} 
 
-In general, a value of type \texttt{Free Operation a} describes a program with holes: an incomplete program with placeholder values of type \texttt{a} in the position of some continuations. 
-Composition allows filling the holes with (possibly incomplete) subprograms. 
+In general, a value of type `\texttt{Free Operation a}' describes a program with holes: an incomplete program with placeholder values of type \texttt{a} in the position of some continuations. 
+Composition allows filling in the holes with (possibly incomplete) subprograms. 
 The holes are places where the \texttt{Pure} constructor occurs in the program. When evaluating, we want to have a tree without holes. We can levarage the type system to guarantee that \texttt{Pure}
 does not occur in the programs we evaluate by using \texttt{Void}.
 
-\texttt{Void} is the data type with zero values (similar to the empty set). Thus a value of the type
+\texttt{Void} is the data type with zero values (similar to the empty set). 
+Thus, a value of the type
 \texttt{Free\ Operation\ Void} cannot be of the shape \texttt{Pure\ \_}, because it requires a value of type \texttt{Void}.
-An alternative approach is to use existential quantification, but that requires enabling a language extension.
+An alternative approach is to use existential quantification, which requires enabling a language extension.
 
 We define wrappers around the constructors for convenience. The \texttt{liftF} function takes a concrete value of our program functor (\texttt{ProgramF a}) and turns it into a 
-free value (\texttt{Free ProgramF a}, i.e. \texttt{Program a}).
+free value (\texttt{Free ProgramF a}, i.e., \texttt{Program a}).
 The helpers are used to write programs with do-notation:
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -845,8 +855,8 @@ into some other monad, which in turn is evaluated. Here we can first transform i
 
 \subsection{Implementing Processes}
 The implementation uses an algebraic data type %(also known as union type or sum type) 
-to encode all the process constructors in the syntax of $P$ given above. 
-Apart from the process-level recursion, \texttt{Program} is a direct translation of the process syntax given in Section~\ref{the-process-model}.
+to encode all the process constructors in the process syntax of $P$ given in \secref{ss:processes}. 
+Apart from the process-level recursion, \texttt{Program} is a direct translation of that process syntax:.
 
 % \KeywordTok{type} \DataTypeTok{Program}\NormalTok{ value }\FunctionTok{=} \DataTypeTok{Fix}\NormalTok{ (}\DataTypeTok{ProgramF}\NormalTok{ value) }
 \begin{Shaded}
@@ -879,9 +889,11 @@ Apart from the process-level recursion, \texttt{Program} is a direct translation
 
 \noindent
 As already discussed, processes exchange values. 
-The \texttt{Value} type has some extra constructors in comparison to the formal description to create more interesting examples.
-We have added integers, strings, and basic integer and comparison operators. The label used to differentiate the different cases of offer and select statements
-is also part of the value type. Reference refers to the variable case of the formal definition.
+With respect to the syntax of values $V, W$ discussed in \secref{ss:processes},
+the \texttt{Value} type, given below, has some extra constructors which allow us to write more interesting examples: 
+we have added integers, strings, and basic integer and comparison operators. 
+We use \texttt{VReference} to denote the variables present in the formal syntax for $V$.
+The \texttt{Value} type also includes the label used to differentiate the different cases of offer and select statements.
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -900,16 +912,17 @@ is also part of the value type. Reference refers to the variable case of the for
 
 We need some extra concepts to actually write programs with this syntax.
 
-\paragraph{Delegation via Abstraction Passing.}\label{abstraction-passing}
-
+\subsubsection{Delegation via Abstraction Passing.}\label{abstraction-passing}
 Delegation occurs when a participant can send (part of)
 its protocol to be fulfilled (i.e., implemented) by another participant. 
-To illustrate the convenience of this mechanism, 
+This mechanism was illustrated 
+in the example in \secref{ss:exam}, where Carol acts on behalf of Bob by receiving and executing his code.
+For further illustration of the convenience of this mechanism, 
 consider a  load balancing server: from the client's
 perspective, the server handles the request, but actually the load
 balancer delegates incoming requests to workers. The client does not
 need to be aware of this implementation detail.
-Recall the definition of \texttt{ProgramF}:
+Recall the definition of \texttt{ProgramF}, given just above:
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{data} \DataTypeTok{ProgramF}\NormalTok{ value next }
@@ -924,13 +937,15 @@ Recall the definition of \texttt{ProgramF}:
 \end{Shaded}
 The \texttt{ProgramF} constructors that move the local type forward
 (send/receive, select/offer) have an \texttt{owner} field that stores
-whose local type they should be checked against and modify. This field is
-also present in \texttt{TypeContext}, the data type we define for representing local types in Section \ref{a-reversible-semantics}. 
+whose local type they should be checked against and modify. 
+In the formal definition of the MP model, the connection between local types and processes/participants is enforced by the operational semantics.
+The \texttt{owner} field is
+also present in \texttt{TypeContext}, the data type we define for representing local types in \secref{a-reversible-semantics}. 
 
-Because variables are not shared between sessions, all variables (in the arguments to operators and in function bodies) 
-must be dereferenced before a value can be safely sent over a channel.
+\checkthis{Because variables are not shared between sessions, all variables (in the arguments to operators and in function bodies) 
+must be dereferenced before a value can be safely sent over a channel}.
 
-\paragraph{A Convenient DSL.}\label{high-level-dsl}
+\subsubsection{A Convenient DSL.}\label{high-level-dsl}
 {
 Many of the \texttt{ProgramF} constructors require an \texttt{owner}; we
 can thread the owner through a block with a wrapper around
@@ -986,9 +1001,8 @@ We can now implement the \texttt{Vendor} from the three-buyer example as:
 \end{Shaded}
 
 \subsection{Global Types}
-Following Figure~\ref{f:model}, our implementation uses a global type specification to obtain a local type, one per participant, by means of projection. 
-The projection of a global type onto its participants is implemented as described in section \ref{projection}.
-Much like the process syntax, the specification of global types closely mimics the formal definition:
+Following Figure~\ref{f:model}, our implementation uses a global type specification to obtain a local type, one per participant, by means of projection. This is  implemented as described in  \secref{projection}.
+Much like the process syntax, the specification of the global types discussed in \secref{ss:types} closely mimics the formal definition:
 %Its implementation is given by: 
 
 \begin{Shaded}
@@ -1021,9 +1035,10 @@ Much like the process syntax, the specification of global types closely mimics t
 
 %We can now see why choice is useful: it allows us to branch on the session type level. For instance, one branch can terminate the protocol, and the other can loop back to start the protocol again from the beginning.
 
-\noindent We use `\texttt{tipe}' because `\texttt{type}' is a reserved keyword in Haskell. 
-The constructors \texttt{RecursionPoint}, \texttt{RecursionVariable}, and  \texttt{WeakenRecursion} are required to support nested
-recursion; they are taken from~\cite{van2017session}. A
+\noindent where we use `\texttt{tipe}' because `\texttt{type}' is a reserved keyword in Haskell. 
+
+Constructors \texttt{RecursionPoint}, \texttt{RecursionVariable}, and  \texttt{WeakenRecursion} are required to support nested
+recursion; they are taken from van Walree's work~\cite{van2017session}. A
 \texttt{RecursionPoint} is a point in the protocol to which we can 
 jump back later. A \texttt{RecursionVariable} triggers jumping to a
 previously encountered \texttt{RecursionPoint}. By default, it will jump
@@ -1031,7 +1046,7 @@ to the closest and most recently encountered \texttt{RecursionPoint},
 but \texttt{WeakenRecursion} makes it jump one \texttt{RecursionPoint}
 higher; encountering two weakens will jump two levels higher, etc.
 
-We use \texttt{Monad.Free} to build a DSL for defining global types. 
+We use \texttt{Monad.Free} to build a DSL for defining global types:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -1097,7 +1112,7 @@ is done, control flow returns to the outer loop:
 \end{example}
 
 \noindent
-Similarly, the three-buyer example can be written as:
+Similarly, the global type for three-buyer example (cf. \secref{ss:exam}) can be written as:
 \begin{Shaded}
 \begin{Highlighting}[]
 \CommentTok{-- a data type representing the participants}
@@ -1124,10 +1139,12 @@ Similarly, the three-buyer example can be written as:
 
 
 \subsection{A Reversible Semantics}\label{a-reversible-semantics}
-Having shown  implementations for processes and global types, we now explain how to implement the  reversible operational semantics. We should define structures that allow us to move back to prior program states, reversing forward
+Having shown  implementations for processes and global types, we now explain how to implement the  reversible operational semantics
+for the MP model, which was illustrated in \secref{ss:exam}.
+We should define structures that allow us to move back to prior program states, reversing forward
 steps.
 
-To enable backward steps, we need to store some information when we move forward, just as enabled by the configurations in the MP model.
+To enable backward steps, we need to store some information when we move forward, just as enabled by the configurations in the MP model (cf. \secref{ss:processes}).
 Indeed, we need to track information about the local type and the process.
 For the local type, we define a data type called \texttt{TypeContext}: it
 contains the actions that have been performed; for some of them, it also
@@ -1156,21 +1173,24 @@ We can implement this process as:
 \end{Shaded}
   The rest of the program depends on the assigned name. So, e.g.,
   when we evaluate the \texttt{t\ \textless{}-\ H.receive} line
-  (moving to configuration \(M_3\)), and then revert it, we must
+  (moving to configuration \(M_3\), cf.~\secref{ss:exam}), and then revert it, we must
   reconstruct a receive that assigns to \texttt{t}, because the
-  following lines depend on the name \texttt{t}. \\
+  following lines depend on   name \texttt{t}. \\
 
 \item \emph{Function calls and their arguments}.
-      Consider the reduction from configuration $M_7$ to $M_8$, as discussed in Section~\ref{the-process-model}. Once the thunk
+      Consider the reduction from configuration $M_7$ to $M_8$, as discussed in \secref{ss:exam}. Once the thunk
   is evaluated, producing configuration \(M_8\), we lose all evidence that the
-  code produced by the evaluation  was the result of a function
+  code produced by the evaluation  resulted from a function
   application. 
   Without this evidence, reversing $M_8$ will
   not result in $M_7$. Indeed, we need to keep track of function
-  applications. The function and its argument are stored in a map
+  applications. 
+  Following the semantics of the MP model, 
+  the function and its argument are stored in a map
   indexed by a unique identifier $k$. The identifier $k$ itself is also
   stored in the local type with history to later associate the type with
   a specific function and argument.
+  The reduction from $M_8$ to $M_9$, discussed in \secref{ss:exam}, offers an example of this tracking mechanism in the formal model.
 
  Notice that a stack would seem a simpler solution, but it
   can give invalid behavior. Say that a participant is running in two
@@ -1201,21 +1221,27 @@ We can implement this process as:
   Likewise, when starting from configuration $M_3$ and undoing the receive,
   the value must be placed back into the queue. 
 
-  Our implementation closely follows the formal semantics of the MP model. 
-  The semantics describe how a value moves from the sender into the
-  queue, and when it is received the queue stores the value on the queue
-  history stack.  {When the receive is reversed}, the queue pops the value
-  from its stack and puts it at the front of the queue again. Reversing
-  the send will remove the value from the queue and puts it back into
-  the sender's program. \\
+  \checkthis{Our implementation closely follows the formal semantics of the MP model. 
+  As discussed in \secref{ss:processes}, the message queue has an input and an output part.
+  This  
+  allows to describe how a message moves from the sender into the
+  output queue. Reception is represented by moving the message  to the input queue, which serves as a
+  history stack.  
+  {When the receive is reversed}, the queue pops the message
+  from its stack and puts it at the output queue again. Reversing
+  the send moves the message from the output queue  back to
+  the sender's program}. \\
   
 \item \emph{Unused branches}.
   When a labeled choice is made and then reverted, we want all our options to be
-  available again. Currently, another label cannot actually be selected
-  after reverting: the selected label depends only on the values of
-  variables in the program. Future work may make it possible to also use
-  the failure information to influence the choice made.
-   The following code shows how the choices are stored:
+  available again. In the MP model, choices made so far are stored in a stack denoted $\stack C$, inside a running process (cf. \secref{ss:processes}). % $\np{\ep{\loc}{\p}}{\conf{\stack C}{P}}$.
+  
+%  Currently, another label cannot actually be selected
+%  after reverting: the selected label depends only on the values of
+%  variables in the program. Future work may make it possible to also use
+%  the failure information to influence  choices made.
+  
+   The following code shows how we store these choices:
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -1228,9 +1254,9 @@ We can implement this process as:
 \end{Shaded}
 
   We need to remember
-  which choice was made, and the order of the options is important. We
+  which choice was made; the order of the options is important. We
   use a \texttt{Zipper} to store the elements in order and use the
-  central \texttt{a} to store the choice that was made.
+  central `\texttt{a}' to store the choice that was made.
 \end{enumerate}
   % Fig.  \ref{fig:reverse-send-receive} below illustrates this process:
 
@@ -1262,7 +1288,8 @@ We can implement this process as:
 
 \subsection{Putting it all together}\label{combining}
 With all the definitions in place, we can now define the forward and backward
-evaluation of our system. We implement the reduction relations \fw and \bk with the types:
+evaluation of our system. 
+The reduction relations \fw and \bk, discussed and illustrated in \secref{ss:exam}, are implemented with the types:
 \begin{Shaded}
 \begin{Highlighting}[]
 \OtherTok{forward  ::} \DataTypeTok{Location} \OtherTok{->} \DataTypeTok{Session}\NormalTok{ ()}
@@ -1283,7 +1310,9 @@ types, variable bindings, etc.). The \texttt{Except} type indicates that errors 
 \end{Shaded}
 %({See also Appendices \ref{state} on \texttt{StateT} and \ref{except} on \texttt{Except}.)
 
-The semantics of the MP model guides how we store the execution
+The 
+configurations of the MP model ({cf. \secref{ss:processes})
+are our main reference to store the execution
 state. Some data is bound to its location (e.g., the current running process), while other data is bound to its participant (e.g., the
 local type).
 The information about a participant is grouped in a type called
@@ -1324,7 +1353,7 @@ Some explanations follow:
   encountered we look at that index to find the new future local type.
 \item
   \texttt{\_usedVariables} and \texttt{\_applicationHistory} are used in
-  reversal. As mentioned in Section \ref{a-reversible-semantics}, used
+  reversal. As mentioned in \secref{a-reversible-semantics}, used
   variable names must be stored so we can use them when
   reversing. We store them in a stack keeping both the original name
   given by the programmer and the generated unique internal name. For
@@ -1338,7 +1367,7 @@ Some explanations follow:
 \end{itemize}
 
 \noindent We can now define \texttt{ExecutionState}: it contains some counters for
-generating unique variable names, a monitor for every participant and a
+generating unique variable names, a monitor for every participant, and a
 program for every location. Additionally, every location has a default
 participant and a stack for unchosen branches:
 
@@ -1357,14 +1386,14 @@ participant and a stack for unchosen branches:
 \NormalTok{        \}}
 \end{Highlighting}
 \end{Shaded}
-
+\noindent
 The message queue is global and thus also lives in the
 \texttt{ExecutionState}. Finally, we need a way of inspecting values, to
 see whether they are functions and if so, to extract their bodies for
 application.
 
 \subsection{Causal Consistency?}\label{properties-of-reversibility}
-As mentioned in the Introduction, causal consistency is a key correctness criterion for a reversible semantics. This property has been proved by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} for the MP model summarized out in Section \ref{the-process-model}. One may then wonder, does our Haskell implementation preserve this property? 
+As mentioned in the Introduction, causal consistency is a key correctness criterion for a reversible semantics. This property has been proved by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} for the MP model summarized out in \secref{the-process-model}. One may then wonder, does our Haskell implementation preserve this property? 
 
 Intuitively, causal consistency is the property that backward steps always lead to states that 
 could have been reached by moving forward only.
@@ -1390,7 +1419,7 @@ completion.
 
 We can step through the program interactively in the Haskell REPL
 environment. 
-When the \texttt{ThreeBuyer} example is loaded, the program is in a state corresponding to configuration $M_1$ from Section \ref{the-process-model}.
+When the \texttt{ThreeBuyer} example is loaded, the program is in a state corresponding to configuration $M_1$ from  \ref{ss:exam}.
 We can print the initial state of our program:
 
 \begin{Shaded}
@@ -1532,14 +1561,16 @@ in the queue. Therefore, no progress can be made.
 
 \section{Discussion and Concluding Remarks}\label{discussion}
 
-\paragraph{Benefits of pure functional
+\subsection{Benefits of pure functional
 programming.}\label{benefits-of-pure-functional-programming}
 
 It has consistently been the case that sticking closer to the formal
 model gives better code. The abilities that Haskell gives for directly
 specifying formal statements are invaluable. A key invaluable
 feature is algebraic data types (ADTs, also known as tagged unions or
-sum types). Compare the formal definition and the Haskell data type for global
+sum types). Compare the formal definition 
+given in \secref{ss:types}
+and the Haskell data type for global
 types.
 \begin{align*}
     G, G'  \bnfis & \gtcom{p}{q}{U}{G} %\bnfbar 
@@ -1623,7 +1654,7 @@ for all backward reduction rules.
 %\end{enumerate}
 
 
-\paragraph{Concluding Remarks.}\label{conclusion}
+\subsection{Concluding Remarks.}\label{conclusion}
 
 We have given a functional implementation of the (reversible) MP model~\cite{DBLP:conf/ppdp/MezzinaP17} using the Haskell
 programming language. By embedding this reversible semantics we can now run and
