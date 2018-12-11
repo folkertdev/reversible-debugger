@@ -1420,7 +1420,7 @@ Given this, one may then wonder, does our Haskell implementation preserve causal
 
 In the semantics and the implementation, this causal dependency becomes a data dependency. 
 For instance, a send can only be undone only when the queue is in a state that can only be reached by first undoing the corresponding receive.
-Only in this state the appropriate data  of the appropriate type is available.
+Only in this state is the appropriate data of the appropriate type available.
 Being able to undo a send thus means that the corresponding receive has already been reversed, so it is impossible to introduce causal inconsistencies. 
 
 Because of the encoding of causal dependencies as data dependencies, and the fact that these data dependencies are preserved in the implementation,  
