@@ -1010,7 +1010,7 @@ We can now implement the \texttt{Vendor} from the three-buyer example as:
 \end{Shaded}
 
 \subsection{Global Types}
-Following Fig.~\ref{f:model}, our implementation uses a global type specification to obtain a local type, one per participant, by means of projection. This is  implemented as described in  \secref{projection}.
+Following Fig.~\ref{f:model}, \checkthis{our implementation uses a global type specification to obtain a local type (of type \texttt{LocalType}), one per participant, by means of projection. This is  implemented as described in  \secref{projection}}.
 Much like the process syntax, the specification of the global types discussed in \secref{ss:types} closely mimics the formal definition:
 %Its implementation is given by: 
 
@@ -1055,6 +1055,7 @@ to the closest and most recently encountered \texttt{RecursionPoint},
 but \texttt{WeakenRecursion} makes it jump one \texttt{RecursionPoint}
 higher; encountering two weakens will jump two levels higher, etc.
 
+% \bigbreak
 We use \texttt{Monad.Free} to build a DSL for defining global types:
 
 \begin{Shaded}
@@ -1573,6 +1574,12 @@ send a \texttt{Share} before \texttt{V} sends the \texttt{Price}. \texttt{B} exp
 price from \texttt{V} first, but the share from \texttt{A} is the first
 in the queue. Therefore, no progress can be made.
 
+\checkthis{
+The fundamental problem is that a global type is written sequentially. It may represent implicit paralellism but the scheduler 
+currently just runs the global type that it is given in the specified order.
+% are there ways to fix this? 
+}
+
 
 \section{Discussion and Concluding Remarks}\label{discussion}
 
@@ -1606,7 +1613,7 @@ types.
 
 \normalsize 
 
-The definitions correspond directly. Moreover, we know that these are
+The definitions correspond almost directly \checkthis{(The \texttt{WeakenRecursion} constructor is added to support nested recursion, which the formal model does not support)}. Moreover, we know that these are
 all the ways to construct a value of type \texttt{GlobalTypeF} and can
 exhaustively match on all the cases. Functional languages have had these
 features for a very long time. 
