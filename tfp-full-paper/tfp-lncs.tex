@@ -309,7 +309,7 @@ where:
 $s_{[\p]}$ is the indexed session being monitored;
 $H$ is a  local type \emph{with history} (see below);
 $\mytilde{x}$ is a set of free variables;
-and store $\store$ records their values.
+and the \emph{store} $\store$ records their values.
 The \emph{tag} $\mytagg$ says whether 
 the running process tied to the monitor is involved in a backward step ($\mytagg = \rmark$) or not ($\mytagg = \normark$).
 
@@ -763,9 +763,9 @@ there is no way for \pC to execute the code by referring to a participant differ
 \label{implementing-the-ppdp17-calculus-in-haskell}
 
 We represent the process calculus, global types, local types, and the information for reversal as syntax trees. 
-Local types are obtained by from the global type via projection, following \secref{projection}, 
+Local types are obtained by from the global type via projection, which we implement following \secref{projection}, 
 whereas processes and global types 
-  written by the programmer. For this reason, we want to provide a convenient way to specify them as domain-specific languages~(DSLs). 
+ are written by the programmer. For this reason, we want to provide a convenient way to specify them as domain-specific languages~(DSLs). 
 
 \subsection{DSLs with the Free monad}
 
@@ -951,7 +951,8 @@ In the formal definition of the MP model, the connection between local types and
 The \texttt{owner} field is
 also present in \texttt{TypeContext}, the data type we define for representing local types in \secref{a-reversible-semantics}. 
 
-\checkthis{Because variables are not shared between sessions, all variables (in the arguments to operators and in function bodies) 
+\checkthis{As explained in \secref{ss:processes}, each protocol participant has its own monitor with its own store. 
+Because these stores are not shared, all variables occurring in the arguments to operators and in function bodies 
 must be dereferenced before a value can be safely sent over a channel}.
 
 \subsubsection{A Convenient DSL.}\label{high-level-dsl}
@@ -1575,9 +1576,8 @@ price from \texttt{V} first, but the share from \texttt{A} is the first
 in the queue. Therefore, no progress can be made.
 
 \checkthis{
-The fundamental problem is that a global type is written sequentially. It may represent implicit paralellism but the scheduler 
-currently just runs the global type that it is given in the specified order.
-% are there ways to fix this? 
+In general, a key issue is that a global type is written sequentially, while it may represent implicit parallelism, as explained in \secref{ss:types}. Currently, our implementation just executes the global type with the order given by the programmer. 
+It should be possible to execute communication actions in different but equivalent orders; these optimizations are beyond the scope of our current implementation. 
 }
 
 
@@ -1613,7 +1613,7 @@ types.
 
 \normalsize 
 
-The definitions correspond almost directly \checkthis{(The \texttt{WeakenRecursion} constructor is added to support nested recursion, which the formal model does not support)}. Moreover, we know that these are
+The definitions correspond almost directly: \checkthis{the \texttt{WeakenRecursion} constructor is added to support nested recursion, which the formal model does not explicitly represent}. Moreover, we know that these are
 all the ways to construct a value of type \texttt{GlobalTypeF} and can
 exhaustively match on all the cases. Functional languages have had these
 features for a very long time. 
