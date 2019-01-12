@@ -973,9 +973,13 @@ to generate unique variable names.}
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{newtype} \DataTypeTok{HighLevelProgram}\NormalTok{ a }\FunctionTok{=} 
-    \DataTypeTok{HighLevelProgram}\NormalTok{ (}\DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{) (}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{)) a)}
-        \KeywordTok{deriving}\NormalTok{ (}\DataTypeTok{Functor}\NormalTok{, }\DataTypeTok{Applicative}\NormalTok{, }\DataTypeTok{Monad}
-\NormalTok{        , }\DataTypeTok{MonadState}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{), }\DataTypeTok{MonadFree}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{))}
+    \DataTypeTok{HighLevelProgram} 
+\NormalTok{        (}\DataTypeTok{StateT}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{) }
+\NormalTok{        (}\DataTypeTok{Free}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{)) a)}
+        \KeywordTok{deriving} 
+\NormalTok{            ( }\DataTypeTok{Functor}\NormalTok{, }\DataTypeTok{Applicative}\NormalTok{, }\DataTypeTok{Monad}
+\NormalTok{            , }\DataTypeTok{MonadState}\NormalTok{ (}\DataTypeTok{Participant}\NormalTok{, }\DataTypeTok{Int}\NormalTok{)}
+\NormalTok{            , }\DataTypeTok{MonadFree}\NormalTok{ (}\DataTypeTok{ProgramF} \DataTypeTok{Value}\NormalTok{))}
 
 \OtherTok{uniqueVariableName ::} \DataTypeTok{HighLevelProgram} \DataTypeTok{String}
 \NormalTok{uniqueVariableName }\FunctionTok{=} \KeywordTok{do}
@@ -997,6 +1001,8 @@ to generate unique variable names.}
 
 \OtherTok{terminate ::} \DataTypeTok{HighLevelProgram}\NormalTok{ a}
 \NormalTok{terminate }\FunctionTok{=}\NormalTok{ liftF }\DataTypeTok{NoOp}
+
+\CommentTok{-- other helpers omitted for brevity}
 
 \OtherTok{compile ::} \DataTypeTok{Participant} \OtherTok{->} \DataTypeTok{HighLevelProgram} \DataTypeTok{Void} \OtherTok{->} \DataTypeTok{Program} \DataTypeTok{Value}
 \NormalTok{compile participant (}\DataTypeTok{HighLevelProgram}\NormalTok{ program) }\FunctionTok{=} \KeywordTok{do}
@@ -1069,7 +1075,8 @@ We use \texttt{Monad.Free} to build a DSL for defining global types:
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\OtherTok{message ::}\NormalTok{ participant }\OtherTok{->}\NormalTok{ participant }\OtherTok{->}\NormalTok{ tipe }\OtherTok{->} \DataTypeTok{GlobalType}\NormalTok{ participant tipe () }
+\OtherTok{message ::}\NormalTok{ participant }\OtherTok{->}\NormalTok{ participant }\OtherTok{->}\NormalTok{ tipe }
+\OtherTok{        ->} \DataTypeTok{GlobalType}\NormalTok{ participant tipe () }
 \NormalTok{message from to tipe }\FunctionTok{=}\NormalTok{ liftF (}\DataTypeTok{Transaction}\NormalTok{ from to tipe ())}
 
 \OtherTok{messages ::}\NormalTok{ participant }\OtherTok{->} \NormalTok{[participant]}
@@ -1400,7 +1407,7 @@ participant and a stack for unchosen branches:
 \NormalTok{        ,}\OtherTok{ locations ::} \DataTypeTok{Map} \DataTypeTok{Location} 
 \NormalTok{                 (}\DataTypeTok{Participant}\NormalTok{ , [}\DataTypeTok{OtherOptions}\NormalTok{], }\DataTypeTok{Program}\NormalTok{ value)}
 \NormalTok{        ,}\OtherTok{ queue ::} \DataTypeTok{Queue}\NormalTok{ value}
-\NormalTok{        ,}\OtherTok{ isFunction ::}\NormalTok{ value }\OtherTok{->} \DataTypeTok{Maybe}\NormalTok{ (}\DataTypeTok{Identifier}\NormalTok{, }\DataTypeTok{Program}\NormalTok{ value)}
+\NormalTok{        ,}\OtherTok{ isFunction ::}\NormalTok{ value }\OtherTok{->} \DataTypeTok{Maybe}\NormalTok{ (}\DataTypeTok{Identifier}\NormalTok{,}\DataTypeTok{Program}\NormalTok{ value)}
 \NormalTok{        \}}
 \end{Highlighting}
 \end{Shaded}
