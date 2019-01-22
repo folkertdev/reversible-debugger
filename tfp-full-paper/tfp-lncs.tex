@@ -111,7 +111,7 @@
 \title{Reversible Session-Based Concurrency in Haskell}
 
 \author{Folkert de Vries \and
-Jorge A. P\'{e}rez%\orcidID{0000-0002-1452-6180}}
+Jorge A. P\'{e}rez\orcidID{0000-0002-1452-6180}
 }
 %
 \authorrunning{F.\,de Vries and J.\,A.\,P\'{e}rez}
@@ -487,14 +487,14 @@ The projections of $G$ onto local types are as follows:
 \subsubsection{Process Implementations and Their Behavior}
 We now give processes for each participant:
 \begin{align*}
-\text{Vendor} & =  \bout{d}{x:\tproj{G}{\pS}}\binp{x}{t}\bout{x}{price(t)}\bout{x}{price(t)} \binp{x}{ok}\binp{x}{a} \bout{x}{date}\inact  
+\text{Vendor} & =  \bout{d}{x{\,:\,}\tproj{G}{\pS}}\binp{x}{t}\bout{x}{price(t)}\bout{x}{price(t)} \binp{x}{ok}\binp{x}{a} \bout{x}{date}\inact  
 \\
-\text{Alice} & =  \binp{d}{y:\tproj{G}{\pA}}\bout{y}{\exBook}\binp{y}{p}\bout{y}{h}\binp{y}{ok}\inact  
+\text{Alice} & =  \binp{d}{y{\,:\,}\tproj{G}{\pA}}\bout{y}{\exBook}\binp{y}{p}\bout{y}{h}\binp{y}{ok}\inact  
 \\
-\text{Bob} & =  \binp{d}{z:\tproj{G}{\pB}}\binp{z}{p}\binp{z}{h}\bout{z}{ok}\bout{z}{ok}\bout{z}{h}
- \bbout{z}{\thunkp{\bout{z}{\text{`9747 AG'}}\binp{z}{d}\inact}}\inact
+\text{Bob} & =  \binp{d}{z{\,:\,}\tproj{G}{\pB}}\binp{z}{p}\binp{z}{h}\bout{z}{ok}\bout{z}{ok}\bout{z}{h}
+ \bbout{z}{\thunkp{\bout{z}{\text{`9747'}}\binp{z}{d}\inact}}\inact
   \\
-\text{Carol} & =  \binp{d}{w:\tproj{G}{\pC}}\binp{w}{h}\binp{w}{code}(\appl{code}{\dummyn})
+\text{Carol} & =  \binp{d}{w{\,:\,}\tproj{G}{\pC}}\binp{w}{h}\binp{w}{code}(\appl{code}{\dummyn})
 %&Q_B = \bout{y}{share}\bout{y}{T}\bout{y}{R}\inact  \\
 %&Q_C = \binp{y}{share}\binp{y}{T}\binp{y}{X}\inact  \\
 \end{align*}
@@ -663,7 +663,7 @@ To illustrate abstraction passing, let us assume that
 $M_3$ above performs forward reductions
 until the configuration:
 \begin{align*}
-M_7 = ~ &   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\bbout{\epB}{\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}}\inact}} 
+M_7 = ~ &   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\bbout{\epB}{\thunkp{\bout{\epB}{\text{`9747'}}\binp{\epB}{d}\inact}}\inact}} 
 \\
 & \!\!\!\! \Par \hmoni{\ep{s}{\pB}}{\myctxr{\ctx{T}_7}{\past \ltout{C}{\thunkt}{\ltout{\pS}{\mathsf{address}}{\ltinp{\pS}{\mathsf{date}}{\lend}}}}}{z,p,h}{\store_7} 
 \\
@@ -674,7 +674,7 @@ M_7 = ~ &   \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\bbout{\epB}{\t
 \Par N_5 \Par \codah{s}{h_7}{\emp}{}~) 
 \end{align*}
 where 
-$\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}$
+$\thunkp{\bout{\epB}{\text{`9747'}}\binp{\epB}{d}\inact}$
 is a thunk (to be activated with the dummy value $\dummyn$) and 
 $\myctxr{\ctx{T}_7}{\bullet}$, $\store_7$, $\myctxr{\ctx{T}_8}{\bullet}$, $\store_8$,
 and $h_7$ capture past interactions as follows:
@@ -721,10 +721,10 @@ M_8  =~ &    \news{s}(\,  \np{\key{{\loc_3}}{\pB}}{ \conf{\inact}{\inact}}
 \hmoni{\ep{s}{\pC}}{\myctxr{\ctx{T}_8}{ \ltinp{B}{\thunkt}{\past\lend}}}{w,h,code}{\store_9} 
 \\
 & 
-\Par N_5 \Par \codah{s}{h_7 \cons \valueq{\pB}{\pC}{\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}}}{\emp}{}~) 
+\Par N_5 \Par \codah{s}{h_7 \cons \valueq{\pB}{\pC}{\thunkp{\bout{\epB}{\text{`9747'}}\binp{\epB}{d}\inact}}}{\emp}{}~) 
 \end{align*}
 where
-$\store_9 = \store_8 \upd{code}{\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}}$.
+$\store_9 = \store_8 \upd{code}{\thunkp{\bout{\epB}{\text{`9747'}}\binp{\epB}{d}\inact}}$.
 We now may 
 %apply Rule~\fwcolor{\textsc{(Beta)}} to 
 obtain the actual code sent from \pB to \pC:
@@ -735,7 +735,7 @@ M_8  \fw &  \news{s}\news{k}(\,
 %& \Par \hmoni{s_\pB}{\myctxr{\ctx{T}_7}{\ltout{C}{\thunkt}{\past\ltout{S}{\mathsf{address}}{\ltinp{S}{\mathsf{date}}{\lend}}}}}{z,p,s}{\store_7} 
 %\\
 %& \Par 
-\np{\key{{\loc_4}}{\pC}}{\conf{\inact}{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}} 
+\np{\key{{\loc_4}}{\pC}}{\conf{\inact}{\bout{\epB}{\text{`9747'}}\binp{\epB}{d}\inact}} 
 \!\!  \Par N_6 
 \\
 & \!\!\Par \hmoni{\ep{s}{\pB}}{\myctxr{\ctx{T}_7}{\ltout{C}{\thunkt}{\past\ltout{\pS}{\mathsf{address}}{\ltinp{\pS}{\mathsf{date}}{\lend}}}}}{z,p,h}{\store_7} 
@@ -746,7 +746,7 @@ M_8  \fw &  \news{s}\news{k}(\,
 \hmoni{\ep{s}{\pC}}{\myctxr{\ctx{T}_8}{ \ltinp{B}{\thunkt}{k.\past\lend}}}{w,h,code}{\store_9} 
 \\
 & 
-\!\!\Par \codah{s}{h_7 \cons \valueq{\pB}{\pC}{\thunkp{\bout{\epB}{\text{`9747 AG'}}\binp{\epB}{d}\inact}}}{\emp}{}~) 
+\!\!\Par \codah{s}{h_7 \cons \valueq{\pB}{\pC}{\thunkp{\bout{\epB}{\text{`9747'}}\binp{\epB}{d}\inact}}}{\emp}{}~) 
 = M_9
 \end{align*}
 where $N_6$ is the rest of the system. 
@@ -1727,7 +1727,8 @@ COST Action IC1405 ``Reversible computation -- Extending horizons of computing''
 %Gothenburg, Sweden. Attending the conference was made possible by
 %financial support from the , for which we are extremely grateful
 
-\bibliographystyle{abbrv}
+%\bibliographystyle{abbrv}
+\bibliographystyle{splncs04}
 %\bibliography{biblio}
 \bibliography{session,biblio}
 
