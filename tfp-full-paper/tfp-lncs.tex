@@ -171,20 +171,26 @@ a key observation  is that
 In a language with a reversible semantics, computation steps can be undone.
 Thus, a program can perform standard \emph{forward} steps, but also \emph{backward} steps.
 Reversing a sequential program is not hard: it suffices to have a \emph{memory} that records information about forward steps in case we wish to return to a prior state using a backward step. Reversing a concurrent program is much more difficult: since control may simultaneously reside in more than one point, memories should be carefully designed so as to record information about the steps performed in each thread, but also about the \emph{causal dependencies} between steps from different threads.
-This motivates the definition of reversible semantics which are \emph{causally consistent}, i.e., that ensure that backward steps lead to states that could  have been reached by performing forward steps only~\cite{DBLP:journals/eatcs/Lanese14}. Hence, a causally consistent  semantics never leads to states that are not reachable through forward steps. 
+%This motivates the definition of reversible semantics which are \emph{causally consistent}, i.e., that ensure that backward steps lead to states that could  have been reached by performing forward steps only~\cite{DBLP:journals/eatcs/Lanese14}. Hence, a causally consistent  semantics never leads to states that are not reachable through forward steps. 
+This motivates the definition of reversible semantics which are \emph{causally consistent}.
+A causally consistent semantics 
+ensures that backward steps lead to states that could have been reached by performing forward steps only~\cite{DBLP:journals/eatcs/Lanese14}. Hence,  it  never leads to states that are not reachable through forward steps. 
 
-Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (most notably, the $\pi$-calculus~\cite{MilnerR:calmp1}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{DBLP:conf/popl/HondaYC08} that specify intended protocol executions. While their reversible semantics   is causally consistent, it is unclear whether it can be implemented as the basis of practical tools for the  analysis of message-passing concurrent programs.
+
+Causal consistency then arises as a key correctness criterion in the definition of reversible programming languages. The quest for causally consistent semantics for (message-passing) concurrency has led to a number of proposals that use  \emph{process calculi} (most notably, the $\pi$-calculus~\cite{MilnerR:calmp1}) to rigorously specify communicating processes and their operational semantics (cf.~\cite{DBLP:conf/ppdp/MezzinaP17} and references therein). One common shortcoming in several of these works is that the proposed causally consistent semantics hinge on memories that are rather heavy; as a result, the resulting (reversible) programming models can be  overly complex. This is a particularly notorious limitation in the work of Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, which addresses reversibility in the relevant context of $\pi$-calculus processes that exchange (higher-order) messages following \emph{choreographies}, as defined by \emph{multiparty session types}~\cite{DBLP:conf/popl/HondaYC08} that specify intended protocol executions. While their reversible semantics is causally consistent, it is unclear whether it can provide a suitable basis for the practical analysis of message-passing concurrent programs.
 
 In this paper we describe a Haskell implementation of the reversible semantics  by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17} (the MP model, in the following). As such, our implementation defines a Haskell interpreter of message-passing programs written in their reversible model. This allows us to assess in practice the mechanisms %deployed by Mezzina and P\'{e}rez 
 of the MP model
 to enforce causally consistent reversibility. The use of a functional programming language (Haskell) is a natural choice for developing our implementation. Haskell has a strong history in language design. Its type system and mathematical nature allow us to faithfully capture the formal reversible semantics and to trust that our implementation  correctly preserves causal consistency. In particular, algebraic data types (sums and products) are essential to express the grammars and recursive data structures underlying the MP model.
 
 %\paragraph{Organization.} %
-The rest of the paper is structured as follows.
+%The rest of the paper is structured as follows.%
+Next, 
  \secref{the-process-model} recalls the key notions of the MP model, useful to follow our Haskell implementation, which we detail 
 in  \secref{implementing-the-ppdp17-calculus-in-haskell}.
  \secref{running-debugging} explains how to run programs forwards and backwards using our implementation.
  \secref{discussion} collects concluding remarks. 
+ The implementation is available at \url{https://github.com/folkertdev/reversible-debugger}.
 
 %For reviewer's convenience, Appendices~\ref{free-monad-dsl} -- \ref{scheduling-code} describe further details about the implementation, including installation instructions.
 
@@ -206,20 +212,20 @@ Here we  informally describe the key elements of the model, guided by a running 
 \subsection{Overview}
 Fig.~\ref{f:model} depicts two of the three salient ingredients of the MP model:
 \emph{configurations/processes} and the
-\emph{choreography}, which represent the communicating partners (\emph{participants}) and their intended governing protocol, respectively. 
-There is a {configuration} for each participant: it includes a \emph{located process} that relies on asynchronous communication and is subject to a \emph{monitor} that enables forward/backward steps at run-time. This monitor is obtained via the choreography, which describes the intended protocol among the {participants}. 
+\emph{choreography}, which represent the communicating partners (\emph{participants}) and a description of their intended governing protocol, respectively. 
+There is a {configuration} for each participant: it includes a \emph{located process} that relies on asynchronous communication and is subject to a \emph{monitor} that enables forward/backward steps at run-time and is obtained from the choreography.
 Choreographies are defined in terms of \emph{global types} as in multiparty session types~\cite{DBLP:conf/popl/HondaYC08}. 
 (We often use `choreographies' and `global types' as synonyms.)
 A global type is \emph{projected} onto each participant to obtain 
 its corresponding  \emph{local type}, which abstracts a participant's contribution to the protocol. 
-Since  local types specify the intended communication actions, they may be used as the monitors of the located processes. 
+Since local types specify the intended communication actions, they may be used as the monitors of the located processes.
 
 The third ingredient of the MP model, not depicted in Fig.~\ref{f:model}, is the \emph{operational semantics} for configurations, which  is defined by two reduction relations: forward ($\fw$) and backward ($\bk$). We shall not recall these relations here; rather, we will introduce their key underlying intuitions by example---see \secref{ss:exam} below.
 
 \subsection{Configurations and Processes}
 \label{ss:processes}
 The language  of processes   is a $\pi$-calculus with   labeled  choice, communication of abstractions, and function application:
-While labeled choice is typical of session $\pi$-calculi~\cite{DBLP:conf/esop/HondaVK98}, the latter constructs are typical of \emph{higher-order} process calculi, which combine features from functional and concurrent  languages~\cite{DBLP:journals/tcs/Sangiorgi01}. 
+while labeled choice is typical of session $\pi$-calculi~\cite{DBLP:conf/esop/HondaVK98}, the latter constructs are typical of \emph{higher-order} process calculi, which combine features from functional and concurrent  languages~\cite{DBLP:journals/tcs/Sangiorgi01}. 
 The syntax of processes $P, Q, \ldots$ is as follows:
 %The complete process syntax, with their intuitive semantics, is  as follows:
 \begin{align*}
@@ -234,7 +240,7 @@ P, Q ::= \,
 \sbnfbar  & \news{n}P \,\,\, &\text{name restriction: make $n$ local (or private) to $P$} \\
 \sbnfbar  & \inact \,\,\, &\text{terminated process}
 \end{align*}
-In $\bsel{u}{\lbl_i. P_i}_{i\in I}$ and $\bbra{u}{\lbl_i:P_i}_{i \in I}$, we use $I$ to denote some index set. 
+In $\bsel{u}{\lbl_i. P_i}_{i\in I}$ and $\bbra{u}{\lbl_i:P_i}_{i \in I}$, we use $I$ to denote some finite index set. 
 %Notice that $\bsel{u}{\lbl_i. P_i}_{i\in I}$ generalizes the selection construct $\lbl_i. P_i$ in most session languages.
 The higher-order character of our process language may be better understood by considering that the syntax of values ($V, W, \ldots$) includes 
 \emph{name abstractions} $\lambda x. P$, where $P$ is a process. Formally we have: 
@@ -433,10 +439,10 @@ participants will jump back to the beginning of the protocol in a coordinated wa
 
 \subsection{Example: Three-Buyer Protocol}\label{ss:exam}
 
-We illustrate by example the 
+We illustrate  the 
 forward and backward reduction semantics, denoted \fw and \bk.
 To this end, we recall the running example by Mezzina and P\'{e}rez~\cite{DBLP:conf/ppdp/MezzinaP17}, namely
-  a reversible variant of the \emph{Three-Buyer protocol}  (cf, e.g.,~\cite{CDYP2015})
+  a reversible variant of the \emph{Three-Buyer protocol}  (cf., e.g.,~\cite{CDYP2015})
 with abstraction passing (\emph{delegation}). 
 
 \subsubsection{The Protocol as Global and Local Types}
@@ -512,7 +518,7 @@ M = \myloc{\loc_1}{\text{Vendor}}
 \myloc{\loc_4}{\text{Carol}} 
 $$
 %\end{document}
-We now use configuration $M$ to informally discuss the reduction relations \fw and \bk; below we shall refer to forward and backward reduction rules {defined in Mezzina and P\'{e}rez's paper~\cite[\S\,2.2.2]{DBLP:conf/ppdp/MezzinaP17}}.
+We now use configuration $M$ to discuss the reduction relations \fw and \bk; below we shall refer to forward and backward reduction rules {defined in Mezzina and P\'{e}rez's paper~\cite[\S\,2.2.2]{DBLP:conf/ppdp/MezzinaP17}}.
 
 From $M$, the session starts with 
 an application of  Rule~\fwcolor{\textsc{(Init)}}, which 
@@ -615,7 +621,7 @@ where
 $\myctxr{\ctx{T}_4}{\bullet}  =\ltout{\pS}{\mathsf{title}}{\bullet}$ is a  \emph{type context} (with hole $\bullet$) and, as before, $N_4$ represents the rest of the system.
 
 $M_4$ has several possible forward and backward reductions. 
-One particular backward reduction 
+One particular backward reduction is the one that
 uses Rule~\bkcolor{\textsc{(RIn)}} to 
 undo the input at \pS:
 \begin{align*}
@@ -1692,9 +1698,7 @@ for all backward reduction rules.
 
 \subsection{Concluding Remarks}\label{conclusion}
 
-We have given a functional implementation of the (reversible) MP model~\cite{DBLP:conf/ppdp/MezzinaP17} using the Haskell
-programming language. By embedding this reversible semantics we can now run and
-verify our example programs automatically and inspect them
+We presented a functional implementation of the (reversible) MP model~\cite{DBLP:conf/ppdp/MezzinaP17} using   Haskell. By embedding this reversible semantics we can now execute our example programs automatically and inspect them
 interactively.
 
 We have seen that the MP model can be split into three core components: (i)~a process calculus, (ii)~multiparty
@@ -1717,10 +1721,14 @@ different representations of our programs (using among others \texttt{Monad.Free
 
 
 \paragraph{\textbf{Acknowledgments.}} 
-Many thanks to the reviewers for their useful remarks and suggestions, which led to substantial improvements.
+Many thanks to the anonymous reviewers 
+and to the TFP'18 co-chairs (Micha\l{} Pa\l{}ka and Magnus Myreen)
+for their useful remarks and suggestions, which led to substantial improvements.
+P\'{e}rez is also affiliated to 
+CWI, Amsterdam, The Netherlands and to
+the NOVA Laboratory for Computer Science and Informatics (supported by FCT grant NOVA LINCS PEst/UID/CEC/04516/2013), Universidade Nova de Lisboa, Portugal.
 
-This research has been partially supported by 
-%the Undergratudate School of Science and the Bernoulli Institute of the University of Groningen. We also acknowledge support from the 
+This research has been partially supported by the Undergraduate School of Science and the Bernoulli Institute of the University of Groningen. We also acknowledge support from the 
 COST Action IC1405 ``Reversible computation -- Extending horizons of computing''.
 
 %The work in this thesis has been presented at the TFP'18 conference in
